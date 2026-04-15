@@ -1,0 +1,20 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# infra/k3s/namespaces/namespaces.yaml
+# Define los namespaces de staging y producción en K3s.
+# Aplicar: kubectl apply -f infra/k3s/namespaces/
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lakeforge-staging
+  labels:
+    environment: staging
+    managed-by: lakeforge
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lakeforge-prod
+  labels:
+    environment: production
+    managed-by: lakeforge
