@@ -1,44 +1,33 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# .ci/pipelines/github-actions.yml
-# Pipeline CI/CD para GitHub Actions.
-# Copiar a .github/workflows/ci.yml para activar.
-# ─────────────────────────────────────────────────────────────────────────────
 name: lakeforge CI/CD
-
 on:
   push:
     branches: ["**"]
   pull_request:
     branches: ["**"]
-
 jobs:
   detect-secrets:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - run: pip install detect-secrets && .ci/scripts/detect_secrets.sh
-
+      - run: pip install detect-secrets hvac && .ci/scripts/detect_secrets.sh
   lint:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - run: pip install ruff sqlfluff
       - run: .ci/scripts/lint_dags.sh && .ci/scripts/lint_spark.sh && .ci/scripts/lint_sql.sh
-
   test-dags:
     runs-on: ubuntu-22.04
     container: apache/airflow:2.9.1
     steps:
       - uses: actions/checkout@v4
-      - run: pip install pytest pytest-cov && .ci/scripts/test_dags.sh
-
+      - run: pip install pytest pytest-cov hvac && .ci/scripts/test_dags.sh
   test-spark:
     runs-on: ubuntu-22.04
     container: bitnami/spark:3.5.1
     steps:
       - uses: actions/checkout@v4
       - run: pip install pytest pytest-cov chispa && .ci/scripts/test_spark.sh
-
   deploy-staging:
     needs: [detect-secrets, lint, test-dags, test-spark]
     if: github.ref == 'refs/heads/develop'
@@ -46,7 +35,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: .ci/scripts/deploy_k3s.sh staging
-
   deploy-prod:
     needs: [detect-secrets, lint, test-dags, test-spark]
     if: github.ref == 'refs/heads/main'

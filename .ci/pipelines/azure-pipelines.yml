@@ -1,45 +1,23 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# .ci/pipelines/azure-pipelines.yml
-# Pipeline CI/CD para Azure DevOps Pipelines.
-# ─────────────────────────────────────────────────────────────────────────────
 trigger:
   branches:
     include: ["*"]
-
 pool:
   vmImage: ubuntu-22.04
-
 stages:
   - stage: Calidad
     jobs:
-      - job: detect_secrets
-        displayName: Detect secrets
+      - job: lint_and_test
         steps:
-          - script: pip install detect-secrets && .ci/scripts/detect_secrets.sh
-            displayName: Scan secrets
-
-      - job: lint
-        displayName: Lint all
-        steps:
+          - script: pip install detect-secrets hvac && .ci/scripts/detect_secrets.sh
+            displayName: Detect secrets
           - script: pip install ruff sqlfluff && .ci/scripts/lint_dags.sh && .ci/scripts/lint_spark.sh && .ci/scripts/lint_sql.sh
-            displayName: Lint
-
-      - job: test_dags
-        displayName: Test DAGs
-        container: apache/airflow:2.9.1
-        steps:
-          - script: pip install pytest pytest-cov && .ci/scripts/test_dags.sh
+            displayName: Lint all
+          - script: pip install pytest pytest-cov hvac && .ci/scripts/test_dags.sh
             displayName: Test DAGs
-
-      - job: test_spark
-        displayName: Test Spark
-        container: bitnami/spark:3.5.1
-        steps:
           - script: pip install pytest pytest-cov chispa && .ci/scripts/test_spark.sh
             displayName: Test Spark
-
   - stage: Deploy_Staging
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+    condition: eq(variables['Build.SourceBranch'], 'refs/heads/develop')
     jobs:
       - deployment: staging
         environment: staging
@@ -48,10 +26,8 @@ stages:
             deploy:
               steps:
                 - script: .ci/scripts/deploy_k3s.sh staging
-                  displayName: Deploy staging
-
   - stage: Deploy_Prod
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')
     jobs:
       - deployment: production
         environment: production
@@ -60,4 +36,3 @@ stages:
             deploy:
               steps:
                 - script: .ci/scripts/deploy_k3s.sh prod
-                  displayName: Deploy producción

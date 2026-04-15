@@ -1,5 +1,3 @@
 # superset/dashboards
-
-Exportar dashboards desde Superset: Settings → Export Dashboards → guardar JSON aquí.
-
-Formato de nombre: `{nombre_dashboard}_{YYYY-MM-DD}.json`
+Exportar: Settings → Export Dashboards → guardar JSON aquí.
+Formato: `{nombre}_{YYYY-MM-DD}.json`

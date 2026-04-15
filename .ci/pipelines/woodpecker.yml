@@ -1,17 +1,11 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# .ci/pipelines/woodpecker.yml
-# Pipeline CI/CD para Woodpecker CI + Gitea (self-hosted en K3s).
-# ─────────────────────────────────────────────────────────────────────────────
 when:
   - event: [push, pull_request]
-
 steps:
   detect-secrets:
     image: python:3.11-slim
     commands:
-      - pip install detect-secrets -q
+      - pip install detect-secrets hvac -q
       - .ci/scripts/detect_secrets.sh
-
   lint-all:
     image: python:3.11-slim
     commands:
@@ -19,26 +13,22 @@ steps:
       - .ci/scripts/lint_dags.sh
       - .ci/scripts/lint_spark.sh
       - .ci/scripts/lint_sql.sh
-
   test-dags:
     image: apache/airflow:2.9.1
     commands:
-      - pip install pytest pytest-cov -q
+      - pip install pytest pytest-cov hvac -q
       - .ci/scripts/test_dags.sh
-
   test-spark:
     image: bitnami/spark:3.5.1
     commands:
       - pip install pytest pytest-cov chispa pyspark delta-spark -q
       - .ci/scripts/test_spark.sh
-
   deploy-staging:
     image: bitnami/kubectl:latest
     when:
       branch: develop
     commands:
       - .ci/scripts/deploy_k3s.sh staging
-
   deploy-prod:
     image: bitnami/kubectl:latest
     when:

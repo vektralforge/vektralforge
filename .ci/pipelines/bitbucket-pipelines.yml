@@ -1,51 +1,35 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# .ci/pipelines/bitbucket-pipelines.yml
-# Pipeline CI/CD para Bitbucket Pipelines con runners self-hosted en K3s.
-# ─────────────────────────────────────────────────────────────────────────────
 image: python:3.11-slim
-
 pipelines:
   default:
     - step:
         name: Detect secrets
         script:
-          - pip install detect-secrets -q
+          - pip install detect-secrets hvac -q
           - .ci/scripts/detect_secrets.sh
-
     - step:
         name: Lint all
         script:
           - pip install ruff sqlfluff -q
-          - .ci/scripts/lint_dags.sh
-          - .ci/scripts/lint_spark.sh
-          - .ci/scripts/lint_sql.sh
-
+          - .ci/scripts/lint_dags.sh && .ci/scripts/lint_spark.sh && .ci/scripts/lint_sql.sh
     - step:
         name: Test DAGs
         image: apache/airflow:2.9.1
         script:
-          - pip install pytest pytest-cov -q
-          - .ci/scripts/test_dags.sh
-
+          - pip install pytest pytest-cov hvac -q && .ci/scripts/test_dags.sh
     - step:
         name: Test Spark
         image: bitnami/spark:3.5.1
         script:
-          - pip install pytest pytest-cov chispa -q
-          - .ci/scripts/test_spark.sh
-
+          - pip install pytest pytest-cov chispa -q && .ci/scripts/test_spark.sh
   branches:
     develop:
       - step:
           name: Deploy staging
           deployment: staging
-          script:
-            - .ci/scripts/deploy_k3s.sh staging
-
+          script: [.ci/scripts/deploy_k3s.sh staging]
     main:
       - step:
           name: Deploy producción
           deployment: production
           trigger: manual
-          script:
-            - .ci/scripts/deploy_k3s.sh prod
+          script: [.ci/scripts/deploy_k3s.sh prod]

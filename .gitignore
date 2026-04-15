@@ -1,4 +1,3 @@
-# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -6,8 +5,6 @@ __pycache__/
 venv/
 .env
 *.env.local
-
-# Secretos (NUNCA commitear)
 *.pem
 *.key
 *.p12
@@ -16,39 +13,21 @@ secrets.yaml
 secrets.yml
 .secrets
 **/.secrets*
-
-# Airflow
 airflow/logs/
-airflow/plugins/__pycache__/
-
-# Spark
 spark/target/
-spark/.ivy2/
-
-# Docker
 .docker/
-
-# K3s / Helm
 infra/k3s/secrets/*.yaml
 !infra/k3s/secrets/README.md
 infra/helm/*.tgz
-
-# IDE
 .idea/
 .vscode/settings.json
 *.swp
 *.swo
 .DS_Store
-
-# Test / coverage
 .pytest_cache/
 .coverage
 htmlcov/
 .mypy_cache/
-
-# Logs
 *.log
 logs/
-
-# MinIO local data
 infra/docker-compose/minio-data/
