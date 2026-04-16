@@ -31,3 +31,18 @@ htmlcov/
 *.log
 logs/
 infra/docker-compose/minio-data/
+
+# Airflow (generados en runtime)
+airflow/plugins/__pycache__/
+airflow/.airflowignore
+
+# Spark (outputs locales)
+spark/spark-warehouse/
+spark/derby.log
+
+# detect-secrets (el baseline SÍ entra, los scans temporales no)
+.secrets.scan
+
+# K3s kubeconfig local
+kubeconfig.yaml
+*.kubeconfig
