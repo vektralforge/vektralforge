@@ -83,7 +83,7 @@ make dev-up
 
 | Servicio        | URL                       | Credenciales               |
 |-----------------|---------------------------|----------------------------|
-| Airflow UI      | http://localhost:8080      | admin / admin              |
+| Airflow UI      | http://localhost:8090      | admin / admin              |
 | Trino UI        | http://localhost:8081      | —                          |
 | MinIO Console   | http://localhost:9001      | minioadmin / minioadmin    |
 | Superset        | http://localhost:8088      | admin / admin              |
