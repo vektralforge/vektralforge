@@ -51,48 +51,52 @@ El diseño incorpora siete gaps identificados durante el análisis de arquitectu
 
 ## 3. Flujo de datos end-to-end
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        FUENTES DE DATOS                             │
-│   SQL Server / DWH      APIs REST       Archivos CSV/Excel          │
-└──────────┬───────────────────┬───────────────────┬──────────────────┘
-           │                   │                   │
-           ▼                   ▼                   ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                           INGESTA                                   │
-│        Apache Airflow (batch)        Apache Kafka (streaming)       │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                    OBJECT STORAGE — MinIO                           │
-│                                                                     │
-│   raw/          bronze/        silver/          gold/               │
-│   (30 días)     (90 días)      (indefinido)     (indefinido)        │
-│      │              │               │                │              │
-│      └──────────────┴───────────────┴────────────────┘              │
-│                      Spark escribe ACID ▲                           │
-│                      Trino solo lee    ▼                            │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-           ┌───────────────────┘
-           │
-           ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                         CONSULTA SQL                                 │
-│                        Trino (puerto 8081)                           │
-│              Conectado a Delta Lake vía file metastore               │
-└────────────────────┬─────────────────────────────────────────────────┘
-                     │
-          ┌──────────┴──────────┐
-          ▼                     ▼
-   Apache Superset           Power BI
-   (puerto 8088)             (ODBC)
+```mermaid
+flowchart LR
+    subgraph Fuentes["Fuentes de datos"]
+        SQL[(SQL Server)]
+        API[APIs REST]
+        CSV[Archivos CSV]
+    end
+
+    subgraph Ingesta["Ingesta"]
+        AF[Apache Airflow]
+        KF[Apache Kafka]
+    end
+
+    subgraph Storage["Object Storage — MinIO"]
+        RAW[raw/\n30 días]
+        BRONZE[bronze/\n90 días]
+        SILVER[silver/\nindefinido]
+        GOLD[gold/\nindefinido]
+    end
+
+    subgraph Procesamiento["Procesamiento"]
+        SP[Apache Spark\nEscritura ACID]
+        TR[Trino\nLectura SQL]
+    end
+
+    subgraph Consumo["Consumo"]
+        SS[Apache Superset]
+        PBI[Power BI]
+    end
+
+    SQL --> AF
+    CSV --> AF
+    API --> KF
+    KF --> AF
+    AF --> RAW
+    RAW -->|Spark ACID| BRONZE
+    BRONZE -->|Spark ACID| SILVER
+    SILVER -->|Spark ACID| GOLD
+    BRONZE --> TR
+    SILVER --> TR
+    GOLD --> TR
+    TR --> SS
+    TR --> PBI
 ```
 
-### Regla fundamental
-
-> **Spark escribe. Trino lee.**
+> **Regla fundamental: Spark escribe. Trino lee.**
 
 | Operación | Motor |
 |---|---|
@@ -106,42 +110,58 @@ El diseño incorpora siete gaps identificados durante el análisis de arquitectu
 
 ## 4. Arquitectura del stack de servicios
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│                         DOCKER COMPOSE / K3s                       │
-│                                                                     │
-│  ┌─────────────────┐    ┌─────────────────┐    ┌────────────────┐  │
-│  │   ORQUESTACIÓN  │    │  PROCESAMIENTO  │    │   STREAMING    │  │
-│  │                 │    │                 │    │                │  │
-│  │ Airflow         │───▶│ Spark Master    │    │ Zookeeper      │  │
-│  │ Webserver :8090 │    │ :7077/:8082     │    │ Kafka :9092    │  │
-│  │ Scheduler       │    │ Spark Worker    │    │                │  │
-│  └────────┬────────┘    │ :8083           │    └────────────────┘  │
-│           │             └────────┬────────┘                        │
-│           │                      │                                 │
-│           ▼                      ▼                                 │
-│  ┌─────────────────────────────────────────┐                       │
-│  │          OBJECT STORAGE — MinIO          │                       │
-│  │          :9000 (API) / :9001 (UI)        │                       │
-│  │    raw/    bronze/    silver/    gold/    │                       │
-│  └─────────────────────────────────────────┘                       │
-│           │                      │                                 │
-│           ▼                      ▼                                 │
-│  ┌────────────────┐    ┌──────────────────┐   ┌────────────────┐  │
-│  │    CATÁLOGO    │    │   CONSULTA SQL   │   │   SECRETOS     │  │
-│  │                │◀───│                  │   │                │  │
-│  │ Hive Metastore │    │ Trino :8081      │   │ OpenBao :8200  │  │
-│  │ :9083          │    │                  │   │                │  │
-│  │ PostgreSQL     │    └────────┬─────────┘   └────────────────┘  │
-│  │ :5432          │             │                                  │
-│  └────────────────┘             ▼                                  │
-│                       ┌──────────────────┐                         │
-│                       │  VISUALIZACIÓN   │                         │
-│                       │                  │                         │
-│                       │ Superset :8088   │                         │
-│                       │ Redis :6379      │                         │
-│                       └──────────────────┘                         │
-└────────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Orquestacion["Orquestación"]
+        AW[Airflow Webserver :8090]
+        AS[Airflow Scheduler]
+    end
+
+    subgraph Procesamiento["Procesamiento"]
+        SM[Spark Master :7077/:8082]
+        SW[Spark Worker :8083]
+        SM --> SW
+    end
+
+    subgraph Streaming["Streaming"]
+        ZK[Zookeeper]
+        KK[Kafka :9092]
+        ZK --> KK
+    end
+
+    subgraph Lake["Data Lake — MinIO :9001"]
+        MN[(raw / bronze / silver / gold)]
+    end
+
+    subgraph Catalogo["Catálogo"]
+        HM[Hive Metastore :9083]
+        PG[(PostgreSQL :5432)]
+        HM --> PG
+    end
+
+    subgraph Consulta["Consulta SQL"]
+        TN[Trino :8081]
+    end
+
+    subgraph Visualizacion["Visualización"]
+        SU[Superset :8088]
+        RD[Redis :6379]
+    end
+
+    subgraph Secretos["Secretos"]
+        OB[OpenBao :8200]
+    end
+
+    AW --- AS
+    AS -->|spark-submit| SM
+    AS --> MN
+    SM --> MN
+    TN --> HM
+    TN --> MN
+    SU --> RD
+    SU --> TN
+    OB --> AS
+    OB --> SM
 ```
 
 ---
@@ -205,14 +225,22 @@ El CI/CD opera en dos niveles independientes:
 
 ### Estrategia de branching
 
-```
-main ────────────────────────────────────────────────▶  producción
-  │
-  └── develop ──────────────────────────────────────▶  staging K3s
-        │
-        ├── feature/silver-layer ──────────────────▶  local
-        ├── feature/kafka-ingest ──────────────────▶  local
-        └── feature/superset-dashboard ────────────▶  local
+```mermaid
+gitGraph
+    commit id: "init"
+    branch develop
+    checkout develop
+    commit id: "estructura inicial"
+    commit id: "docker-compose operativo"
+    commit id: "pipeline bronze"
+    branch feature/silver-layer
+    checkout feature/silver-layer
+    commit id: "silver DAG"
+    commit id: "silver job Spark"
+    checkout develop
+    merge feature/silver-layer id: "merge silver"
+    checkout main
+    merge develop id: "release v1.0"
 ```
 
 | Branch | Ambiente destino | Pipeline mínimo |
@@ -302,17 +330,26 @@ Docker Desktop (mínimo 8 GB RAM)
 
 ## 9. Gestión de secretos
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    GESTIÓN DE SECRETOS                      │
-│                                                             │
-│  Local          Staging             Producción              │
-│  ──────         ────────            ────────────            │
-│  .env file  →  Sealed Secrets  →   OpenBao                 │
-│  (gitignore)   (cifrado en Git)    (MPL 2.0 / Linux Fdn)   │
-│                                                             │
-│  Consumidores: Airflow · Spark · Trino                      │
-└─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Local["Local"]
+        ENV[.env file]
+    end
+    subgraph Staging["Staging — K3s"]
+        SS[Sealed Secrets\nApache 2.0]
+    end
+    subgraph Prod["Producción — K3s"]
+        OB[OpenBao\nMPL 2.0]
+    end
+    subgraph Apps["Consumidores"]
+        AF[Airflow]
+        SP[Spark]
+        TR[Trino]
+    end
+
+    ENV --> AF & SP
+    SS --> AF & SP
+    OB --> AF & SP & TR
 ```
 
 | Ambiente | Herramienta | Licencia | Notas |
@@ -342,48 +379,26 @@ password = secret["data"]["data"]["password"]
 
 ## 10. Capas del Lakehouse
 
+```mermaid
+flowchart TD
+    C1[SQL Server] & C2[APIs REST] & C3[CSV/Excel] --> I1[Airflow] & I2[Kafka]
+    I1 & I2 --> R1[raw/\n30 días]
+    R1 -->|Spark ACID| B1[bronze/\n90 días\nDelta Lake]
+    B1 -->|Spark ACID| S1[silver/\nindefinido\nDelta Lake]
+    S1 -->|Spark ACID| G1[gold/\nindefinido\nDelta Lake]
+    B1 & S1 & G1 -->|Trino SQL| CO1[Trino]
+    CO1 --> CO2[Superset] & CO3[Power BI]
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  CAPA 0 — CAPTURA                                               │
-│  SQL Server / DWH    APIs REST    Archivos CSV/Excel            │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  CAPA 1 — INGESTA                                               │
-│  Airflow (batch)                   Kafka (streaming)            │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  CAPA 2 — RAW  (MinIO raw/)                                     │
-│  Datos crudos sin transformar — Retención 30 días               │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ Spark escribe ACID
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  CAPA 3 — BRONZE  (MinIO bronze/)                               │
-│  Delta Lake ACID — Datos validados y tipados — 90 días          │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ Spark escribe ACID
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  CAPA 4 — SILVER  (MinIO silver/)                               │
-│  Delta Lake ACID — Datos limpios y enriquecidos — Indefinido    │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ Spark escribe ACID
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  CAPA 5 — GOLD  (MinIO gold/)                                   │
-│  Delta Lake ACID — Agregaciones y métricas — Indefinido         │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ Trino lee SQL
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  CAPA 6 — CONSUMO                                               │
-│  Trino SQL → Superset / Power BI                                │
-└─────────────────────────────────────────────────────────────────┘
-```
+
+### Retención de datos
+
+| Capa | Retención | Mecanismo |
+|---|---|---|
+| `raw/` | 30 días | Lifecycle policy en MinIO |
+| `bronze/` | 90 días | Lifecycle policy en MinIO |
+| `silver/` | Indefinido | Política de negocio |
+| `gold/` | Indefinido | Política de negocio |
+| Delta versions | 7 días | VACUUM DAG en Airflow |
 
 ---
 
@@ -402,16 +417,6 @@ password = secret["data"]["data"]["password"]
 - Validación de calidad en el pipeline CI/CD desde Escenario 2
 - Valida schema, nulos, rangos y unicidad antes de capas silver/gold
 
-### Retención de datos
-
-| Capa | Retención | Mecanismo |
-|---|---|---|
-| `raw/` | 30 días | Lifecycle policy en MinIO |
-| `bronze/` | 90 días | Lifecycle policy en MinIO |
-| `silver/` | Indefinido | Política de negocio |
-| `gold/` | Indefinido | Política de negocio |
-| Delta versions | 7 días | VACUUM DAG en Airflow |
-
 ---
 
 ## 12. Observabilidad
@@ -429,12 +434,11 @@ password = secret["data"]["data"]["password"]
 
 ## 13. Ambientes y despliegue
 
-```
-Ambiente        Branch          Infraestructura         Deploy
-─────────────   ─────────────   ─────────────────────   ────────────────────
-Local           feature/*       Docker Compose          make dev-up
-Staging         develop         K3s namespace staging   CI/CD automático
-Producción      main            K3s namespace prod      CI/CD + aprobación
+```mermaid
+flowchart LR
+    FT[feature/*] -->|make dev-up| DC[Docker Compose\nLocal]
+    DV[develop] -->|CI/CD automático| NS[K3s\nlakeforge-staging]
+    MN[main] -->|CI/CD + aprobación| NP[K3s\nlakeforge-prod]
 ```
 
 ### Servicios disponibles tras make dev-up
@@ -465,22 +469,25 @@ Producción      main            K3s namespace prod      CI/CD + aprobación
 
 ### Producción mínima — Cluster K3s 3 nodos
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    CLUSTER K3s — 3 NODOS                        │
-│                                                                 │
-│  node-1 (8c / 32 GB)        node-2 (16c / 64 GB)               │
-│  ─────────────────────      ─────────────────────               │
-│  Control plane K3s          Apache Spark                        │
-│  Apache Airflow             Trino                               │
-│  OpenBao                                                        │
-│                                                                 │
-│  node-3 (8c / 32 GB / 4 TB)                                     │
-│  ──────────────────────────                                     │
-│  MinIO (object storage)                                         │
-│  Apache Kafka                                                   │
-│  Apache Atlas                                                   │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    subgraph N1["node-1 · 8c / 32 GB"]
+        CP[Control plane]
+        AF2[Airflow]
+        OB2[OpenBao]
+    end
+    subgraph N2["node-2 · 16c / 64 GB"]
+        SP2[Spark]
+        TR2[Trino]
+    end
+    subgraph N3["node-3 · 8c / 32 GB / 4 TB"]
+        MN2[MinIO]
+        KK2[Kafka]
+        AT[Atlas]
+    end
+    N1 <--> N2
+    N2 <--> N3
+    N1 <--> N3
 ```
 
 | Nodo | Rol | CPU | RAM | Datos |
@@ -517,18 +524,28 @@ En agosto 2023, HashiCorp cambió Vault a BSL v1.1 (source-available, no open so
 
 ## 16. Hoja de ruta
 
-```
-2026 Q1          2026 Q2          2026 Q3          2026 Q4
-────────────     ────────────     ────────────     ────────────
-FASE 1 ✓         FASE 2           FASE 3           FASE 4
-PoC              Producción       Madurez          Agentes
-
-✓ Mono-repo      K3s staging      CI/CD E3         NL2SQL Trino
-✓ Docker stack   Kafka real       Prometheus       LLM pipelines
-✓ Pipeline raw   SQL Server       Atlas completo   VEKTRAL stack
-  → bronze       Power BI         Runbooks
-✓ CI/CD E1       OpenBao K3s
-✓ Superset+Trino CI/CD E2
+```mermaid
+gantt
+    title Hoja de ruta lakeforge 2026
+    dateFormat  YYYY-MM
+    section Fase 1 - PoC
+    Mono-repo y Docker stack     :done, 2026-01, 1M
+    Pipeline raw a bronze        :done, 2026-01, 1M
+    CI/CD Escenario 1            :done, 2026-02, 1M
+    Superset y Trino conectados  :done, 2026-02, 1M
+    section Fase 2 - Produccion
+    Migrar a K3s staging         :2026-03, 2M
+    Kafka tiempo real            :2026-03, 2M
+    CI/CD Escenario 2            :2026-04, 2M
+    OpenBao en K3s               :2026-04, 1M
+    SQL Server real              :2026-05, 1M
+    section Fase 3 - Madurez
+    CI/CD Escenario 3            :2026-07, 2M
+    Prometheus y Grafana         :2026-07, 2M
+    Atlas catalogacion completa  :2026-08, 2M
+    section Fase 4 - Agentes
+    NL2SQL sobre Trino           :2026-10, 3M
+    Automatizacion LLM VEKTRAL   :2026-11, 3M
 ```
 
 ### Resumen de fases
