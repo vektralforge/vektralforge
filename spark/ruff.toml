@@ -1,8 +1,7 @@
-[tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 100
 src = ["jobs"]
 
-[tool.ruff.lint]
+[lint]
 select = ["E", "F", "W", "I", "UP"]
 ignore = ["E501"]

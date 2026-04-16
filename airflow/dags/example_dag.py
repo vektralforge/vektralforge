@@ -5,7 +5,9 @@ Rol de Spark en este DAG:
   - Spark ESCRIBE en Delta Lake con semántica ACID (MERGE/INSERT).
   - Trino solo se usa para consultar los datos resultantes, no para escribir.
 """
+
 from datetime import datetime, timedelta
+
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
@@ -48,8 +50,8 @@ with DAG(
         """Valida calidad de datos con Great Expectations."""
         print("Great Expectations: validando schema, nulos y rangos...")
 
-    t_extract   = PythonOperator(task_id="extract",              python_callable=extract)
-    t_transform = PythonOperator(task_id="transform_and_write",  python_callable=transform_and_write)
-    t_validate  = PythonOperator(task_id="validate",             python_callable=validate)
+    t_extract = PythonOperator(task_id="extract", python_callable=extract)
+    t_transform = PythonOperator(task_id="transform_and_write", python_callable=transform_and_write)
+    t_validate = PythonOperator(task_id="validate", python_callable=validate)
 
     t_extract >> t_transform >> t_validate

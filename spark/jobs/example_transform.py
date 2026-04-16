@@ -9,31 +9,32 @@ ROL DE SPARK EN EL LAKEHOUSE:
 
 Este job implementa el Rol 1 + Rol 2: lee bronze y hace un MERGE en silver.
 """
+
 import os
-from delta import configure_spark_with_delta_pip, DeltaTable
+
+from delta import DeltaTable, configure_spark_with_delta_pip
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
-MINIO_ACCESS   = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET   = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-BRONZE_PATH    = "s3a://bronze/example/"
-SILVER_PATH    = "s3a://silver/example/"
+MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+BRONZE_PATH = "s3a://bronze/example/"
+SILVER_PATH = "s3a://silver/example/"
 
 
 def get_spark() -> SparkSession:
     builder = (
-        SparkSession.builder
-        .appName("lakeforge-example-transform")
+        SparkSession.builder.appName("lakeforge-example-transform")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-        .config("spark.sql.catalog.spark_catalog",
-                "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+        .config(
+            "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+        )
         .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
         .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS)
         .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET)
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
-        .config("spark.hadoop.fs.s3a.impl",
-                "org.apache.hadoop.fs.s3a.S3AFileSystem")
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
     )
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
@@ -45,8 +46,9 @@ def transform(spark: SparkSession) -> None:
     Trino no tiene esta capacidad sobre Delta Lake.
     """
     df_bronze = (
-        spark.read.format("delta").load(BRONZE_PATH)
-        .filter(F.col("activo") == True)
+        spark.read.format("delta")
+        .load(BRONZE_PATH)
+        .filter(F.col("activo"))
         .withColumn("fecha_proceso", F.current_timestamp())
         .dropDuplicates(["id"])
     )
@@ -60,13 +62,10 @@ def transform(spark: SparkSession) -> None:
     # MERGE ACID: upsert bronze sobre silver (solo Spark puede hacer esto)
     silver = DeltaTable.forPath(spark, SILVER_PATH)
     silver.alias("target").merge(
-        df_bronze.alias("source"),
-        "target.id = source.id"
-    ).whenMatchedUpdateAll() \
-     .whenNotMatchedInsertAll() \
-     .execute()
+        df_bronze.alias("source"), "target.id = source.id"
+    ).whenMatchedUpdateAll().whenNotMatchedInsertAll().execute()
 
-    print(f"✓ MERGE ACID completado en silver")
+    print("✓ MERGE ACID completado en silver")
 
 
 if __name__ == "__main__":

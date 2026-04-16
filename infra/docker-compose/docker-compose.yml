@@ -5,6 +5,8 @@ x-airflow-common: &airflow-common
     - ../../airflow/dags:/opt/airflow/dags
     - ../../airflow/plugins:/opt/airflow/plugins
     - airflow-logs:/opt/airflow/logs
+    - ../../spark/jobs:/opt/spark/jobs
+    - /var/run/docker.sock:/var/run/docker.sock
   depends_on:
     postgres:
       condition: service_healthy
@@ -56,8 +58,10 @@ services:
         condition: service_healthy
 
   spark-master:
-    image: apache/spark:3.5.3
+    build: ./spark
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    volumes:
+      - ../../spark/jobs:/opt/spark/jobs
     environment:
       SPARK_MASTER_HOST: spark-master
       SPARK_MASTER_PORT: "7077"
@@ -67,10 +71,10 @@ services:
       - "8082:8082"
 
   spark-worker:
-    image: apache/spark:3.5.3
+    build: ./spark
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     environment:
-      SPARK_WORKER_MEMORY: 4g
+      SPARK_WORKER_MEMORY: 1g
       SPARK_WORKER_CORES: "2"
       SPARK_WORKER_WEBUI_PORT: "8083"
     ports:
