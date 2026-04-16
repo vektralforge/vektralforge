@@ -49,123 +49,13 @@ Lakeforge es el mono-repositorio oficial de ALEPH SERVER LTDA. para el stack de 
 
 ## 3. Flujo de datos end-to-end
 
-```plantuml
-@startuml
-!theme plain
-skinparam backgroundColor #FAFAFA
-skinparam ArrowColor #555555
-skinparam defaultFontName Arial
-
-package "Fuentes de datos" {
-  database "SQL Server" as SQL
-  component "APIs REST" as API
-  component "CSV / Excel" as CSV
-}
-
-package "Ingesta" {
-  component "Apache Airflow\n(batch)" as AF
-  component "Apache Kafka\n(streaming)" as KF
-}
-
-package "Object Storage — MinIO" {
-  storage "raw/\n(30 días)" as RAW
-  storage "bronze/\n(90 días)\nDelta Lake" as BRONZE
-  storage "silver/\n(indefinido)\nDelta Lake" as SILVER
-  storage "gold/\n(indefinido)\nDelta Lake" as GOLD
-}
-
-package "Procesamiento" {
-  component "Apache Spark\nEscritura ACID" as SP
-  component "Trino\nLectura SQL" as TR
-}
-
-package "Consumo" {
-  component "Apache Superset" as SS
-  component "Power BI" as PBI
-}
-
-SQL --> AF
-CSV --> AF
-API --> KF
-KF --> AF
-AF --> RAW
-RAW --> SP : lee CSV
-SP --> BRONZE : escribe Delta ACID
-SP --> SILVER : escribe Delta ACID
-SP --> GOLD   : escribe Delta ACID
-BRONZE --> TR : lee SQL
-SILVER --> TR : lee SQL
-GOLD   --> TR : lee SQL
-TR --> SS
-TR --> PBI
-
-note bottom of SP : **Spark escribe.\nTrino lee.**
-@enduml
-```
+![Flujo de datos end-to-end](img/01-flujo-datos.svg)
 
 ---
 
 ## 4. Arquitectura del stack de servicios
 
-```plantuml
-@startuml
-!theme plain
-skinparam backgroundColor #FAFAFA
-skinparam defaultFontName Arial
-skinparam componentStyle rectangle
-
-package "Orquestación" {
-  [Airflow Webserver\n:8090] as AW
-  [Airflow Scheduler] as AS
-  AW - AS
-}
-
-package "Procesamiento" {
-  [Spark Master\n:7077 / :8082] as SM
-  [Spark Worker\n:8083] as SW
-  SM --> SW
-}
-
-package "Streaming" {
-  [Zookeeper] as ZK
-  [Kafka :9092] as KK
-  ZK --> KK
-}
-
-package "Object Storage" {
-  database "MinIO\nraw/ bronze/ silver/ gold/\n:9000 / :9001" as MN
-}
-
-package "Catálogo" {
-  [Hive Metastore\n:9083] as HM
-  database "PostgreSQL\n:5432" as PG
-  HM --> PG
-}
-
-package "Consulta SQL" {
-  [Trino :8081] as TR
-}
-
-package "Visualización" {
-  [Superset :8088] as SU
-  [Redis :6379] as RD
-  SU --> RD
-}
-
-package "Secretos" {
-  [OpenBao :8200] as OB
-}
-
-AS --> SM : spark-submit
-AS --> MN : escribe raw/
-SM --> MN : escribe Delta ACID
-TR --> HM : consulta catálogo
-TR --> MN : lee Delta Lake
-SU --> TR : SQL
-OB --> AS : credenciales
-OB --> SM : credenciales
-@enduml
-```
+![Stack de servicios](img/02-stack-servicios.svg)
 
 ---
 
@@ -228,31 +118,7 @@ El CI/CD opera en dos niveles independientes:
 
 ### Estrategia de branching
 
-```plantuml
-@startuml
-!theme plain
-skinparam backgroundColor #FAFAFA
-skinparam defaultFontName Arial
-
-|feature/*|
-start
-:Desarrollo local;
-:make dev-up;
-:Lint + detect-secrets;
-
-|develop|
-:Merge feature;
-:CI/CD Escenario 1;
-:Deploy K3s staging;
-
-|main|
-:Merge develop;
-:CI/CD Escenario 2/3;
-:Smoke test staging;
-:Deploy K3s producción;
-stop
-@enduml
-```
+![Estrategia de branching](img/05-cicd-ambientes.svg)
 
 | Branch | Ambiente destino | Pipeline mínimo |
 |---|---|---|
@@ -316,39 +182,7 @@ kubectl · helm · k9s · kubectx · Docker Desktop (min 8 GB RAM)
 
 ## 9. Gestión de secretos
 
-```plantuml
-@startuml
-!theme plain
-skinparam backgroundColor #FAFAFA
-skinparam defaultFontName Arial
-
-package "Local" {
-  file ".env file" as ENV
-}
-
-package "Staging — K3s" {
-  component "Sealed Secrets\nApache 2.0" as SS
-}
-
-package "Producción — K3s" {
-  component "OpenBao\nMPL 2.0 / Linux Foundation" as OB
-}
-
-package "Consumidores" {
-  component "Airflow" as AF
-  component "Spark" as SP
-  component "Trino" as TR
-}
-
-ENV --> AF
-ENV --> SP
-SS  --> AF
-SS  --> SP
-OB  --> AF
-OB  --> SP
-OB  --> TR
-@enduml
-```
+![Gestión de secretos](img/04-gestion-secretos.svg)
 
 | Ambiente | Herramienta | Licencia | Notas |
 |---|---|---|---|
@@ -373,35 +207,7 @@ password = secret["data"]["data"]["password"]
 
 ## 10. Capas del Lakehouse
 
-```plantuml
-@startuml
-!theme plain
-skinparam backgroundColor #FAFAFA
-skinparam defaultFontName Arial
-skinparam ArrowColor #555555
-
-rectangle "Fuentes\nSQL Server · APIs · CSV" as SRC #LightBlue
-rectangle "Ingesta\nAirflow · Kafka" as ING #LightYellow
-
-rectangle "raw/\n30 días" as RAW #FFE4B5
-rectangle "bronze/\n90 días · Delta Lake ACID" as BRZ #DEB887
-rectangle "silver/\nindefinido · Delta Lake ACID" as SLV #C0C0C0
-rectangle "gold/\nindefinido · Delta Lake ACID" as GLD #FFD700
-
-rectangle "Trino\nLectura SQL" as TR #LightGreen
-rectangle "Superset · Power BI" as CON #LightCyan
-
-SRC --> ING
-ING --> RAW
-RAW --> BRZ : Spark\nescribe ACID
-BRZ --> SLV : Spark\nescribe ACID
-SLV --> GLD : Spark\nescribe ACID
-BRZ --> TR  : lee
-SLV --> TR  : lee
-GLD --> TR  : lee
-TR  --> CON
-@enduml
-```
+![Capas del Lakehouse](img/03-capas-lakehouse.svg)
 
 ### Retención de datos
 
@@ -440,24 +246,7 @@ Métricas de infraestructura K3s y pipelines Airflow (duración, tasa de fallos)
 
 ## 13. Ambientes y despliegue
 
-```plantuml
-@startuml
-!theme plain
-skinparam backgroundColor #FAFAFA
-skinparam defaultFontName Arial
-
-rectangle "feature/*\nDesarrollo local" as FT #LightBlue
-rectangle "Docker Compose\nmake dev-up" as DC #LightYellow
-rectangle "develop\nIntegración" as DV #LightBlue
-rectangle "K3s\nlakeforge-staging" as ST #LightGreen
-rectangle "main\nProducción" as MN #LightBlue
-rectangle "K3s\nlakeforge-prod" as PR #Gold
-
-FT --> DC : make dev-up
-DV --> ST : CI/CD automático
-MN --> PR : CI/CD + aprobación
-@enduml
-```
+![Ambientes y despliegue](img/05-cicd-ambientes.svg)
 
 ### Servicios disponibles tras `make dev-up`
 
@@ -487,30 +276,7 @@ MN --> PR : CI/CD + aprobación
 
 ### Producción mínima — Cluster K3s 3 nodos
 
-```plantuml
-@startuml
-!theme plain
-skinparam backgroundColor #FAFAFA
-skinparam defaultFontName Arial
-
-node "node-1\n8 cores / 32 GB" {
-  component "Control plane K3s" as CP
-  component "Apache Airflow" as AF
-  component "OpenBao" as OB
-}
-
-node "node-2\n16 cores / 64 GB" {
-  component "Apache Spark" as SP
-  component "Trino" as TR
-}
-
-node "node-3\n8 cores / 32 GB / 4 TB" {
-  component "MinIO" as MN
-  component "Apache Kafka" as KK
-  component "Apache Atlas" as AT
-}
-@enduml
-```
+![Cluster K3s 3 nodos](img/02-stack-servicios.svg)
 
 | Nodo | Rol | CPU | RAM | Datos |
 |---|---|---|---|---|
@@ -546,36 +312,7 @@ HashiCorp cambió Vault a BSL v1.1 en agosto 2023. OpenBao es el fork MPL 2.0 ba
 
 ## 16. Hoja de ruta 2026
 
-```plantuml
-@startuml
-!theme plain
-skinparam backgroundColor #FAFAFA
-skinparam defaultFontName Arial
-
-robust "Fase 1 — PoC" as F1
-robust "Fase 2 — Producción" as F2
-robust "Fase 3 — Madurez" as F3
-robust "Fase 4 — Agentes" as F4
-
-@2026-01
-F1 is Completado
-
-@2026-03
-F1 is Completado
-F2 is EnCurso
-
-@2026-07
-F2 is Completado
-F3 is EnCurso
-
-@2026-10
-F3 is Completado
-F4 is EnCurso
-
-@2026-12
-F4 is EnCurso
-@enduml
-```
+![Hoja de ruta 2026](img/06-hoja-de-ruta.svg)
 
 | Fase | Período | Hito principal |
 |---|---|---|

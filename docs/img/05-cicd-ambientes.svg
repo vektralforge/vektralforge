@@ -1,0 +1,100 @@
+<svg viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="360" fill="#FAFAFA" rx="8"/>
+  <text x="450" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">Lakeforge — Estrategia de Ambientes y CI/CD</text>
+
+  <!-- feature/* -->
+  <rect x="20" y="55" width="200" height="220" rx="8" fill="#F0FDF4" stroke="#22C55E" stroke-width="2"/>
+  <rect x="30" y="60" width="180" height="26" rx="4" fill="#22C55E"/>
+  <text x="120" y="77" text-anchor="middle" font-size="11" font-weight="bold" fill="white">feature/*</text>
+  <text x="120" y="100" text-anchor="middle" font-size="10" fill="#166534">Desarrollo local</text>
+  <rect x="35" y="108" width="170" height="28" rx="4" fill="#BBF7D0" stroke="#4ADE80"/>
+  <text x="120" y="126" text-anchor="middle" font-size="9" fill="#14532D">make dev-up</text>
+  <rect x="35" y="142" width="170" height="22" rx="3" fill="#DCFCE7"/>
+  <text x="120" y="157" text-anchor="middle" font-size="9" fill="#166534">✓ Lint (Ruff + sqlfluff)</text>
+  <rect x="35" y="168" width="170" height="22" rx="3" fill="#DCFCE7"/>
+  <text x="120" y="183" text-anchor="middle" font-size="9" fill="#166534">✓ detect-secrets</text>
+  <rect x="35" y="194" width="170" height="22" rx="3" fill="#DCFCE7"/>
+  <text x="120" y="209" text-anchor="middle" font-size="9" fill="#166534">✓ Sintaxis DAG</text>
+  <rect x="35" y="224" width="170" height="22" rx="3" fill="#DCFCE7"/>
+  <text x="120" y="239" text-anchor="middle" font-size="9" fill="#166534">⏱ &lt; 2 minutos</text>
+  <text x="120" y="262" text-anchor="middle" font-size="9" fill="#166534">Docker Compose local</text>
+  <text x="120" y="276" text-anchor="middle" font-size="9" fill="#166534">Escenario CI/CD: E1</text>
+
+  <!-- Arrow feature → develop -->
+  <line x1="220" y1="165" x2="258" y2="165" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="239" y="158" text-anchor="middle" font-size="8" fill="#555">PR merge</text>
+
+  <!-- develop -->
+  <rect x="260" y="55" width="200" height="220" rx="8" fill="#FEF9C3" stroke="#EAB308" stroke-width="2"/>
+  <rect x="270" y="60" width="180" height="26" rx="4" fill="#EAB308"/>
+  <text x="360" y="77" text-anchor="middle" font-size="11" font-weight="bold" fill="white">develop</text>
+  <text x="360" y="100" text-anchor="middle" font-size="10" fill="#713F12">Integración / Staging</text>
+  <rect x="275" y="108" width="170" height="28" rx="4" fill="#FEF08A" stroke="#FDE047"/>
+  <text x="360" y="126" text-anchor="middle" font-size="9" fill="#713F12">K3s namespace staging</text>
+  <rect x="275" y="142" width="170" height="22" rx="3" fill="#FEF9C3"/>
+  <text x="360" y="157" text-anchor="middle" font-size="9" fill="#92400E">✓ Todo de E1</text>
+  <rect x="275" y="168" width="170" height="22" rx="3" fill="#FEF9C3"/>
+  <text x="360" y="183" text-anchor="middle" font-size="9" fill="#92400E">✓ pytest + cobertura 40%</text>
+  <rect x="275" y="194" width="170" height="22" rx="3" fill="#FEF9C3"/>
+  <text x="360" y="209" text-anchor="middle" font-size="9" fill="#92400E">✓ Great Expectations</text>
+  <rect x="275" y="224" width="170" height="22" rx="3" fill="#FEF9C3"/>
+  <text x="360" y="239" text-anchor="middle" font-size="9" fill="#92400E">✓ Deploy automático K3s</text>
+  <text x="360" y="262" text-anchor="middle" font-size="9" fill="#92400E">⏱ 4-8 minutos</text>
+  <text x="360" y="276" text-anchor="middle" font-size="9" fill="#92400E">Escenario CI/CD: E2</text>
+
+  <!-- Arrow develop → main -->
+  <line x1="460" y1="165" x2="498" y2="165" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="479" y="158" text-anchor="middle" font-size="8" fill="#555">aprobación</text>
+
+  <!-- main -->
+  <rect x="500" y="55" width="200" height="220" rx="8" fill="#FFF1F2" stroke="#F43F5E" stroke-width="2"/>
+  <rect x="510" y="60" width="180" height="26" rx="4" fill="#F43F5E"/>
+  <text x="600" y="77" text-anchor="middle" font-size="11" font-weight="bold" fill="white">main</text>
+  <text x="600" y="100" text-anchor="middle" font-size="10" fill="#881337">Producción</text>
+  <rect x="515" y="108" width="170" height="28" rx="4" fill="#FFE4E6" stroke="#FB7185"/>
+  <text x="600" y="126" text-anchor="middle" font-size="9" fill="#881337">K3s namespace prod</text>
+  <rect x="515" y="142" width="170" height="22" rx="3" fill="#FFF1F2"/>
+  <text x="600" y="157" text-anchor="middle" font-size="9" fill="#9F1239">✓ Todo de E2</text>
+  <rect x="515" y="168" width="170" height="22" rx="3" fill="#FFF1F2"/>
+  <text x="600" y="183" text-anchor="middle" font-size="9" fill="#9F1239">✓ Cobertura 70%</text>
+  <rect x="515" y="194" width="170" height="22" rx="3" fill="#FFF1F2"/>
+  <text x="600" y="209" text-anchor="middle" font-size="9" fill="#9F1239">✓ Tests integración</text>
+  <rect x="515" y="224" width="170" height="22" rx="3" fill="#FFF1F2"/>
+  <text x="600" y="239" text-anchor="middle" font-size="9" fill="#9F1239">✓ Smoke test staging</text>
+  <text x="600" y="262" text-anchor="middle" font-size="9" fill="#9F1239">⏱ 15-25 minutos</text>
+  <text x="600" y="276" text-anchor="middle" font-size="9" fill="#9F1239">Escenario CI/CD: E3</text>
+
+  <!-- Plataformas CI/CD -->
+  <rect x="720" y="55" width="160" height="220" rx="8" fill="#EFF6FF" stroke="#6366F1" stroke-width="1.5"/>
+  <text x="800" y="78" text-anchor="middle" font-size="11" font-weight="bold" fill="#312E81">PLATAFORMAS</text>
+  <text x="800" y="95" text-anchor="middle" font-size="9" fill="#3730A3">CI/CD agnóstico</text>
+  <rect x="735" y="105" width="130" height="25" rx="4" fill="#C7D2FE" stroke="#818CF8"/>
+  <text x="800" y="121" text-anchor="middle" font-size="10" fill="#312E81">Woodpecker CI</text>
+  <rect x="735" y="135" width="130" height="25" rx="4" fill="#C7D2FE" stroke="#818CF8"/>
+  <text x="800" y="151" text-anchor="middle" font-size="10" fill="#312E81">Bitbucket Pipelines</text>
+  <rect x="735" y="165" width="130" height="25" rx="4" fill="#C7D2FE" stroke="#818CF8"/>
+  <text x="800" y="181" text-anchor="middle" font-size="10" fill="#312E81">Azure DevOps</text>
+  <rect x="735" y="195" width="130" height="25" rx="4" fill="#C7D2FE" stroke="#818CF8"/>
+  <text x="800" y="211" text-anchor="middle" font-size="10" fill="#312E81">GitHub Actions</text>
+  <text x="800" y="245" text-anchor="middle" font-size="9" fill="#3730A3">.ci/scripts/ → bash</text>
+  <text x="800" y="260" text-anchor="middle" font-size="9" fill="#3730A3">.ci/pipelines/ → YAML</text>
+  <text x="800" y="275" text-anchor="middle" font-size="9" fill="#3730A3">Nivel 1 + Nivel 2</text>
+
+  <!-- Progresión de escenarios -->
+  <rect x="20" y="295" width="840" height="50" rx="8" fill="#F8FAFC" stroke="#CBD5E1"/>
+  <text x="450" y="314" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E293B">Progresión recomendada de escenarios CI/CD</text>
+  <rect x="35" y="322" width="180" height="16" rx="3" fill="#DCFCE7"/>
+  <text x="125" y="334" text-anchor="middle" font-size="9" fill="#166534">Mes 1-2: Escenario 1 · instalar hábito</text>
+  <rect x="330" y="322" width="240" height="16" rx="3" fill="#FEF9C3"/>
+  <text x="450" y="334" text-anchor="middle" font-size="9" fill="#92400E">Mes 3-4: Escenario 2 · agregar tests al código nuevo</text>
+  <rect x="685" y="322" width="160" height="16" rx="3" fill="#FFE4E6"/>
+  <text x="765" y="334" text-anchor="middle" font-size="9" fill="#9F1239">Mes 6+: Escenario 3 · madurez</text>
+
+  <text x="450" y="352" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — lakeforge v2.0 — 2026</text>
+</svg>
