@@ -44,7 +44,7 @@ services:
       retries: 3
 
   hive-metastore:
-    image: apache/hive:4.0.0
+    build: ./hive
     environment:
       SERVICE_NAME: metastore
       DB_DRIVER: postgres
