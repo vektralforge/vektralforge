@@ -19,149 +19,152 @@ Versión 2.0 — Stack validado y operativo en PoC — 2026
 
 Lakeforge es el mono-repositorio oficial de ALEPH SERVER LTDA. para el stack de datos Lakehouse open source. Centraliza el código de orquestación (Apache Airflow), procesamiento (Apache Spark), consulta (Trino), esquemas (Hive Metastore) e infraestructura (K3s/Helm) bajo un único repositorio Git con pipelines CI/CD agnósticos por dominio.
 
-El diseño incorpora siete gaps identificados durante el análisis de arquitectura: ambientes formalizados, versionado de datos, gestión de secretos empresarial, dependencias Python estandarizadas, observabilidad, retención de datos y onboarding de desarrolladores.
-
 ---
 
 ## 2. Stack técnico completo
 
 | Componente | Versión | Estado | Notas |
 |---|---|---|---|
-| Apache Kafka | 7.6.1 (CP) | `PoC / Dev` | Streaming tiempo real; reemplaza RabbitMQ |
-| Apache Airflow | 2.9.1 | `Producción` | Orquestación ETL batch; DAGs en airflow/dags/ |
-| MinIO | 2024-04 | `PoC / Dev` | Object storage S3-compatible; buckets raw/bronze/silver/gold |
-| Delta Lake | 3.2.0 | `PoC / Dev` | Tablas ACID sobre MinIO; time travel; schema enforcement |
-| Hive Metastore | 4.0.0 | `PoC / Dev` | Catálogo central; migraciones DDL numeradas en hive/schemas/ |
-| Apache Spark | 3.5.3 | `PoC / Dev` | ETL distribuido; jobs en spark/jobs/; motor de escritura ACID |
-| Trino | 448 | `PoC / Dev` | Motor SQL federado; file metastore local; consulta Delta Lake |
-| Apache Atlas | — | `PoC / Dev` | Linaje de datos y catalogación de metadatos |
-| Apache Ranger | — | `Producción` | Control de acceso; políticas por tabla/columna/fila |
-| Great Expectations | — | `PoC / Dev` | Calidad de datos; integrado en pipeline CI/CD Escenario 2+ |
-| Power BI | — | `Producción` | BI empresarial; conectado a Trino vía ODBC |
-| Apache Superset | 3.1.3 | `PoC / Dev` | Exploración Big Data; integrado con Trino |
-| Redis | 7.2 | `PoC / Dev` | Caché de consultas para Superset |
-| OpenBao | 2.0.0 | `Producción` | Fork OSS de Vault; MPL 2.0; Linux Foundation; rotación + auditoría |
-| Sealed Secrets | — | `PoC / Dev` | Secretos cifrados en Git para staging |
-| Graylog | — | `Producción` | Centralización de logs de todo el stack |
-| Prometheus + Grafana | — | `Fase futura` | Métricas de infraestructura y alertas operacionales |
-| Docker Compose | — | `PoC / Dev` | Entorno local; definido en infra/docker-compose/ |
-| K3s / Kubernetes | — | `Producción` | Plataforma de producción; manifiestos en infra/k3s/ |
+| Apache Kafka | 7.6.1 (CP) | `PoC / Dev` | Streaming tiempo real |
+| Apache Airflow | 2.9.1 | `Producción` | Orquestación ETL batch |
+| MinIO | 2024-04 | `PoC / Dev` | Object storage S3-compatible |
+| Delta Lake | 3.2.0 | `PoC / Dev` | Tablas ACID sobre MinIO |
+| Hive Metastore | 4.0.0 | `PoC / Dev` | Catálogo central |
+| Apache Spark | 3.5.3 | `PoC / Dev` | Motor de escritura ACID |
+| Trino | 448 | `PoC / Dev` | Motor SQL federado de lectura |
+| Apache Atlas | — | `PoC / Dev` | Linaje de datos |
+| Apache Ranger | — | `Producción` | Control de acceso |
+| Great Expectations | — | `PoC / Dev` | Calidad de datos |
+| Power BI | — | `Producción` | BI empresarial vía ODBC |
+| Apache Superset | 3.1.3 | `PoC / Dev` | Exploración Big Data |
+| Redis | 7.2 | `PoC / Dev` | Caché Superset |
+| OpenBao | 2.0.0 | `Producción` | Secretos MPL 2.0 / Linux Foundation |
+| Sealed Secrets | — | `PoC / Dev` | Secretos cifrados en Git |
+| Graylog | — | `Producción` | Centralización de logs |
+| Prometheus + Grafana | — | `Fase futura` | Métricas e infraestructura |
+| Docker Compose | — | `PoC / Dev` | Entorno local |
+| K3s / Kubernetes | — | `Producción` | Plataforma de producción |
 
 ---
 
 ## 3. Flujo de datos end-to-end
 
-```mermaid
-flowchart LR
-    subgraph Fuentes["Fuentes de datos"]
-        SQL[(SQL Server)]
-        API[APIs REST]
-        CSV[Archivos CSV]
-    end
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam ArrowColor #555555
+skinparam defaultFontName Arial
 
-    subgraph Ingesta["Ingesta"]
-        AF[Apache Airflow]
-        KF[Apache Kafka]
-    end
+package "Fuentes de datos" {
+  database "SQL Server" as SQL
+  component "APIs REST" as API
+  component "CSV / Excel" as CSV
+}
 
-    subgraph Storage["Object Storage — MinIO"]
-        RAW[raw/\n30 días]
-        BRONZE[bronze/\n90 días]
-        SILVER[silver/\nindefinido]
-        GOLD[gold/\nindefinido]
-    end
+package "Ingesta" {
+  component "Apache Airflow\n(batch)" as AF
+  component "Apache Kafka\n(streaming)" as KF
+}
 
-    subgraph Procesamiento["Procesamiento"]
-        SP[Apache Spark\nEscritura ACID]
-        TR[Trino\nLectura SQL]
-    end
+package "Object Storage — MinIO" {
+  storage "raw/\n(30 días)" as RAW
+  storage "bronze/\n(90 días)\nDelta Lake" as BRONZE
+  storage "silver/\n(indefinido)\nDelta Lake" as SILVER
+  storage "gold/\n(indefinido)\nDelta Lake" as GOLD
+}
 
-    subgraph Consumo["Consumo"]
-        SS[Apache Superset]
-        PBI[Power BI]
-    end
+package "Procesamiento" {
+  component "Apache Spark\nEscritura ACID" as SP
+  component "Trino\nLectura SQL" as TR
+}
 
-    SQL --> AF
-    CSV --> AF
-    API --> KF
-    KF --> AF
-    AF --> RAW
-    RAW -->|Spark ACID| BRONZE
-    BRONZE -->|Spark ACID| SILVER
-    SILVER -->|Spark ACID| GOLD
-    BRONZE --> TR
-    SILVER --> TR
-    GOLD --> TR
-    TR --> SS
-    TR --> PBI
+package "Consumo" {
+  component "Apache Superset" as SS
+  component "Power BI" as PBI
+}
+
+SQL --> AF
+CSV --> AF
+API --> KF
+KF --> AF
+AF --> RAW
+RAW --> SP : lee CSV
+SP --> BRONZE : escribe Delta ACID
+SP --> SILVER : escribe Delta ACID
+SP --> GOLD   : escribe Delta ACID
+BRONZE --> TR : lee SQL
+SILVER --> TR : lee SQL
+GOLD   --> TR : lee SQL
+TR --> SS
+TR --> PBI
+
+note bottom of SP : **Spark escribe.\nTrino lee.**
+@enduml
 ```
-
-> **Regla fundamental: Spark escribe. Trino lee.**
-
-| Operación | Motor |
-|---|---|
-| Escribir en Delta Lake (ACID) | **Spark** |
-| MERGE / UPSERT | **Spark** |
-| Streaming Kafka → Delta | **Spark Structured Streaming** |
-| Consultas SQL ad-hoc | **Trino** |
-| Consultas federadas multi-fuente | **Trino** |
 
 ---
 
 ## 4. Arquitectura del stack de servicios
 
-```mermaid
-graph TB
-    subgraph Orquestacion["Orquestación"]
-        AW[Airflow Webserver :8090]
-        AS[Airflow Scheduler]
-    end
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam componentStyle rectangle
 
-    subgraph Procesamiento["Procesamiento"]
-        SM[Spark Master :7077/:8082]
-        SW[Spark Worker :8083]
-        SM --> SW
-    end
+package "Orquestación" {
+  [Airflow Webserver\n:8090] as AW
+  [Airflow Scheduler] as AS
+  AW - AS
+}
 
-    subgraph Streaming["Streaming"]
-        ZK[Zookeeper]
-        KK[Kafka :9092]
-        ZK --> KK
-    end
+package "Procesamiento" {
+  [Spark Master\n:7077 / :8082] as SM
+  [Spark Worker\n:8083] as SW
+  SM --> SW
+}
 
-    subgraph Lake["Data Lake — MinIO :9001"]
-        MN[(raw / bronze / silver / gold)]
-    end
+package "Streaming" {
+  [Zookeeper] as ZK
+  [Kafka :9092] as KK
+  ZK --> KK
+}
 
-    subgraph Catalogo["Catálogo"]
-        HM[Hive Metastore :9083]
-        PG[(PostgreSQL :5432)]
-        HM --> PG
-    end
+package "Object Storage" {
+  database "MinIO\nraw/ bronze/ silver/ gold/\n:9000 / :9001" as MN
+}
 
-    subgraph Consulta["Consulta SQL"]
-        TN[Trino :8081]
-    end
+package "Catálogo" {
+  [Hive Metastore\n:9083] as HM
+  database "PostgreSQL\n:5432" as PG
+  HM --> PG
+}
 
-    subgraph Visualizacion["Visualización"]
-        SU[Superset :8088]
-        RD[Redis :6379]
-    end
+package "Consulta SQL" {
+  [Trino :8081] as TR
+}
 
-    subgraph Secretos["Secretos"]
-        OB[OpenBao :8200]
-    end
+package "Visualización" {
+  [Superset :8088] as SU
+  [Redis :6379] as RD
+  SU --> RD
+}
 
-    AW --- AS
-    AS -->|spark-submit| SM
-    AS --> MN
-    SM --> MN
-    TN --> HM
-    TN --> MN
-    SU --> RD
-    SU --> TN
-    OB --> AS
-    OB --> SM
+package "Secretos" {
+  [OpenBao :8200] as OB
+}
+
+AS --> SM : spark-submit
+AS --> MN : escribe raw/
+SM --> MN : escribe Delta ACID
+TR --> HM : consulta catálogo
+TR --> MN : lee Delta Lake
+SU --> TR : SQL
+OB --> AS : credenciales
+OB --> SM : credenciales
+@enduml
 ```
 
 ---
@@ -225,22 +228,30 @@ El CI/CD opera en dos niveles independientes:
 
 ### Estrategia de branching
 
-```mermaid
-gitGraph
-    commit id: "init"
-    branch develop
-    checkout develop
-    commit id: "estructura inicial"
-    commit id: "docker-compose operativo"
-    commit id: "pipeline bronze"
-    branch feature/silver-layer
-    checkout feature/silver-layer
-    commit id: "silver DAG"
-    commit id: "silver job Spark"
-    checkout develop
-    merge feature/silver-layer id: "merge silver"
-    checkout main
-    merge develop id: "release v1.0"
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+
+|feature/*|
+start
+:Desarrollo local;
+:make dev-up;
+:Lint + detect-secrets;
+
+|develop|
+:Merge feature;
+:CI/CD Escenario 1;
+:Deploy K3s staging;
+
+|main|
+:Merge develop;
+:CI/CD Escenario 2/3;
+:Smoke test staging;
+:Deploy K3s producción;
+stop
+@enduml
 ```
 
 | Branch | Ambiente destino | Pipeline mínimo |
@@ -263,14 +274,6 @@ gitGraph
 
 ## 7. Escenarios CI/CD
 
-### Progresión recomendada
-
-- **Mes 1-2:** Escenario 1 — instalar el hábito sin fricción
-- **Mes 3-4:** Escenario 2 — agregar tests a medida que se escribe código nuevo
-- **Mes 6+:** Escenario 3 — cuando el stack esté estable en staging
-
-### Matriz de requisitos
-
 | Requisito | E1 Básico | E2 Intermedio | E3 Avanzado |
 |---|---|---|---|
 | Lint (Ruff / sqlfluff) | Bloquea | Bloquea | Bloquea |
@@ -290,66 +293,61 @@ gitGraph
 ## 8. Stack técnico por equipo
 
 ### Desarrollador de DAGs (Airflow)
-
 ```
-Python 3.12 (venv aislado)
-Airflow 2.9.1
-Ruff — linter y formatter
-pytest — tests unitarios
-pre-commit — hooks automáticos
+Python 3.12 · Airflow 2.9.1 · Ruff · pytest · pre-commit
 ```
 
 ### Desarrollador de jobs Spark
-
 ```
-Python 3.12 (venv aislado)
-PySpark 3.5.3 + delta-spark 3.2.0
-chispa — testing PySpark
-pytest + pytest-cov
-Ruff — linter y formatter
+Python 3.12 · PySpark 3.5.3 · delta-spark 3.2.0 · chispa · Ruff
 ```
 
 ### Analista SQL / Trino
-
 ```
-DBeaver o DataGrip (conector Trino nativo)
-trino-cli — cliente CLI oficial
-sqlfluff — linter SQL
+DBeaver / DataGrip · trino-cli · sqlfluff
 ```
 
 ### Ingeniero de infraestructura
-
 ```
-kubectl + helm
-k9s — UI terminal para K8s
-kubectx — cambio rápido entre contextos
-Docker Desktop (mínimo 8 GB RAM)
+kubectl · helm · k9s · kubectx · Docker Desktop (min 8 GB RAM)
 ```
 
 ---
 
 ## 9. Gestión de secretos
 
-```mermaid
-flowchart LR
-    subgraph Local["Local"]
-        ENV[.env file]
-    end
-    subgraph Staging["Staging — K3s"]
-        SS[Sealed Secrets\nApache 2.0]
-    end
-    subgraph Prod["Producción — K3s"]
-        OB[OpenBao\nMPL 2.0]
-    end
-    subgraph Apps["Consumidores"]
-        AF[Airflow]
-        SP[Spark]
-        TR[Trino]
-    end
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
 
-    ENV --> AF & SP
-    SS --> AF & SP
-    OB --> AF & SP & TR
+package "Local" {
+  file ".env file" as ENV
+}
+
+package "Staging — K3s" {
+  component "Sealed Secrets\nApache 2.0" as SS
+}
+
+package "Producción — K3s" {
+  component "OpenBao\nMPL 2.0 / Linux Foundation" as OB
+}
+
+package "Consumidores" {
+  component "Airflow" as AF
+  component "Spark" as SP
+  component "Trino" as TR
+}
+
+ENV --> AF
+ENV --> SP
+SS  --> AF
+SS  --> SP
+OB  --> AF
+OB  --> SP
+OB  --> TR
+@enduml
 ```
 
 | Ambiente | Herramienta | Licencia | Notas |
@@ -357,10 +355,6 @@ flowchart LR
 | Local | `.env` file | — | Nunca commitear |
 | Staging | Sealed Secrets | Apache 2.0 | Cifrado en Git, descifrado por K3s |
 | Producción | **OpenBao** | MPL 2.0 | Fork Vault, Linux Foundation, API compatible |
-
-### Por qué OpenBao y no HashiCorp Vault
-
-HashiCorp cambió Vault a BSL v1.1 en agosto 2023 — ya no es open source. OpenBao es el fork MPL 2.0 bajo Linux Foundation con API 100% compatible. Sin restricciones BSL.
 
 ### Cliente Python (hvac)
 
@@ -379,15 +373,34 @@ password = secret["data"]["data"]["password"]
 
 ## 10. Capas del Lakehouse
 
-```mermaid
-flowchart TD
-    C1[SQL Server] & C2[APIs REST] & C3[CSV/Excel] --> I1[Airflow] & I2[Kafka]
-    I1 & I2 --> R1[raw/\n30 días]
-    R1 -->|Spark ACID| B1[bronze/\n90 días\nDelta Lake]
-    B1 -->|Spark ACID| S1[silver/\nindefinido\nDelta Lake]
-    S1 -->|Spark ACID| G1[gold/\nindefinido\nDelta Lake]
-    B1 & S1 & G1 -->|Trino SQL| CO1[Trino]
-    CO1 --> CO2[Superset] & CO3[Power BI]
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+skinparam ArrowColor #555555
+
+rectangle "Fuentes\nSQL Server · APIs · CSV" as SRC #LightBlue
+rectangle "Ingesta\nAirflow · Kafka" as ING #LightYellow
+
+rectangle "raw/\n30 días" as RAW #FFE4B5
+rectangle "bronze/\n90 días · Delta Lake ACID" as BRZ #DEB887
+rectangle "silver/\nindefinido · Delta Lake ACID" as SLV #C0C0C0
+rectangle "gold/\nindefinido · Delta Lake ACID" as GLD #FFD700
+
+rectangle "Trino\nLectura SQL" as TR #LightGreen
+rectangle "Superset · Power BI" as CON #LightCyan
+
+SRC --> ING
+ING --> RAW
+RAW --> BRZ : Spark\nescribe ACID
+BRZ --> SLV : Spark\nescribe ACID
+SLV --> GLD : Spark\nescribe ACID
+BRZ --> TR  : lee
+SLV --> TR  : lee
+GLD --> TR  : lee
+TR  --> CON
+@enduml
 ```
 
 ### Retención de datos
@@ -405,43 +418,48 @@ flowchart TD
 ## 11. Gobernanza y calidad de datos
 
 ### Apache Atlas — `PoC / Dev`
-- Linaje de datos y catalogación de metadatos
-- Clasificaciones para datos sensibles: PII, financiero, confidencial
+Linaje de datos y catalogación de metadatos. Clasificaciones: PII, financiero, confidencial.
 
 ### Apache Ranger — `Producción`
-- Control de acceso centralizado para Trino, Spark y Hive Metastore
-- Políticas a nivel de base de datos, tabla, columna y fila
-- Auditoría completa. Integración con LDAP / Active Directory
+Control de acceso centralizado para Trino, Spark y Hive Metastore. Políticas a nivel de tabla, columna y fila. Integración con LDAP / Active Directory.
 
 ### Great Expectations — `PoC / Dev`
-- Validación de calidad en el pipeline CI/CD desde Escenario 2
-- Valida schema, nulos, rangos y unicidad antes de capas silver/gold
+Validación de schema, nulos, rangos y unicidad antes de capas silver/gold. Integrado en CI/CD Escenario 2.
 
 ---
 
 ## 12. Observabilidad
 
 ### Graylog — `Producción` (activo)
-- Centralización de logs via GELF/Syslog
-- Dashboards por componente: Airflow, Spark, Trino, Kafka
-- Alertas por patrones de error
+Centralización de logs via GELF/Syslog. Dashboards por componente. Alertas por patrones de error.
 
 ### Prometheus + Grafana — `Fase futura`
-- Métricas de infraestructura K3s
-- Métricas de pipelines Airflow (duración, tasa de fallos)
+Métricas de infraestructura K3s y pipelines Airflow (duración, tasa de fallos).
 
 ---
 
 ## 13. Ambientes y despliegue
 
-```mermaid
-flowchart LR
-    FT[feature/*] -->|make dev-up| DC[Docker Compose\nLocal]
-    DV[develop] -->|CI/CD automático| NS[K3s\nlakeforge-staging]
-    MN[main] -->|CI/CD + aprobación| NP[K3s\nlakeforge-prod]
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+
+rectangle "feature/*\nDesarrollo local" as FT #LightBlue
+rectangle "Docker Compose\nmake dev-up" as DC #LightYellow
+rectangle "develop\nIntegración" as DV #LightBlue
+rectangle "K3s\nlakeforge-staging" as ST #LightGreen
+rectangle "main\nProducción" as MN #LightBlue
+rectangle "K3s\nlakeforge-prod" as PR #Gold
+
+FT --> DC : make dev-up
+DV --> ST : CI/CD automático
+MN --> PR : CI/CD + aprobación
+@enduml
 ```
 
-### Servicios disponibles tras make dev-up
+### Servicios disponibles tras `make dev-up`
 
 | Servicio | URL | Credenciales |
 |---|---|---|
@@ -469,25 +487,29 @@ flowchart LR
 
 ### Producción mínima — Cluster K3s 3 nodos
 
-```mermaid
-graph LR
-    subgraph N1["node-1 · 8c / 32 GB"]
-        CP[Control plane]
-        AF2[Airflow]
-        OB2[OpenBao]
-    end
-    subgraph N2["node-2 · 16c / 64 GB"]
-        SP2[Spark]
-        TR2[Trino]
-    end
-    subgraph N3["node-3 · 8c / 32 GB / 4 TB"]
-        MN2[MinIO]
-        KK2[Kafka]
-        AT[Atlas]
-    end
-    N1 <--> N2
-    N2 <--> N3
-    N1 <--> N3
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+
+node "node-1\n8 cores / 32 GB" {
+  component "Control plane K3s" as CP
+  component "Apache Airflow" as AF
+  component "OpenBao" as OB
+}
+
+node "node-2\n16 cores / 64 GB" {
+  component "Apache Spark" as SP
+  component "Trino" as TR
+}
+
+node "node-3\n8 cores / 32 GB / 4 TB" {
+  component "MinIO" as MN
+  component "Apache Kafka" as KK
+  component "Apache Atlas" as AT
+}
+@enduml
 ```
 
 | Nodo | Rol | CPU | RAM | Datos |
@@ -503,7 +525,7 @@ graph LR
 
 ### 15.1 HashiCorp Vault → OpenBao
 
-En agosto 2023, HashiCorp cambió Vault a BSL v1.1 (source-available, no open source). OpenBao es el reemplazo con licencia MPL 2.0 bajo Linux Foundation y API 100% compatible.
+HashiCorp cambió Vault a BSL v1.1 en agosto 2023. OpenBao es el fork MPL 2.0 bajo Linux Foundation con API 100% compatible.
 
 | Aspecto | HashiCorp Vault | OpenBao |
 |---|---|---|
@@ -522,33 +544,38 @@ En agosto 2023, HashiCorp cambió Vault a BSL v1.1 (source-available, no open so
 
 ---
 
-## 16. Hoja de ruta
+## 16. Hoja de ruta 2026
 
-```mermaid
-gantt
-    title Hoja de ruta lakeforge 2026
-    dateFormat  YYYY-MM
-    section Fase 1 - PoC
-    Mono-repo y Docker stack     :done, 2026-01, 1M
-    Pipeline raw a bronze        :done, 2026-01, 1M
-    CI/CD Escenario 1            :done, 2026-02, 1M
-    Superset y Trino conectados  :done, 2026-02, 1M
-    section Fase 2 - Produccion
-    Migrar a K3s staging         :2026-03, 2M
-    Kafka tiempo real            :2026-03, 2M
-    CI/CD Escenario 2            :2026-04, 2M
-    OpenBao en K3s               :2026-04, 1M
-    SQL Server real              :2026-05, 1M
-    section Fase 3 - Madurez
-    CI/CD Escenario 3            :2026-07, 2M
-    Prometheus y Grafana         :2026-07, 2M
-    Atlas catalogacion completa  :2026-08, 2M
-    section Fase 4 - Agentes
-    NL2SQL sobre Trino           :2026-10, 3M
-    Automatizacion LLM VEKTRAL   :2026-11, 3M
+```plantuml
+@startuml
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam defaultFontName Arial
+
+robust "Fase 1 — PoC" as F1
+robust "Fase 2 — Producción" as F2
+robust "Fase 3 — Madurez" as F3
+robust "Fase 4 — Agentes" as F4
+
+@2026-01
+F1 is Completado
+
+@2026-03
+F1 is Completado
+F2 is EnCurso
+
+@2026-07
+F2 is Completado
+F3 is EnCurso
+
+@2026-10
+F3 is Completado
+F4 is EnCurso
+
+@2026-12
+F4 is EnCurso
+@enduml
 ```
-
-### Resumen de fases
 
 | Fase | Período | Hito principal |
 |---|---|---|
