@@ -43,7 +43,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
-      retries: 3
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   hive-metastore:
     build: ./hive
