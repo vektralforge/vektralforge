@@ -38,8 +38,12 @@ lakeforge/
 ├── .ci/
 │   ├── scripts/        # Lógica CI/CD portable (bash)
 │   └── pipelines/      # Adaptadores YAML por plataforma CI/CD
-└── docs/               # Documentación técnica
-    └── arquitectura.md # Arquitectura completa del stack
+├── docs/
+│   ├── arquitectura.md # Arquitectura completa del stack
+│   └── img/            # Diagramas SVG del stack
+├── .env.example        # Variables de entorno requeridas (sin valores reales)
+├── Makefile            # Interfaz unificada de comandos
+└── README.md
 ```
 
 ---
@@ -73,19 +77,37 @@ make --version
 ```bash
 git clone https://bitbucket.org/alephserver/lakeforge.git
 cd lakeforge
+```
+
+### 3. Configurar variables de entorno
+
+```bash
+# Copiar el archivo de ejemplo y completar los valores reales
+cp .env.example infra/docker-compose/.env
+
+# Editar con tus valores (SQL Server, credenciales reales, etc.)
+nano infra/docker-compose/.env
+```
+
+> `.env.example` documenta todas las variables requeridas con valores placeholder.
+> El archivo `.env` real está en `.gitignore` y nunca se versiona.
+
+### 4. Setup del entorno Python
+
+```bash
 make setup
 ```
 
 `make setup` crea automáticamente un virtualenv en `.venv/` con Python 3.12
 e instala todas las dependencias del proyecto.
 
-### 3. Activar el entorno (cada sesión nueva)
+### 5. Activar el entorno (cada sesión nueva)
 
 ```bash
 source .venv/bin/activate
 ```
 
-### 4. Levantar stack local
+### 6. Levantar stack local
 
 ```bash
 make dev-up
@@ -100,7 +122,7 @@ make dev-up
 | OpenBao UI | http://localhost:8200 | root token: dev-root-token |
 | Spark Master | http://localhost:8082 | — |
 
-### 5. Detener
+### 7. Detener
 
 ```bash
 make dev-down
@@ -123,66 +145,83 @@ make test-spark      # Tests Spark (pytest + chispa)
 make lint-sql        # Lint SQL Trino (sqlfluff)
 make lint-all        # Lint completo
 make test-all        # Tests completos
-make detect-secrets  # Escaneo de secretos
+make detect-secrets  # Escaneo de credenciales y secretos
 make deploy-staging  # Deploy K3s staging
 make deploy-prod     # Deploy K3s producción (requiere confirmación)
 ```
 
 ---
 
-## Pipeline de prueba
+## Pipeline de prueba incluido
 
 El repositorio incluye un pipeline de ejemplo que valida el stack completo:
 
 ```bash
-# Desde la UI de Airflow (http://localhost:8090)
-# DAG: bronze_clientes_ejemplo → Trigger DAG ▶
-
-# O desde terminal:
+# Disparar desde terminal
 docker exec docker-compose-airflow-scheduler-1 \
   airflow dags trigger bronze_clientes_ejemplo
+
+# O desde la UI de Airflow → DAG: bronze_clientes_ejemplo → ▶ Trigger
 ```
 
-**Flujo:**
+**Flujo validado:**
 ```
-Airflow DAG
-    ↓ genera CSV sintético
-MinIO raw/clientes/
-    ↓ Spark lee CSV y escribe Delta Lake ACID
-MinIO bronze/clientes/
-    ↓ Trino consulta SQL
-Superset visualiza
+Airflow DAG → MinIO raw/ → Spark (Delta ACID) → Trino SQL → Superset ✓
 ```
 
 ---
 
-## Gestión de secretos
+## Gestión de credenciales y secretos
 
-| Ambiente | Herramienta | Licencia |
-|---|---|---|
-| Local | .env file | — |
-| Staging | Sealed Secrets | Apache 2.0 |
-| Producción | **OpenBao** | MPL 2.0 |
+| Ambiente | Herramienta | Licencia | Notas |
+|---|---|---|---|
+| Local | `.env` file | — | Basado en `.env.example`, nunca commitear |
+| Staging | Sealed Secrets | Apache 2.0 | Cifrado en Git, descifrado por K3s |
+| Producción | **OpenBao** | MPL 2.0 | Fork Vault, Linux Foundation, rotación automática |
 
-OpenBao es un fork open source de HashiCorp Vault bajo la Linux Foundation.
-API 100% compatible con Vault. Sin restricciones de licencia BSL.
+OpenBao gestiona contraseñas, tokens API, certificados y claves de cifrado.
+Es un fork open source de HashiCorp Vault bajo la Linux Foundation (MPL 2.0).
+API 100% compatible con Vault. Cliente Python: `hvac`.
+
+```python
+import hvac, os
+client = hvac.Client(url=os.getenv("OPENBAO_ADDR"), token=os.getenv("OPENBAO_TOKEN"))
+secret = client.secrets.kv.v2.read_secret_version(path="sqlserver/credentials")
+password = secret["data"]["data"]["password"]
+```
+
+---
+
+## Diagramas de arquitectura
+
+Los diagramas SVG están en `docs/img/` y se referencian desde `docs/arquitectura.md`:
+
+| Diagrama | Archivo |
+|---|---|
+| Flujo de datos end-to-end | `docs/img/01-flujo-datos.svg` |
+| Stack de servicios Docker/K3s | `docs/img/02-stack-servicios.svg` |
+| Capas del Lakehouse | `docs/img/03-capas-lakehouse.svg` |
+| Gestión de credenciales y secretos | `docs/img/04-gestion-secretos.svg` |
+| CI/CD y ambientes | `docs/img/05-cicd-ambientes.svg` |
+| Hoja de ruta 2026 | `docs/img/06-hoja-de-ruta.svg` |
 
 ---
 
 ## Notas de compatibilidad
 
-- **Python 3.14 no soportado**: pandas y Airflow aún no tienen wheels para 3.14. Usar siempre Python 3.12.
-- **delta-spark 3.2.0**: versión compatible con Spark 3.5.x. delta-spark 4.0.0 requiere Spark 4.x.
-- **apache-airflow-providers-amazon excluido**: arrastra `sqlalchemy-redshift` incompatible con SQLAlchemy 2.x. MinIO se conecta vía `boto3` directamente.
-- **Trino usa file metastore**: elimina dependencia de Hive Metastore para mayor estabilidad en PoC local.
+- **Python 3.14 no soportado**: usar siempre Python 3.12.
+- **delta-spark 3.2.0**: compatible con Spark 3.5.x. delta-spark 4.0.0 requiere Spark 4.x.
+- **apache-airflow-providers-amazon excluido**: conflicto con SQLAlchemy 2.x. MinIO usa `boto3` directo.
+- **Trino usa file metastore**: elimina dependencia de Hive Metastore para mayor estabilidad en PoC.
 - **Docker Desktop**: asignar mínimo 8 GB RAM para evitar OOM kills con el stack completo.
 
 ---
 
 ## Documentación
 
-- [docs/arquitectura.md](docs/arquitectura.md) — Arquitectura completa: stack, flujo de datos, GitOps, CI/CD, secretos, gobernanza, hardware y hoja de ruta.
+- [docs/arquitectura.md](docs/arquitectura.md) — Arquitectura completa: stack, flujo de datos,
+  GitOps, CI/CD, credenciales, gobernanza, hardware y hoja de ruta 2026.
 
 ---
 
-ALEPH SERVER LTDA. — Documento técnico confidencial
+ALEPH SERVER LTDA. — Documento técnico confidencial — 2026
