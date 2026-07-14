@@ -1,304 +1,426 @@
 """
 setup_superset_dashboard.py
-Crea automáticamente en Superset:
-  - 6 charts de línea (uno por indicador)
-  - 1 chart comparativo UF vs Dólar vs Euro
-  - 1 dashboard "Indicadores Financieros Chile"
+Configura completamente en Superset via API REST:
+  - Conexión Trino
+  - Datasets de indicadores
+  - Charts individuales y comparativos
+  - Dashboard Indicadores Financieros Chile
 
 Ejecutar dentro del contenedor Superset:
-  docker exec docker-compose-superset-1 python3 /tmp/setup_superset_dashboard.py
+  docker exec docker-compose-superset-1 bash -c "cd /app && python3 -c \"import sys; sys.path.insert(0, '/app'); from superset.app import create_app; app = create_app(); app.app_context().push(); exec(open('/tmp/setup_superset_dashboard.py').read())\"""
 """
 
-from superset import create_app
-from superset.extensions import db
+import json
+
+from superset import db
 from superset.models.core import Database
 from superset.connectors.sqla.models import SqlaTable
 from superset.models.slice import Slice
 from superset.models.dashboard import Dashboard
-import json
 
-app = create_app()
-
-with app.app_context():
-    # ── 1. Obtener conexión Trino ─────────────────────────────────────────────
-    trino_db = db.session.query(Database).filter_by(database_name="Trino").first()
-    if not trino_db:
-        print("✗ No se encontró la conexión Trino. Créala primero desde la UI.")
-        exit(1)
+# ── 1. Conexión Trino ─────────────────────────────────────────────────────────
+trino_db = db.session.query(Database).filter_by(database_name="Trino").first()
+if not trino_db:
+    trino_db = Database(
+        database_name="Trino",
+        sqlalchemy_uri="trino://trino@trino:8080/delta",
+    )
+    db.session.add(trino_db)
+    db.session.flush()
+    print("✓ Conexión Trino creada")
+else:
     print(f"✓ Conexión Trino encontrada (id={trino_db.id})")
 
-    # ── 2. Registrar datasets ─────────────────────────────────────────────────
-    indicadores = {
-        "indicadores_uf": {"nombre": "UF", "color": "#1f77b4", "unidad": "CLP"},
-        "indicadores_dolar": {"nombre": "Dólar", "color": "#ff7f0e", "unidad": "CLP"},
-        "indicadores_euro": {"nombre": "Euro", "color": "#2ca02c", "unidad": "CLP"},
-        "indicadores_utm": {"nombre": "UTM", "color": "#d62728", "unidad": "CLP"},
-        "indicadores_tpm": {"nombre": "TPM", "color": "#9467bd", "unidad": "%"},
-    }
+# ── 2. Datasets ───────────────────────────────────────────────────────────────
+tablas_config = {
+    "indicadores_uf": {"label": "UF", "unidad": "CLP"},
+    "indicadores_dolar": {"label": "Dólar", "unidad": "CLP"},
+    "indicadores_euro": {"label": "Euro", "unidad": "CLP"},
+    "indicadores_utm": {"label": "UTM", "unidad": "CLP"},
+    "indicadores_tpm": {"label": "TPM", "unidad": "%"},
+    "indicadores_todos": {"label": "Todos", "unidad": "varios"},
+}
 
-    datasets = {}
-    for tabla_nombre, meta in indicadores.items():
-        tbl = (
-            db.session.query(SqlaTable)
-            .filter_by(table_name=tabla_nombre, database_id=trino_db.id)
-            .first()
-        )
-
-        if not tbl:
-            tbl = SqlaTable(
-                table_name=tabla_nombre,
-                schema="bronze",
-                database_id=trino_db.id,
-            )
-            db.session.add(tbl)
-            db.session.flush()
-            print(f"  ✓ Dataset creado: {tabla_nombre}")
-        else:
-            print(f"  (ya existe) {tabla_nombre}")
-
-        datasets[tabla_nombre] = tbl
-
-    db.session.commit()
-
-    # ── 3. Crear charts individuales por indicador ────────────────────────────
-    charts = []
-
-    for tabla_nombre, meta in indicadores.items():
-        tbl = datasets[tabla_nombre]
-
-        # Configuración del chart Line Chart
-        params = {
-            "viz_type": "echarts_timeseries_line",
-            "x_axis": "fecha",
-            "metrics": [
-                {
-                    "expressionType": "SIMPLE",
-                    "column": {"column_name": "valor"},
-                    "aggregate": "MAX",
-                    "label": f"Valor {meta['nombre']}",
-                }
-            ],
-            "groupby": [],
-            "time_grain_sqla": "P1D",
-            "row_limit": 10000,
-            "x_axis_title": "Fecha",
-            "y_axis_title": f"Valor ({meta['unidad']})",
-            "rich_tooltip": True,
-            "show_legend": True,
-            "zoomable": True,
-            "color_scheme": "supersetColors",
-        }
-
-        chart_name = f"Indicador {meta['nombre']} — Serie Histórica"
-        chart = db.session.query(Slice).filter_by(slice_name=chart_name).first()
-
-        if not chart:
-            chart = Slice(
-                slice_name=chart_name,
-                viz_type="echarts_timeseries_line",
-                datasource_type="table",
-                datasource_id=tbl.id,
-                params=json.dumps(params),
-                description=f"Evolución histórica del {meta['nombre']} en Chile. Fuente: mindicador.cl",
-            )
-            db.session.add(chart)
-            print(f"  ✓ Chart creado: {chart_name}")
-        else:
-            chart.params = json.dumps(params)
-            print(f"  (actualizado) {chart_name}")
-
-        charts.append(chart)
-
-    db.session.commit()
-
-    # ── 4. Chart comparativo UF vs Dólar vs Euro ──────────────────────────────
-    # Usar la vista indicadores_todos si existe, sino usar indicadores_uf
-    vista_nombre = "indicadores_todos"
-    vista = (
+datasets = {}
+for nombre, meta in tablas_config.items():
+    tbl = (
         db.session.query(SqlaTable)
-        .filter_by(table_name=vista_nombre, database_id=trino_db.id)
+        .filter_by(
+            table_name=nombre,
+            database_id=trino_db.id,
+        )
         .first()
     )
-
-    if not vista:
-        vista = SqlaTable(
-            table_name=vista_nombre,
+    if not tbl:
+        tbl = SqlaTable(
+            table_name=nombre,
             schema="bronze",
             database_id=trino_db.id,
         )
-        db.session.add(vista)
+        db.session.add(tbl)
         db.session.flush()
-        print(f"  ✓ Vista comparativa creada: {vista_nombre}")
+        print(f"  ✓ Dataset creado: {nombre}")
+    else:
+        print(f"  (ya existe) {nombre}")
+    datasets[nombre] = tbl
 
-    params_comparativo = {
+db.session.commit()
+
+
+# ── 3. Helper upsert chart ────────────────────────────────────────────────────
+def upsert_chart(name, viz_type, dataset_id, params):
+    chart = db.session.query(Slice).filter_by(slice_name=name).first()
+    params_json = json.dumps(params)
+    if not chart:
+        chart = Slice(
+            slice_name=name,
+            viz_type=viz_type,
+            datasource_type="table",
+            datasource_id=dataset_id,
+            params=params_json,
+        )
+        db.session.add(chart)
+        print(f"  ✓ Chart creado: {name}")
+    else:
+        chart.params = params_json
+        chart.datasource_id = dataset_id
+        print(f"  (actualizado) {name}")
+    db.session.flush()
+    return chart
+
+
+# ── 4. Charts individuales por indicador ──────────────────────────────────────
+charts_individuales = []
+
+for nombre_tabla, meta in tablas_config.items():
+    if nombre_tabla == "indicadores_todos":
+        continue
+
+    label = meta["label"]
+    unidad = meta["unidad"]
+
+    params = {
         "viz_type": "echarts_timeseries_line",
         "x_axis": "fecha",
         "metrics": [
             {
                 "expressionType": "SIMPLE",
-                "column": {"column_name": "valor"},
+                "column": {"column_name": "valor", "type": "DOUBLE"},
                 "aggregate": "MAX",
-                "label": "Valor",
+                "label": f"Valor {label}",
+                "optionName": f"metric_{label}",
             }
         ],
-        "groupby": ["indicador"],
+        "groupby": [],
         "time_grain_sqla": "P1D",
-        "row_limit": 50000,
+        "row_limit": 10000,
         "x_axis_title": "Fecha",
-        "y_axis_title": "Valor (CLP)",
+        "y_axis_title": f"Valor ({unidad})",
         "rich_tooltip": True,
         "show_legend": True,
         "zoomable": True,
-        "filters": [
-            {
-                "col": "indicador",
-                "op": "IN",
-                "val": ["UF", "DOLAR", "EURO"],
-            }
-        ],
+        "seriesType": "line",
+        "color_scheme": "supersetColors",
     }
 
-    chart_comp_name = "UF vs Dólar vs Euro — Comparativo"
-    chart_comp = db.session.query(Slice).filter_by(slice_name=chart_comp_name).first()
-    if not chart_comp:
-        chart_comp = Slice(
-            slice_name=chart_comp_name,
-            viz_type="echarts_timeseries_line",
-            datasource_type="table",
-            datasource_id=vista.id,
-            params=json.dumps(params_comparativo),
-            description="Comparación UF, Dólar y Euro en el tiempo. Fuente: mindicador.cl",
-        )
-        db.session.add(chart_comp)
-        print("  ✓ Chart comparativo creado")
-    else:
-        chart_comp.params = json.dumps(params_comparativo)
-        print("  (actualizado) Chart comparativo")
+    chart = upsert_chart(
+        name=f"{label} — Serie Histórica 2026",
+        viz_type="echarts_timeseries_line",
+        dataset_id=datasets[nombre_tabla].id,
+        params=params,
+    )
+    charts_individuales.append(chart)
 
-    charts.append(chart_comp)
-    db.session.commit()
+db.session.commit()
 
-    # ── 5. Crear dashboard ────────────────────────────────────────────────────
-    dashboard_title = "Indicadores Financieros Chile"
-    dashboard = (
-        db.session.query(Dashboard).filter_by(dashboard_title=dashboard_title).first()
+# ── 5. Chart comparativo ──────────────────────────────────────────────────────
+params_comp = {
+    "viz_type": "echarts_timeseries_line",
+    "x_axis": "fecha",
+    "metrics": [
+        {
+            "expressionType": "SIMPLE",
+            "column": {"column_name": "valor", "type": "DOUBLE"},
+            "aggregate": "MAX",
+            "label": "Valor",
+            "optionName": "metric_valor",
+        }
+    ],
+    "groupby": ["indicador"],
+    "adhoc_filters": [
+        {
+            "clause": "WHERE",
+            "comparator": ["UF", "DOLAR", "EURO"],
+            "expressionType": "SIMPLE",
+            "filterOptionName": "filter_indicador",
+            "operator": "IN",
+            "subject": "indicador",
+        }
+    ],
+    "time_grain_sqla": "P1D",
+    "row_limit": 50000,
+    "x_axis_title": "Fecha",
+    "y_axis_title": "Valor (CLP)",
+    "rich_tooltip": True,
+    "show_legend": True,
+    "zoomable": True,
+    "seriesType": "line",
+    "color_scheme": "supersetColors",
+}
+
+chart_comp = upsert_chart(
+    name="UF vs Dólar vs Euro — Comparativo 2026",
+    viz_type="echarts_timeseries_line",
+    dataset_id=datasets["indicadores_todos"].id,
+    params=params_comp,
+)
+
+# ── 6. Chart tabla último valor ───────────────────────────────────────────────
+params_tabla = {
+    "viz_type": "table",
+    "metrics": [
+        {
+            "expressionType": "SIMPLE",
+            "column": {"column_name": "valor", "type": "DOUBLE"},
+            "aggregate": "MAX",
+            "label": "Último valor",
+            "optionName": "metric_ultimo",
+        }
+    ],
+    "groupby": ["indicador", "nombre"],
+    "order_desc": True,
+    "row_limit": 10,
+    "page_length": 10,
+    "color_pn": True,
+}
+
+chart_tabla = upsert_chart(
+    name="Último Valor por Indicador",
+    viz_type="table",
+    dataset_id=datasets["indicadores_todos"].id,
+    params=params_tabla,
+)
+
+
+# ── 7. Big numbers ────────────────────────────────────────────────────────────
+def big_number(label, indicador_val):
+    return upsert_chart(
+        name=f"{label} — Valor Actual",
+        viz_type="big_number_total",
+        dataset_id=datasets["indicadores_todos"].id,
+        params={
+            "viz_type": "big_number_total",
+            "metric": {
+                "expressionType": "SIMPLE",
+                "column": {"column_name": "valor", "type": "DOUBLE"},
+                "aggregate": "MAX",
+                "label": f"{label} hoy",
+                "optionName": f"metric_{label}",
+            },
+            "subheader": f"Valor {label} más reciente",
+            "y_axis_format": ",.2f",
+            "adhoc_filters": [
+                {
+                    "clause": "WHERE",
+                    "comparator": indicador_val,
+                    "expressionType": "SIMPLE",
+                    "filterOptionName": f"filter_{label}",
+                    "operator": "==",
+                    "subject": "indicador",
+                }
+            ],
+        },
     )
 
-    # Layout del dashboard — 2 columnas
-    position_data = {
-        "DASHBOARD_VERSION_KEY": "v2",
-        "ROOT_ID": {"children": ["GRID_ID"], "id": "ROOT_ID", "type": "ROOT"},
-        "GRID_ID": {
-            "children": ["ROW_1", "ROW_2", "ROW_3"],
-            "id": "GRID_ID",
-            "type": "GRID",
-        },
-        "ROW_1": {
-            "children": ["CHART_COMP"],
-            "id": "ROW_1",
-            "meta": {"background": "BACKGROUND_TRANSPARENT"},
-            "type": "ROW",
-        },
-        "CHART_COMP": {
-            "children": [],
-            "id": "CHART_COMP",
-            "meta": {
-                "chartId": chart_comp.id if chart_comp.id else 0,
-                "height": 50,
-                "sliceName": chart_comp_name,
-                "width": 12,
-            },
-            "type": "CHART",
-        },
-        "ROW_2": {
-            "children": ["CHART_UF", "CHART_DOLAR", "CHART_EURO"],
-            "id": "ROW_2",
-            "meta": {"background": "BACKGROUND_TRANSPARENT"},
-            "type": "ROW",
-        },
-        "CHART_UF": {
-            "children": [],
-            "id": "CHART_UF",
-            "meta": {
-                "chartId": charts[0].id if charts[0].id else 0,
-                "height": 40,
-                "sliceName": charts[0].slice_name,
-                "width": 4,
-            },
-            "type": "CHART",
-        },
-        "CHART_DOLAR": {
-            "children": [],
-            "id": "CHART_DOLAR",
-            "meta": {
-                "chartId": charts[1].id if charts[1].id else 0,
-                "height": 40,
-                "sliceName": charts[1].slice_name,
-                "width": 4,
-            },
-            "type": "CHART",
-        },
-        "CHART_EURO": {
-            "children": [],
-            "id": "CHART_EURO",
-            "meta": {
-                "chartId": charts[2].id if charts[2].id else 0,
-                "height": 40,
-                "sliceName": charts[2].slice_name,
-                "width": 4,
-            },
-            "type": "CHART",
-        },
-        "ROW_3": {
-            "children": ["CHART_UTM", "CHART_TPM"],
-            "id": "ROW_3",
-            "meta": {"background": "BACKGROUND_TRANSPARENT"},
-            "type": "ROW",
-        },
-        "CHART_UTM": {
-            "children": [],
-            "id": "CHART_UTM",
-            "meta": {
-                "chartId": charts[3].id if charts[3].id else 0,
-                "height": 40,
-                "sliceName": charts[3].slice_name,
-                "width": 6,
-            },
-            "type": "CHART",
-        },
-        "CHART_TPM": {
-            "children": [],
-            "id": "CHART_TPM",
-            "meta": {
-                "chartId": charts[4].id if charts[4].id else 0,
-                "height": 40,
-                "sliceName": charts[4].slice_name,
-                "width": 6,
-            },
-            "type": "CHART",
-        },
-    }
 
-    if not dashboard:
-        dashboard = Dashboard(
-            dashboard_title=dashboard_title,
-            slug="indicadores-financieros-chile",
-            position_json=json.dumps(position_data),
-            published=True,
-        )
-        dashboard.slices = charts
-        db.session.add(dashboard)
-        print(f"\n  ✓ Dashboard creado: {dashboard_title}")
-    else:
-        dashboard.position_json = json.dumps(position_data)
-        dashboard.slices = charts
-        print(f"\n  (actualizado) Dashboard: {dashboard_title}")
+chart_uf_num = big_number("UF", "UF")
+chart_dolar_num = big_number("Dólar", "DOLAR")
+chart_euro_num = big_number("Euro", "EURO")
+db.session.commit()
 
-    db.session.commit()
+# ── 8. Dashboard ──────────────────────────────────────────────────────────────
+todos_charts = [
+    chart_uf_num,
+    chart_dolar_num,
+    chart_euro_num,
+    chart_comp,
+    chart_tabla,
+] + charts_individuales
 
-    print("\n" + "=" * 60)
-    print("✓ Dashboard configurado exitosamente")
-    print(
-        "  URL: http://localhost:8088/superset/dashboard/indicadores-financieros-chile/"
+
+def cid(c):
+    return c.id or 0
+
+
+position_json = {
+    "DASHBOARD_VERSION_KEY": "v2",
+    "ROOT_ID": {"children": ["GRID_ID"], "id": "ROOT_ID", "type": "ROOT"},
+    "GRID_ID": {
+        "children": ["ROW_KPI", "ROW_COMP", "ROW_SERIES1", "ROW_SERIES2"],
+        "id": "GRID_ID",
+        "type": "GRID",
+    },
+    "ROW_KPI": {
+        "children": ["C_UF_NUM", "C_DOLAR_NUM", "C_EURO_NUM", "C_TABLA"],
+        "id": "ROW_KPI",
+        "meta": {"background": "BACKGROUND_TRANSPARENT"},
+        "type": "ROW",
+    },
+    "C_UF_NUM": {
+        "children": [],
+        "id": "C_UF_NUM",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(chart_uf_num),
+            "height": 20,
+            "sliceName": chart_uf_num.slice_name,
+            "width": 3,
+        },
+    },
+    "C_DOLAR_NUM": {
+        "children": [],
+        "id": "C_DOLAR_NUM",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(chart_dolar_num),
+            "height": 20,
+            "sliceName": chart_dolar_num.slice_name,
+            "width": 3,
+        },
+    },
+    "C_EURO_NUM": {
+        "children": [],
+        "id": "C_EURO_NUM",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(chart_euro_num),
+            "height": 20,
+            "sliceName": chart_euro_num.slice_name,
+            "width": 3,
+        },
+    },
+    "C_TABLA": {
+        "children": [],
+        "id": "C_TABLA",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(chart_tabla),
+            "height": 20,
+            "sliceName": chart_tabla.slice_name,
+            "width": 3,
+        },
+    },
+    "ROW_COMP": {
+        "children": ["C_COMP"],
+        "id": "ROW_COMP",
+        "meta": {"background": "BACKGROUND_TRANSPARENT"},
+        "type": "ROW",
+    },
+    "C_COMP": {
+        "children": [],
+        "id": "C_COMP",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(chart_comp),
+            "height": 40,
+            "sliceName": chart_comp.slice_name,
+            "width": 12,
+        },
+    },
+    "ROW_SERIES1": {
+        "children": ["C_UF", "C_DOLAR", "C_EURO"],
+        "id": "ROW_SERIES1",
+        "meta": {"background": "BACKGROUND_TRANSPARENT"},
+        "type": "ROW",
+    },
+    "C_UF": {
+        "children": [],
+        "id": "C_UF",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(charts_individuales[0]),
+            "height": 36,
+            "sliceName": charts_individuales[0].slice_name,
+            "width": 4,
+        },
+    },
+    "C_DOLAR": {
+        "children": [],
+        "id": "C_DOLAR",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(charts_individuales[1]),
+            "height": 36,
+            "sliceName": charts_individuales[1].slice_name,
+            "width": 4,
+        },
+    },
+    "C_EURO": {
+        "children": [],
+        "id": "C_EURO",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(charts_individuales[2]),
+            "height": 36,
+            "sliceName": charts_individuales[2].slice_name,
+            "width": 4,
+        },
+    },
+    "ROW_SERIES2": {
+        "children": ["C_UTM", "C_TPM"],
+        "id": "ROW_SERIES2",
+        "meta": {"background": "BACKGROUND_TRANSPARENT"},
+        "type": "ROW",
+    },
+    "C_UTM": {
+        "children": [],
+        "id": "C_UTM",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(charts_individuales[3]),
+            "height": 36,
+            "sliceName": charts_individuales[3].slice_name,
+            "width": 6,
+        },
+    },
+    "C_TPM": {
+        "children": [],
+        "id": "C_TPM",
+        "type": "CHART",
+        "meta": {
+            "chartId": cid(charts_individuales[4]),
+            "height": 36,
+            "sliceName": charts_individuales[4].slice_name,
+            "width": 6,
+        },
+    },
+}
+
+dashboard_title = "Indicadores Financieros Chile 2026"
+dashboard = (
+    db.session.query(Dashboard).filter_by(dashboard_title=dashboard_title).first()
+)
+
+if not dashboard:
+    dashboard = Dashboard(
+        dashboard_title=dashboard_title,
+        slug="indicadores-financieros-chile",
+        position_json=json.dumps(position_json),
+        published=True,
     )
-    print("=" * 60)
+    dashboard.slices = todos_charts
+    db.session.add(dashboard)
+    print(f"\n✓ Dashboard creado: {dashboard_title}")
+else:
+    dashboard.position_json = json.dumps(position_json)
+    dashboard.slices = todos_charts
+    dashboard.published = True
+    print(f"\n(actualizado) Dashboard: {dashboard_title}")
+
+db.session.commit()
+
+print("\n" + "=" * 60)
+print("✓ Dashboard configurado exitosamente")
+print(f"  Charts: {len(todos_charts)}")
+print("  URL: http://localhost:8088/superset/dashboard/indicadores-financieros-chile/")
+print("=" * 60)
