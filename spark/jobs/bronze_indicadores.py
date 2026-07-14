@@ -41,13 +41,22 @@ INDICADORES = ["uf", "ipc", "dolar", "euro", "utm", "tpm"]
 # ─── SparkSession ─────────────────────────────────────────────────────────────
 builder = (
     SparkSession.builder.appName(f"lakeforge-bronze-indicadores-{fecha}")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+    .config(
+        "spark.sql.extensions",
+        "io.delta.sql.DeltaSparkSessionExtension",
+    )
+    .config(
+        "spark.sql.catalog.spark_catalog",
+        "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+    )
     .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
     .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS)
     .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET)
     .config("spark.hadoop.fs.s3a.path.style.access", "true")
-    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    .config(
+        "spark.hadoop.fs.s3a.impl",
+        "org.apache.hadoop.fs.s3a.S3AFileSystem",
+    )
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .config("spark.sql.shuffle.partitions", "2")
 )
@@ -57,17 +66,18 @@ spark.sparkContext.setLogLevel("WARN")
 print(f"→ Spark {spark.version} — procesando indicadores para {fecha}")
 
 
-def _leer_json_s3(path: str) -> dict:
+def _leer_json_s3(path):
     """Lee JSON desde S3A."""
     rdd = spark.sparkContext.textFile(path)
     return json.loads("\n".join(rdd.collect()))
 
 
-def _valor_a_float(valor) -> float:
+def _valor_a_float(valor):
     """Convierte valor string o número a float."""
     if valor is None:
         return None
-    if isinstance(valor, int | float):
+    # noqa: UP038 — Spark corre Python 3.8, no soporta int | float
+    if isinstance(valor, (int, float)):  # noqa: UP038
         return float(valor)
     try:
         return float(str(valor).replace(".", "").replace(",", "."))
@@ -75,13 +85,13 @@ def _valor_a_float(valor) -> float:
         return None
 
 
-def _escribir_delta(rows: list, path: str, nombre: str) -> None:
+def _escribir_delta(rows, path, nombre):
     """Escribe lista de dicts en Delta Lake."""
     if not rows:
         print(f"  ⚠ {nombre}: sin datos para escribir")
         return
     df = spark.createDataFrame(rows)
-    (df.write.format("delta").mode("append").option("mergeSchema", "true").save(path))
+    df.write.format("delta").mode("append").option("mergeSchema", "true").save(path)
     print(f"  ✓ {nombre}: {df.count()} filas → {path}")
 
 
