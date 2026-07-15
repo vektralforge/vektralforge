@@ -123,15 +123,25 @@ load_dag() {
         airflow dags unpause "$dag_id" 2>/dev/null \
         | grep -v "^$\|INFO\|WARNING\|DagBag" || true
 
-    # Disparar
-    local ts
-    ts=$(date -u +"%Y%m%dT%H%M%S")
-    local run_id="${run_prefix}-${ts}"
+    # Verificar si ya hay un run activo (queued o running)
+    local existing_run
+    existing_run=$(docker exec docker-compose-airflow-scheduler-1 \
+        airflow dags list-runs -d "$dag_id" --output table 2>/dev/null \
+        | grep -E "queued|running" | awk "{print \$3}" | head -1)
 
-    docker exec docker-compose-airflow-scheduler-1 \
-        airflow dags trigger "$dag_id" --run-id "$run_id" 2>/dev/null \
-        | grep -v "^$\|INFO\|WARNING\|DagBag" || true
-    ok "Disparado (run_id: $run_id)"
+    local run_id
+    if [ -n "$existing_run" ]; then
+        run_id="$existing_run"
+        warn "Run activo detectado — usando: $run_id"
+    else
+        local ts
+        ts=$(date -u +"%Y%m%dT%H%M%S")
+        run_id="${run_prefix}-${ts}"
+        docker exec docker-compose-airflow-scheduler-1 \
+            airflow dags trigger "$dag_id" --run-id "$run_id" 2>/dev/null \
+            | grep -v "^$\|INFO\|WARNING\|DagBag" || true
+        ok "Disparado (run_id: $run_id)"
+    fi
 
     # Esperar
     if wait_dag "$dag_id" "$run_id" "${tasks[@]}"; then
@@ -223,7 +233,7 @@ with app.app_context():
 \"" 2>/dev/null | grep -E "✓|✗|⚠|====" || true
 
 else
-    warn "arclim_riesgo_climatico_chile falló — omitiendo registro Trino para ARClim"
+    warn "arclim_riesgo_climatico_chile falló — omitiendo Trino y dashboard ARClim"
 fi
 
 # ── Resumen final ─────────────────────────────────────────────────────────────
