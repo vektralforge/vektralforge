@@ -20,6 +20,7 @@ AF_EMAIL=$(get_var AIRFLOW_ADMIN_EMAIL)
 SS_USER=$(get_var SUPERSET_ADMIN_USER)
 SS_PASS=$(get_var SUPERSET_ADMIN_PASSWORD)
 SS_EMAIL=$(get_var SUPERSET_ADMIN_EMAIL)
+OB_TOKEN=$(get_var OPENBAO_TOKEN)
 
 # Valores por defecto
 POSTGRES_USER="${POSTGRES_USER:-lakeforge}"
@@ -31,6 +32,7 @@ AF_EMAIL="${AF_EMAIL:-admin@alephserver.cl}"
 SS_USER="${SS_USER:-admin}"
 SS_PASS="${SS_PASS:-admin}"
 SS_EMAIL="${SS_EMAIL:-admin@alephserver.cl}"
+OB_TOKEN="${OB_TOKEN:-dev-root-token}"
 
 # ── PostgreSQL: crear bases de datos ─────────────────────────────────────────
 echo "→ Creando bases de datos PostgreSQL..."
@@ -84,10 +86,15 @@ docker exec docker-compose-superset-1 superset init 2>/dev/null || true
 # ── Resumen ───────────────────────────────────────────────────────────────────
 echo ""
 echo "  ✓ Stack inicializado correctamente"
-echo "    Airflow  → http://localhost:8090  ($AF_USER)"
-echo "    Superset → http://localhost:8088  ($SS_USER)"
-echo "    MinIO    → http://localhost:9001  ($MINIO_ACCESS_KEY)"
-echo "    Trino    → http://localhost:8081"
-echo "    OpenBao  → http://localhost:8200  (API)"
+echo ""
+printf "  %-10s %-26s %-15s %s\n" "Servicio" "URL" "Usuario" "Password"
+printf "  %-10s %-26s %-15s %s\n" "--------" "------------------------" "-------" "--------"
+printf "  %-10s %-26s %-15s %s\n" "Airflow"  "http://localhost:8090" "$AF_USER"          "$AF_PASS"
+printf "  %-10s %-26s %-15s %s\n" "Superset" "http://localhost:8088" "$SS_USER"          "$SS_PASS"
+printf "  %-10s %-26s %-15s %s\n" "MinIO"    "http://localhost:9001" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
+printf "  %-10s %-26s %-15s %s\n" "Trino"    "http://localhost:8081" "trino"             "(sin password)"
+printf "  %-10s %-26s %-15s %s\n" "OpenBao"  "http://localhost:8200" "token:"            "$OB_TOKEN"
+printf "  %-10s %-26s %-15s %s\n" "Spark"    "http://localhost:8082" "(sin auth)"        ""
 echo ""
 echo "  Buckets MinIO: raw/ bronze/ silver/ gold/ checkpoints/"
+echo "  Datos de ejemplo: make dev-load-example"
