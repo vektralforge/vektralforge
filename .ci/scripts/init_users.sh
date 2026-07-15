@@ -95,6 +95,7 @@ printf "  %-10s %-26s %-15s %s\n" "MinIO"    "http://localhost:9001" "$MINIO_ACC
 printf "  %-10s %-26s %-15s %s\n" "Trino"    "http://localhost:8081" "trino"             "(sin password)"
 printf "  %-10s %-26s %-15s %s\n" "OpenBao"  "http://localhost:8200" "token:"            "$OB_TOKEN"
 printf "  %-10s %-26s %-15s %s\n" "Spark"    "http://localhost:8082" "(sin auth)"        ""
+printf "  %-10s %-26s %-15s %s\n" "Marquez"  "http://localhost:3000" "(sin auth)"        ""
 echo ""
 echo "  Buckets MinIO: raw/ bronze/ silver/ gold/ checkpoints/"
 echo "  Datos de ejemplo: make dev-load-example"
