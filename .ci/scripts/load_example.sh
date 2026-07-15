@@ -66,14 +66,24 @@ docker exec docker-compose-airflow-scheduler-1 \
 ok "DAG activado"
 
 # ── 6. Disparar DAG ──────────────────────────────────────────────────────────
-TIMESTAMP=$(date -u +"%Y%m%dT%H%M%S")
-RUN_ID="dev-load-example-${TIMESTAMP}"
+# Verificar que no hay un run activo del mismo DAG
+running=$(docker exec docker-compose-airflow-scheduler-1     airflow dags list-runs -d indicadores_financieros_chile     --output table 2>/dev/null     | grep -E "queued|running" | wc -l | tr -d " ")
+
+if [ "$running" -gt 0 ]; then
+    warn "Ya hay un run activo del DAG — esperando en lugar de disparar otro..."
+    # Obtener el run_id activo
+    RUN_ID=$(docker exec docker-compose-airflow-scheduler-1         airflow dags list-runs -d indicadores_financieros_chile         --output table 2>/dev/null         | grep -E "queued|running" | awk "{print \$3}" | head -1)
+    ok "Usando run existente: $RUN_ID"
+else
+    TIMESTAMP=$(date -u +"%Y%m%dT%H%M%S")
+    RUN_ID="dev-load-example-${TIMESTAMP}"
 log "Disparando DAG (run_id: ${RUN_ID})..."
 docker exec docker-compose-airflow-scheduler-1 \
     airflow dags trigger indicadores_financieros_chile \
     --run-id "$RUN_ID" 2>/dev/null \
     | grep -v "^$\|INFO\|WARNING\|DagBag" || true
 ok "DAG en cola — esperando (máx ${TIMEOUT}s)..."
+fi
 
 # ── 7. Monitorear tasks ───────────────────────────────────────────────────────
 log "Monitoreando tasks..."
