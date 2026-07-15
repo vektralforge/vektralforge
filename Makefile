@@ -1,5 +1,6 @@
 # lakeforge Makefile — interfaz unificada de comandos
 .PHONY: setup dev-up dev-down dev-logs dev-reset dev-reset-hard \
+        dev-load-example \
         lint-dags test-dags lint-spark test-spark lint-sql \
         lint-all test-all detect-secrets \
         deploy-staging deploy-prod help
@@ -40,6 +41,7 @@ dev-up: check-env
 	@echo "    Spark    → http://localhost:8082"
 	@echo ""
 	@echo "  Credenciales en: $(ENV_FILE)"
+	@echo "  Datos de ejemplo: make dev-load-example"
 
 dev-down:
 	$(COMPOSE) --env-file $(ENV_FILE) down
@@ -56,11 +58,23 @@ dev-reset: check-env
 	@echo "→ Esperando que los servicios estén listos (60s)..."
 	@sleep 60
 	@bash .ci/scripts/init_users.sh $(ENV_FILE)
+	@echo ""
+	@echo "  Para cargar datos de ejemplo:"
+	@echo "    make dev-load-example"
 
 dev-reset-hard: check-env
 	@echo "→ Reset extremo (borra volúmenes + imágenes custom)..."
 	$(COMPOSE) --env-file $(ENV_FILE) down -v --rmi local
 	@$(MAKE) dev-reset
+
+# ── Cargar datos de ejemplo ───────────────────────────────────────────────────
+dev-load-example: check-env
+	@echo "→ Cargando datos de ejemplo..."
+	@echo "  DAG: indicadores_financieros_chile"
+	@echo "  Tablas: UF · Dólar · Euro · UTM · TPM"
+	@echo "  Dashboard: Indicadores Financieros Chile 2026"
+	@echo ""
+	@bash .ci/scripts/load_example.sh $(ENV_FILE)
 
 # ── Lint ──────────────────────────────────────────────────────────────────────
 lint-dags:
@@ -101,21 +115,26 @@ help:
 	@echo "  lakeforge — comandos disponibles"
 	@echo ""
 	@echo "  Setup y stack local:"
-	@echo "    make setup              Crea .venv e instala dependencias"
-	@echo "    make dev-up             Levanta stack (requiere $(ENV_FILE))"
-	@echo "    make dev-down           Detiene stack"
-	@echo "    make dev-logs           Logs en tiempo real"
-	@echo "    make dev-reset          Reset completo (lee credenciales del .env)"
-	@echo "    make dev-reset-hard     Reset extremo (borra volúmenes + imágenes)"
+	@echo "    make setup                Crea .venv e instala dependencias"
+	@echo "    make dev-up               Levanta stack (requiere $(ENV_FILE))"
+	@echo "    make dev-down             Detiene stack"
+	@echo "    make dev-logs             Logs en tiempo real"
+	@echo "    make dev-reset            Reset completo (borra volúmenes, recrea usuarios)"
+	@echo "    make dev-reset-hard       Reset extremo (borra volúmenes + imágenes custom)"
+	@echo "    make dev-load-example     Carga datos de ejemplo y configura dashboard"
 	@echo ""
 	@echo "  Calidad de código:"
-	@echo "    make lint-all           Lint completo (Ruff + sqlfluff)"
-	@echo "    make test-all           Tests completos"
-	@echo "    make detect-secrets     Escaneo de credenciales"
+	@echo "    make lint-all             Lint completo (Ruff + sqlfluff)"
+	@echo "    make test-all             Tests completos"
+	@echo "    make detect-secrets       Escaneo de credenciales"
 	@echo ""
 	@echo "  Deploy:"
-	@echo "    make deploy-staging     Deploy K3s staging"
-	@echo "    make deploy-prod        Deploy K3s producción (requiere confirmación)"
+	@echo "    make deploy-staging       Deploy K3s staging"
+	@echo "    make deploy-prod          Deploy K3s producción (requiere confirmación)"
+	@echo ""
+	@echo "  Flujo típico después de make dev-reset-hard:"
+	@echo "    make dev-reset-hard"
+	@echo "    make dev-load-example     ← carga indicadores + Trino + dashboard Superset"
 	@echo ""
 	@echo "  Variables leídas desde: $(ENV_FILE)"
 	@echo "  Ejemplo:                 cp .env.example $(ENV_FILE)"

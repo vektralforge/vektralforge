@@ -1,13 +1,5 @@
 """
-setup_superset_dashboard.py
-Configura completamente en Superset via API REST:
-  - Conexión Trino
-  - Datasets de indicadores
-  - Charts individuales y comparativos
-  - Dashboard Indicadores Financieros Chile
-
-Ejecutar dentro del contenedor Superset:
-  docker exec docker-compose-superset-1 bash -c "cd /app && python3 -c \"import sys; sys.path.insert(0, '/app'); from superset.app import create_app; app = create_app(); app.app_context().push(); exec(open('/tmp/setup_superset_dashboard.py').read())\"""
+setup_superset_dashboard.py — con fetch_metadata incluido
 """
 
 import json
@@ -66,6 +58,17 @@ for nombre, meta in tablas_config.items():
 
 db.session.commit()
 
+# ── 2b. fetch_metadata — sincronizar columnas desde Trino ─────────────────────
+print("→ Sincronizando columnas desde Trino...")
+for nombre, tbl in datasets.items():
+    try:
+        tbl.fetch_metadata()
+        db.session.merge(tbl)
+        print(f"  ✓ {nombre}: columnas sincronizadas")
+    except Exception as e:
+        print(f"  ⚠ {nombre}: {e}")
+db.session.commit()
+
 
 # ── 3. Helper upsert chart ────────────────────────────────────────────────────
 def upsert_chart(name, viz_type, dataset_id, params):
@@ -89,16 +92,13 @@ def upsert_chart(name, viz_type, dataset_id, params):
     return chart
 
 
-# ── 4. Charts individuales por indicador ──────────────────────────────────────
+# ── 4. Charts individuales ────────────────────────────────────────────────────
 charts_individuales = []
-
 for nombre_tabla, meta in tablas_config.items():
     if nombre_tabla == "indicadores_todos":
         continue
-
     label = meta["label"]
     unidad = meta["unidad"]
-
     params = {
         "viz_type": "echarts_timeseries_line",
         "x_axis": "fecha",
@@ -122,7 +122,6 @@ for nombre_tabla, meta in tablas_config.items():
         "seriesType": "line",
         "color_scheme": "supersetColors",
     }
-
     chart = upsert_chart(
         name=f"{label} — Serie Histórica 2026",
         viz_type="echarts_timeseries_line",
@@ -130,75 +129,68 @@ for nombre_tabla, meta in tablas_config.items():
         params=params,
     )
     charts_individuales.append(chart)
-
 db.session.commit()
 
 # ── 5. Chart comparativo ──────────────────────────────────────────────────────
-params_comp = {
-    "viz_type": "echarts_timeseries_line",
-    "x_axis": "fecha",
-    "metrics": [
-        {
-            "expressionType": "SIMPLE",
-            "column": {"column_name": "valor", "type": "DOUBLE"},
-            "aggregate": "MAX",
-            "label": "Valor",
-            "optionName": "metric_valor",
-        }
-    ],
-    "groupby": ["indicador"],
-    "adhoc_filters": [
-        {
-            "clause": "WHERE",
-            "comparator": ["UF", "DOLAR", "EURO"],
-            "expressionType": "SIMPLE",
-            "filterOptionName": "filter_indicador",
-            "operator": "IN",
-            "subject": "indicador",
-        }
-    ],
-    "time_grain_sqla": "P1D",
-    "row_limit": 50000,
-    "x_axis_title": "Fecha",
-    "y_axis_title": "Valor (CLP)",
-    "rich_tooltip": True,
-    "show_legend": True,
-    "zoomable": True,
-    "seriesType": "line",
-    "color_scheme": "supersetColors",
-}
-
 chart_comp = upsert_chart(
     name="UF vs Dólar vs Euro — Comparativo 2026",
     viz_type="echarts_timeseries_line",
     dataset_id=datasets["indicadores_todos"].id,
-    params=params_comp,
+    params={
+        "viz_type": "echarts_timeseries_line",
+        "x_axis": "fecha",
+        "metrics": [
+            {
+                "expressionType": "SIMPLE",
+                "column": {"column_name": "valor", "type": "DOUBLE"},
+                "aggregate": "MAX",
+                "label": "Valor",
+                "optionName": "metric_valor",
+            }
+        ],
+        "groupby": ["indicador"],
+        "adhoc_filters": [
+            {
+                "clause": "WHERE",
+                "comparator": ["UF", "DOLAR", "EURO"],
+                "expressionType": "SIMPLE",
+                "filterOptionName": "filter_indicador",
+                "operator": "IN",
+                "subject": "indicador",
+            }
+        ],
+        "time_grain_sqla": "P1D",
+        "row_limit": 50000,
+        "rich_tooltip": True,
+        "show_legend": True,
+        "zoomable": True,
+        "seriesType": "line",
+        "color_scheme": "supersetColors",
+    },
 )
 
-# ── 6. Chart tabla último valor ───────────────────────────────────────────────
-params_tabla = {
-    "viz_type": "table",
-    "metrics": [
-        {
-            "expressionType": "SIMPLE",
-            "column": {"column_name": "valor", "type": "DOUBLE"},
-            "aggregate": "MAX",
-            "label": "Último valor",
-            "optionName": "metric_ultimo",
-        }
-    ],
-    "groupby": ["indicador", "nombre"],
-    "order_desc": True,
-    "row_limit": 10,
-    "page_length": 10,
-    "color_pn": True,
-}
-
+# ── 6. Tabla último valor ─────────────────────────────────────────────────────
 chart_tabla = upsert_chart(
     name="Último Valor por Indicador",
     viz_type="table",
     dataset_id=datasets["indicadores_todos"].id,
-    params=params_tabla,
+    params={
+        "viz_type": "table",
+        "metrics": [
+            {
+                "expressionType": "SIMPLE",
+                "column": {"column_name": "valor", "type": "DOUBLE"},
+                "aggregate": "MAX",
+                "label": "Último valor",
+                "optionName": "metric_ultimo",
+            }
+        ],
+        "groupby": ["indicador", "nombre"],
+        "order_desc": True,
+        "row_limit": 10,
+        "page_length": 10,
+        "color_pn": True,
+    },
 )
 
 
@@ -400,7 +392,6 @@ dashboard_title = "Indicadores Financieros Chile 2026"
 dashboard = (
     db.session.query(Dashboard).filter_by(dashboard_title=dashboard_title).first()
 )
-
 if not dashboard:
     dashboard = Dashboard(
         dashboard_title=dashboard_title,
