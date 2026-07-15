@@ -1,6 +1,10 @@
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.9.1-python3.12
+  build: ./airflow
   env_file: .env
+  environment:
+    AIRFLOW__OPENLINEAGE__TRANSPORT: '{"type": "http", "url": "http://marquez-api:9000", "endpoint": "api/v1/lineage"}'
+    AIRFLOW__OPENLINEAGE__NAMESPACE: "lakeforge"
+    AIRFLOW__OPENLINEAGE__DISABLED: "false"
   volumes:
     - ../../airflow/dags:/opt/airflow/dags
     - ../../airflow/plugins:/opt/airflow/plugins
@@ -10,15 +14,18 @@ x-airflow-common: &airflow-common
   depends_on:
     postgres:
       condition: service_healthy
+    marquez-api:
+      condition: service_healthy
 
 services:
 
+  # ── PostgreSQL (Airflow + Metastore + Marquez) ────────────────────────────
   postgres:
     image: postgres:15
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_MULTIPLE_DATABASES: airflow,metastore
+      POSTGRES_MULTIPLE_DATABASES: airflow,metastore,marquez
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
@@ -29,6 +36,7 @@ services:
     ports:
       - "5432:5432"
 
+  # ── MinIO ─────────────────────────────────────────────────────────────────
   minio:
     image: minio/minio:RELEASE.2024-04-18T19-09-19Z
     command: server /data --console-address ":9001"
@@ -47,6 +55,7 @@ services:
       retries: 5
       start_period: 30s
 
+  # ── Hive Metastore ────────────────────────────────────────────────────────
   hive-metastore:
     build: ./hive
     restart: unless-stopped
@@ -61,6 +70,7 @@ services:
       postgres:
         condition: service_healthy
 
+  # ── Spark ─────────────────────────────────────────────────────────────────
   spark-master:
     build: ./spark
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
@@ -70,6 +80,8 @@ services:
       SPARK_MASTER_HOST: spark-master
       SPARK_MASTER_PORT: "7077"
       SPARK_MASTER_WEBUI_PORT: "8082"
+      OPENLINEAGE_URL: http://marquez-api:9000
+      OPENLINEAGE_NAMESPACE: lakeforge
     ports:
       - "7077:7077"
       - "8082:8082"
@@ -81,11 +93,14 @@ services:
       SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-1g}
       SPARK_WORKER_CORES: "${SPARK_WORKER_CORES:-2}"
       SPARK_WORKER_WEBUI_PORT: "8083"
+      OPENLINEAGE_URL: http://marquez-api:9000
+      OPENLINEAGE_NAMESPACE: lakeforge
     ports:
       - "8083:8083"
     depends_on:
       - spark-master
 
+  # ── Trino ─────────────────────────────────────────────────────────────────
   trino:
     image: trinodb/trino:448
     restart: unless-stopped
@@ -98,6 +113,7 @@ services:
       - hive-metastore
       - minio
 
+  # ── Kafka ─────────────────────────────────────────────────────────────────
   zookeeper:
     image: confluentinc/cp-zookeeper:7.6.1
     environment:
@@ -116,6 +132,7 @@ services:
     ports:
       - "9092:9092"
 
+  # ── OpenBao ───────────────────────────────────────────────────────────────
   openbao:
     image: openbao/openbao:2.1.0
     cap_add:
@@ -127,10 +144,54 @@ services:
     ports:
       - "8200:8200"
 
+  # ── Marquez API (OpenLineage backend) ─────────────────────────────────────
+  # Configuración via marquez.yml montado como volumen
+  # Puerto 9000 interno → 9100 externo (evita AirPlay :5000 y MinIO :9000 en macOS)
+  # Admin 9001 interno → 9101 externo
+  marquez-api:
+    build: ./marquez
+    platform: linux/amd64
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/healthcheck"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+
+  # ── Marquez Web (UI de linaje) ────────────────────────────────────────────
+  marquez-web:
+    image: marquezproject/marquez-web:latest
+    platform: linux/amd64
+    environment:
+      MARQUEZ_HOST: marquez-api
+      MARQUEZ_PORT: 9000
+      WEB_PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      marquez-api:
+        condition: service_healthy
+
+  # ── Airflow ───────────────────────────────────────────────────────────────
   airflow-init:
-    <<: *airflow-common
+    build: ./airflow
+    env_file: .env
     command: db init
     restart: "no"
+    volumes:
+      - ../../airflow/dags:/opt/airflow/dags
+      - ../../airflow/plugins:/opt/airflow/plugins
+      - airflow-logs:/opt/airflow/logs
+      - ../../spark/jobs:/opt/spark/jobs
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   airflow-webserver:
     <<: *airflow-common
@@ -154,11 +215,13 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7.2
     ports:
       - "6379:6379"
 
+  # ── Superset ──────────────────────────────────────────────────────────────
   superset:
     build: ./superset
     environment:

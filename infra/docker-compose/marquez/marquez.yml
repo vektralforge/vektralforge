@@ -1,0 +1,20 @@
+server:
+  applicationConnectors:
+    - type: http
+      port: 9000
+  adminConnectors:
+    - type: http
+      port: 9001
+
+db:
+  driverClass: org.postgresql.Driver
+  url: jdbc:postgresql://postgres:5432/marquez
+  user: lakeforge
+  password: lakeforge  # pragma: allowlist secret
+
+migrateOnStartup: true
+
+logging:
+  level: INFO
+  appenders:
+    - type: console

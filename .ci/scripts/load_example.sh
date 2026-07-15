@@ -20,7 +20,7 @@ dag_task_state() {
 
 # ── 1. Verificar stack ────────────────────────────────────────────────────────
 log "Verificando stack..."
-for s in airflow-webserver airflow-scheduler spark-master minio trino superset postgres; do
+for s in airflow-webserver airflow-scheduler spark-master minio trino superset postgres marquez-api; do
     st=$(docker inspect --format='{{.State.Status}}' "docker-compose-${s}-1" 2>/dev/null || echo "missing")
     [ "$st" = "running" ] || fail "Servicio $s no está corriendo. Ejecuta: make dev-up"
 done
@@ -163,4 +163,5 @@ echo "  Airflow   → http://localhost:8090"
 echo "  Trino     → http://localhost:8081"
 echo "  MinIO     → http://localhost:9001"
 echo "  Dashboard → http://localhost:8088/superset/dashboard/indicadores-financieros-chile/"
+  echo "  Marquez   → http://localhost:3000  (linaje automático)"
 echo ""
