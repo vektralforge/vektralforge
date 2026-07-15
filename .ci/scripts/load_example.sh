@@ -210,6 +210,18 @@ if load_dag "arclim_riesgo_climatico_chile" "dev-load-arclim" \
          FROM delta.bronze.arclim_series GROUP BY indicador ORDER BY indicador;" \
         2>/dev/null | grep -v "WARNING\|INFO\|jline\|^$" | sed 's/^/    /' || true
 
+    log "Configurando dashboard ARClim en Superset..."
+    docker cp superset/dashboards/setup_superset_arclim.py \
+        docker-compose-superset-1:/tmp/setup_superset_arclim.py 2>/dev/null
+    docker exec docker-compose-superset-1 \
+        bash -c "cd /app && python3 -c \"
+import sys; sys.path.insert(0, '/app')
+from superset.app import create_app
+app = create_app()
+with app.app_context():
+    exec(open('/tmp/setup_superset_arclim.py').read())
+\"" 2>/dev/null | grep -E "✓|✗|⚠|====" || true
+
 else
     warn "arclim_riesgo_climatico_chile falló — omitiendo registro Trino para ARClim"
 fi
