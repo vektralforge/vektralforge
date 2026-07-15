@@ -38,7 +38,7 @@ INDICADORES_MENSUALES = ["ipc"]
 DEFAULT_ARGS = {
     "owner": "alephserver",
     "depends_on_past": False,
-    "retries": 2,
+    "retries": 0,
     "retry_delay": timedelta(minutes=5),
     "email_on_failure": False,
 }

@@ -67,7 +67,7 @@ COMUNAS_CAPITALES = {
 
 default_args = {
     "owner": "alephserver",
-    "retries": 2,
+    "retries": 0,
     "retry_delay": timedelta(minutes=5),
     "execution_timeout": timedelta(minutes=30),
 }
