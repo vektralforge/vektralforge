@@ -69,14 +69,12 @@ lakeforge/
 ├── airflow/
 │   ├── dags/
 │   │   ├── dag_bronze_ejemplo.py          # Pipeline sintético validado end-to-end
-│   │   ├── dag_cmf_indicadores.py         # API CMF Chile (requiere API Key)
 │   │   └── dag_indicadores_financieros.py # mindicador.cl (sin API Key) ← ACTIVO
 │   ├── plugins/                           # Operadores y hooks custom
 │   └── tests/                            # Tests unitarios de DAGs
 ├── spark/
 │   └── jobs/
 │       ├── bronze_clientes.py             # Job Spark pipeline clientes ejemplo
-│       ├── bronze_cmf.py                  # Job Spark indicadores CMF
 │       ├── bronze_indicadores.py          # Job Spark indicadores mindicador.cl ← ACTIVO
 │       └── register_tables.py             # Registro tablas en Trino
 ├── trino/
@@ -191,9 +189,6 @@ OPENBAO_TOKEN=dev-root-token
 
 # Superset
 SUPERSET_SECRET_KEY=<generar con python3 -c "import secrets; print(secrets.token_hex(32))">
-
-# API CMF Chile (opcional — para dag_cmf_indicadores)
-CMF_API_KEY=<registrar en https://api.cmfchile.cl/apps/contactanos/index.html>
 ```
 
 ### Leer secretos desde OpenBao (Python)
@@ -270,13 +265,6 @@ s3://raw/clientes/      s3://bronze/           en Trino
 ```
 
 **Tabla Trino:** `delta.bronze.clientes_v2`
-
-### DAG 3: cmf_indicadores_financieros ← PENDIENTE API KEY
-
-**Estado:** Requiere API Key de CMF Chile
-**Solicitar:** https://api.cmfchile.cl/apps/contactanos/index.html
-**Error actual:** HTTP 421 con API key de ejemplo
-**Indicadores:** UF, IPC, TMC, Dólar, Euro, Yen, Libra Esterlina
 
 ---
 
@@ -448,12 +436,6 @@ docker exec -u root docker-compose-spark-master-1 \
   https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar
 ```
 
-### Error: HTTP 421 en DAG CMF
-
-**Causa:** API Key de CMF inválida o de ejemplo
-**Solución:** Registrar API Key real en https://api.cmfchile.cl/apps/contactanos/index.html
-**Alternativa:** Usar `dag_indicadores_financieros.py` con mindicador.cl (sin API Key)
-
 ### Error: Airflow webserver unhealthy
 
 **Causa:** Healthcheck demasiado estricto — el webserver tarda en arrancar
@@ -613,8 +595,6 @@ Push → pre-commit hooks:
 
 ### Pendientes Fase 1 (completar antes de Fase 2)
 
-- [ ] Registrar API Key CMF en https://api.cmfchile.cl/apps/contactanos/index.html
-- [ ] Activar `dag_cmf_indicadores.py` con API Key real
 - [ ] Registrar tablas indicadores en Trino y crear vista `indicadores_todos`
 - [ ] Configurar dashboard Superset ejecutando `setup_superset_dashboard.py`
 - [ ] `git push origin develop` con últimos cambios

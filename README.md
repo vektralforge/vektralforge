@@ -33,12 +33,10 @@ lakeforge/
 ├── airflow/
 │   └── dags/
 │       ├── dag_bronze_ejemplo.py          # Pipeline sintético validado
-│       ├── dag_cmf_indicadores.py         # API CMF Chile (requiere API Key)
 │       └── dag_indicadores_financieros.py # mindicador.cl (sin API Key) ← activo
 ├── spark/
 │   └── jobs/
 │       ├── bronze_clientes.py             # Job Spark clientes ejemplo
-│       ├── bronze_cmf.py                  # Job Spark indicadores CMF
 │       └── bronze_indicadores.py          # Job Spark indicadores mindicador.cl
 ├── trino/
 │   └── catalog/                           # Configuración Delta Lake connector
@@ -205,7 +203,6 @@ make dev-load-example    # Datos + Trino + Dashboard (~5 min)
 | DAG | Fuente | Schedule | Estado |
 |---|---|---|---|
 | `indicadores_financieros_chile` | mindicador.cl (sin API Key) | Lunes-Viernes 10:00 AM | ✓ Activo |
-| `dag_cmf_indicadores` | API CMF Chile (requiere API Key) | Diario 9:00 AM | ⏳ Pendiente API Key |
 | `bronze_clientes_ejemplo` | Datos sintéticos | Manual | ✓ Disponible |
 
 ### Indicadores financieros (mindicador.cl)
@@ -218,9 +215,6 @@ make dev-load-example    # Datos + Trino + Dashboard (~5 min)
 | UTM | Diario | Cada día hábil |
 | TPM | Diario | Cada día hábil |
 | IPC | Mensual | ~día 8 de cada mes (WARNING si no está) |
-
-> Para activar `dag_cmf_indicadores`, registrar API Key en:
-> https://api.cmfchile.cl/apps/contactanos/index.html
 
 ---
 

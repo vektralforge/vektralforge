@@ -11,8 +11,6 @@ Flujo:
   2. transform_bronze     → Spark lee raw/ y escribe Delta Lake en bronze/
   3. validar_bronze       → verifica que los datos llegaron correctamente
 
-Cuando tengas API Key de CMF, migrar a dag_cmf_indicadores.py
-Solicitar en: https://api.cmfchile.cl/apps/contactanos/index.html
 """
 
 import json
