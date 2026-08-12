@@ -46,3 +46,27 @@ spark/derby.log
 # K3s kubeconfig local
 kubeconfig.yaml
 *.kubeconfig
+
+
+# Spark / Hive Metastore — se generan en la raíz según desde dónde ejecutes
+spark-warehouse/
+derby.log
+metastore_db/
+
+# Airflow — la BD SQLite local y la config generada
+airflow/airflow.db
+airflow/airflow.cfg
+airflow/webserver_config.py
+airflow/standalone_admin_password.txt
+
+# JARs descargados (Delta, S3A, Kafka connectors)
+spark/jars/*.jar
+!spark/jars/.gitkeep
+
+# Notebooks — checkpoints y salidas
+.ipynb_checkpoints/
+
+# Datos locales de ejemplo
+data/
+*.parquet
+*.avro
