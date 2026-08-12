@@ -1,0 +1,37 @@
+# CODEOWNERS for VektralForge
+#
+# Owners are TEAMS, never individuals. This is deliberate: transferring
+# responsibility becomes a change of team membership rather than an edit to
+# this file, and no path depends on a single person remaining available.
+#
+# Teams must have write access to the repository to be assignable as owners.
+# The last matching pattern wins.
+
+# Default owner for everything
+*                           @vektralforge/maintainers
+
+# Governance and legal — TSC only
+/GOVERNANCE.md              @vektralforge/tsc
+/MAINTAINERS.md             @vektralforge/tsc
+/LICENSE                    @vektralforge/tsc
+/NOTICE                     @vektralforge/tsc
+/TRADEMARK.md               @vektralforge/tsc
+/OPEN_SOURCE_PROMISE.md     @vektralforge/tsc
+/SPONSORS.md                @vektralforge/tsc
+/CODE_OF_CONDUCT.md         @vektralforge/tsc
+/CODEOWNERS                 @vektralforge/tsc
+
+# Security
+/SECURITY.md                @vektralforge/security @vektralforge/tsc
+/.github/workflows/         @vektralforge/security @vektralforge/tsc
+/.pre-commit-config.yaml    @vektralforge/security @vektralforge/maintainers
+/.secrets.baseline          @vektralforge/security
+
+# Release and packaging
+/pyproject.toml             @vektralforge/tsc
+/docker-compose*.yml        @vektralforge/maintainers
+/Makefile                   @vektralforge/maintainers
+
+# Brand assets
+/docs/marca.md              @vektralforge/tsc
+/docs/brand/                @vektralforge/tsc
