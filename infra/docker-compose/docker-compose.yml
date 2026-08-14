@@ -89,13 +89,19 @@ services:
 
   # ── Hive Metastore ────────────────────────────────────────────────────────
   hive-metastore:
-    build: ./hive
+    image: vektralforge/hive-metastore:4.0.0
+    build:
+      context: ../..
+      dockerfile: infra/docker-compose/hive/Dockerfile
     restart: unless-stopped
-    mem_limit: 512m
+    mem_limit: 1g
     environment:
       SERVICE_NAME: metastore
       DB_DRIVER: postgres
       SERVICE_OPTS: "-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/metastore -Djavax.jdo.option.ConnectionUserName=${POSTGRES_USER} -Djavax.jdo.option.ConnectionPassword=${POSTGRES_PASSWORD}"
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
       - "9083:9083"
     depends_on:
@@ -104,7 +110,7 @@ services:
 
   # ── Spark ─────────────────────────────────────────────────────────────────
   spark-master:
-    image: vektralforge/spark:3.5.3
+    image: vektralforge/spark:4.0.0
     build:
       context: ../..
       dockerfile: infra/docker-compose/spark/Dockerfile
@@ -123,7 +129,7 @@ services:
       - "8082:8082"
 
   spark-worker:
-    image: vektralforge/spark:3.5.3
+    image: vektralforge/spark:4.0.0
     build:
       context: ../..
       dockerfile: infra/docker-compose/spark/Dockerfile
@@ -147,6 +153,10 @@ services:
     image: trinodb/trino:448
     restart: unless-stopped
     mem_limit: 768m
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - ../../trino/catalog:/etc/trino/catalog
     ports:

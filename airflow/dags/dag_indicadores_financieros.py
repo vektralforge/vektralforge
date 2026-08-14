@@ -33,7 +33,7 @@ INDICADORES_DIARIOS = ["uf", "dolar", "euro", "utm", "tpm"]
 INDICADORES_MENSUALES = ["ipc"]
 
 DEFAULT_ARGS = {
-    "owner": "alephserver",
+    "owner": "vektralforge",
     "depends_on_past": False,
     "retries": 0,
     "retry_delay": timedelta(minutes=5),
@@ -48,7 +48,7 @@ def _get_mindicador(endpoint: str) -> dict:
     import urllib.request
 
     url = f"{MINDICADOR_BASE}/{endpoint}"
-    req = urllib.request.Request(url, headers={"User-Agent": "lakeforge/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "vektralforge/1.0"})
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
 

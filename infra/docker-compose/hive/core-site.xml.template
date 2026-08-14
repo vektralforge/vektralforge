@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<!--
+  Configuración de Hadoop para el Hive Metastore de VektralForge.
+
+  Este archivo se genera en el arranque del contenedor a partir de las
+  variables del .env. La plantilla se versiona; el core-site.xml resultante no.
+
+  Por qué existe: al compartir el metastore entre Spark y Trino, Hive valida y
+  crea rutas en el object store al gestionar esquemas y tablas externas. Las
+  propiedades pasadas por -D en HADOOP_CLIENT_OPTS llegan a la JVM pero no al
+  Configuration de Hadoop, que lee de aquí.
+-->
+<configuration>
+
+  <!-- Conector S3A -->
+  <property>
+    <name>fs.s3a.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+  </property>
+  <property>
+    <name>fs.AbstractFileSystem.s3a.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3A</value>
+  </property>
+
+  <!-- Trino escribe las ubicaciones como s3://, Spark como s3a://. Se mapea
+       s3 al mismo conector para que el metastore entienda ambos esquemas. -->
+  <property>
+    <name>fs.s3.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
+  </property>
+  <property>
+    <name>fs.AbstractFileSystem.s3.impl</name>
+    <value>org.apache.hadoop.fs.s3a.S3A</value>
+  </property>
+
+  <!-- MinIO -->
+  <property>
+    <name>fs.s3a.endpoint</name>
+    <value>__MINIO_ENDPOINT__</value>
+  </property>
+  <property>
+    <name>fs.s3a.access.key</name>
+    <value>__MINIO_ACCESS__</value>
+  </property>
+  <property>
+    <name>fs.s3a.secret.key</name>
+    <value>__MINIO_SECRET__</value>
+  </property>
+  <property>
+    <name>fs.s3a.path.style.access</name>
+    <value>true</value>
+  </property>
+  <property>
+    <name>fs.s3a.connection.ssl.enabled</name>
+    <value>false</value>
+  </property>
+
+  <!-- MinIO no usa regiones, pero el SDK exige una. -->
+  <property>
+    <name>fs.s3a.endpoint.region</name>
+    <value>us-east-1</value>
+  </property>
+
+  <!-- Credenciales explícitas: sin esto el SDK intenta IMDS y tarda en fallar. -->
+  <property>
+    <name>fs.s3a.aws.credentials.provider</name>
+    <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>
+  </property>
+
+</configuration>
