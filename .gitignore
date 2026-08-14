@@ -70,3 +70,4 @@ spark/jars/*.jar
 data/
 *.parquet
 *.avro
+infra/docker-compose/marquez/marquez.yml
