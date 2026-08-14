@@ -1,0 +1,11 @@
+# Herramientas de desarrollo — venv local, NO se instalan en la imagen.
+#
+#   pip install -r airflow/requirements-dev.txt
+#
+# Tenerlas fuera de la imagen reduce su superficie y evita que un CVE de una
+# herramienta de test aparezca como vulnerabilidad del entorno de ejecución.
+
+pytest==9.0.3
+pytest-cov==5.0.0
+ruff==0.4.4
+detect-secrets==1.5.0

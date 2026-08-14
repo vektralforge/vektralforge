@@ -15,18 +15,17 @@ Flujo:
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.operators.python import PythonOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from airflow.providers.standard.operators.python import PythonOperator
 
 # ─── Configuración ────────────────────────────────────────────────────────────
 MINDICADOR_BASE = "https://mindicador.cl/api"
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
-MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-
+MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
+MINIO_ACCESS = os.environ["MINIO_ROOT_USER"]
+MINIO_SECRET = os.environ["MINIO_ROOT_PASSWORD"]
 # Indicadores diarios (se actualizan cada día hábil)
 INDICADORES_DIARIOS = ["uf", "dolar", "euro", "utm", "tpm"]
 
@@ -74,6 +73,16 @@ def _subir_json(s3, key: str, data: dict) -> None:
 # ─── Task 1: Extraer indicadores ──────────────────────────────────────────────
 
 
+def _fecha_ejecucion(context) -> str:
+    """Fecha del run. En Airflow 3, los runs manuales sin logical_date
+    no tienen 'ds' en el contexto."""
+    if ds := context.get("ds"):
+        return ds
+    if logical := context.get("logical_date"):
+        return logical.strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
 def extract_indicadores(**context):
     """
     Descarga todos los indicadores desde mindicador.cl
@@ -84,7 +93,7 @@ def extract_indicadores(**context):
       - Mensuales: IPC → se publica ~día 8 de cada mes (puede estar vacío)
     """
     s3 = _s3_client()
-    fecha = context["ds"]
+    fecha = _fecha_ejecucion(context)
     anio = fecha[:4]
     prefix = f"indicadores/fecha={fecha}"
     resumen = {"fecha": fecha, "fuente": "mindicador.cl", "indicadores": {}}
@@ -192,27 +201,33 @@ with DAG(
         python_callable=extract_indicadores,
     )
 
-    t2 = BashOperator(
+    # La fecha viene por XCom desde extract_indicadores: es la misma que se usó
+    # para escribir en raw/, y evita depender de `ds`, que no existe en los runs
+    # manuales de Airflow 3.
+    FECHA = "{{ ti.xcom_pull(task_ids='extract_indicadores')['fecha'] }}"
+
+    t2 = SparkSubmitOperator(
         task_id="transform_bronze",
-        bash_command=(
-            "docker exec docker-compose-spark-master-1 "
-            "/opt/spark/bin/spark-submit "
-            "--master spark://spark-master:7077 "
-            "--driver-memory 512m "
-            "--executor-memory 512m "
-            "--packages io.delta:delta-spark_2.12:3.2.0 "
-            "--conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension "
-            "--conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog "
-            "--conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 "
-            "--conf spark.hadoop.fs.s3a.access.key=minioadmin "
-            "--conf spark.hadoop.fs.s3a.secret.key=minioadmin "
-            "--conf spark.hadoop.fs.s3a.path.style.access=true "
-            "--conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem "
-            "--conf spark.hadoop.fs.s3a.connection.ssl.enabled=false "
-            "--conf spark.driver.maxResultSize=128m "
-            "--conf spark.sql.shuffle.partitions=2 "
-            "/opt/spark/jobs/bronze_indicadores.py {{ ds }}"
-        ),
+        conn_id="spark_default",
+        application="/opt/spark/jobs/bronze_indicadores.py",
+        application_args=[FECHA],
+        # Sin --packages: delta-spark y delta-storage ya están en
+        # /opt/spark/jars del cluster. Descargarlos desde Maven en cada
+        # ejecución es innecesario y frágil.
+        driver_memory="512m",
+        executor_memory="512m",
+        conf={
+            "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
+            "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+            "spark.hadoop.fs.s3a.endpoint": MINIO_ENDPOINT,
+            "spark.hadoop.fs.s3a.access.key": MINIO_ACCESS,
+            "spark.hadoop.fs.s3a.secret.key": MINIO_SECRET,
+            "spark.hadoop.fs.s3a.path.style.access": "true",
+            "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
+            "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",
+            "spark.driver.maxResultSize": "128m",
+            "spark.sql.shuffle.partitions": "2",
+        },
         execution_timeout=timedelta(minutes=15),
     )
 

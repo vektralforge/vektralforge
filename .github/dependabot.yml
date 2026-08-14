@@ -1,0 +1,66 @@
+# .github/dependabot.yml
+#
+# Vigila dependencias Python y, sobre todo, las etiquetas de las imágenes
+# Docker: hasta ahora la versión de Airflow que realmente se ejecutaba no
+# estaba siendo monitoreada por nadie.
+
+version: 2
+updates:
+
+  # ── Python ─────────────────────────────────────────────────────────────────
+  - package-ecosystem: "pip"
+    directory: "/airflow"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      airflow-providers:
+        patterns:
+          - "apache-airflow-providers-*"
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "pip"
+    directory: "/spark"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  # ── Imágenes Docker ────────────────────────────────────────────────────────
+  # Un directorio por Dockerfile. Ajustar si la estructura cambia.
+  - package-ecosystem: "docker"
+    directories:
+      - "/infra/docker-compose/airflow"
+      - "/infra/docker-compose/spark"
+      - "/infra/docker-compose/superset"
+      - "/infra/docker-compose/hive"
+      - "/infra/docker-compose/marquez"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  # Imágenes referenciadas directamente en el Compose (postgres, trino, kafka,
+  # minio, redis, openbao).
+  - package-ecosystem: "docker-compose"
+    directory: "/infra/docker-compose"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  # ── GitHub Actions ─────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "dependencies"

@@ -1,0 +1,29 @@
+# Plantilla de configuración de Marquez.
+#
+# Marquez NO lee la conexión a la base de datos desde variables de entorno,
+# así que este archivo se resuelve en el arranque del contenedor a partir de
+# las variables del .env. Ver docker-entrypoint.sh.
+#
+# Este archivo SÍ se versiona. El marquez.yml resultante NO: se genera dentro
+# del contenedor y contiene credenciales.
+
+server:
+  applicationConnectors:
+    - type: http
+      port: 9000
+  adminConnectors:
+    - type: http
+      port: 9001
+
+db:
+  driverClass: org.postgresql.Driver
+  url: jdbc:postgresql://${MARQUEZ_DB_HOST}:${MARQUEZ_DB_PORT}/${MARQUEZ_DB_NAME}
+  user: ${MARQUEZ_DB_USER}
+  password: ${MARQUEZ_DB_PASSWORD}
+
+migrateOnStartup: true
+
+logging:
+  level: ${MARQUEZ_LOG_LEVEL}
+  appenders:
+    - type: console

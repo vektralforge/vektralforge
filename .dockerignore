@@ -1,0 +1,31 @@
+# Contexto de build: la raíz del repositorio.
+# Sin este archivo, Docker envía todo el repo al demonio en cada build.
+
+.git
+.github
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Datos y estado local
+infra/docker-compose/minio-data
+infra/docker-compose/.env
+**/spark-warehouse
+**/derby.log
+**/metastore_db
+*.log
+
+# Documentación y gobernanza: no se necesitan dentro de la imagen
+docs
+*.md
+LICENSE
+NOTICE
+CODEOWNERS
+
+# Artefactos
+**/*.jar
+.DS_Store

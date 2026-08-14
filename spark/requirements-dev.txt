@@ -1,0 +1,15 @@
+# Herramientas de desarrollo de los jobs Spark — venv local, no se instalan
+# en las imágenes de spark-master ni spark-worker.
+#
+#   pip install -r spark/requirements-dev.txt
+#
+# Mantenerlas fuera del entorno de ejecución evita que un CVE de una
+# herramienta de test aparezca como vulnerabilidad de producción.
+
+pytest==9.0.3
+pytest-cov==5.0.0
+ruff==0.4.4
+
+# Comparación de DataFrames en tests. Actualmente sin uso: se conserva para
+# los tests de bronze_indicadores.py y bronze_arclim.py que están pendientes.
+chispa==0.12.0

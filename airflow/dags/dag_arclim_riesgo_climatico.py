@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import requests
 from airflow import DAG
-from airflow.operators.bash import BashOperator
-from airflow.operators.python import PythonOperator
+from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.standard.operators.python import PythonOperator
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 ARCLIM_BASE = "https://arclim.mma.gob.cl/api"
@@ -73,6 +73,16 @@ default_args = {
 }
 
 
+def _fecha_ejecucion(context) -> str:
+    """Fecha del run. En Airflow 3, los runs manuales sin logical_date
+    no tienen 'ds' en el contexto."""
+    if ds := context.get("ds"):
+        return ds
+    if logical := context.get("logical_date"):
+        return logical.strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
 def extract_arclim(**context):
     """
     Extrae datos de ARClim API y los guarda en raw/arclim/fecha={ds}/:
@@ -84,7 +94,7 @@ def extract_arclim(**context):
     import boto3
     from botocore.client import Config
 
-    ds = context["ds"]
+    ds = _fecha_ejecucion(context)
     prefix = f"arclim/fecha={ds}"
 
     s3 = boto3.client(
@@ -249,7 +259,7 @@ with DAG(
         "(Ministerio del Medio Ambiente de Chile). Sin API Key requerida. "
         "Datos históricos 1980-2010 y proyecciones 2035-2065 (SSP5-8.5/SSP2-4.5)."
     ),
-    schedule_interval="0 6 * * MON",
+    schedule="0 6 * * MON",
     start_date=datetime(2026, 7, 1),
     catchup=False,
     default_args=default_args,
@@ -267,7 +277,7 @@ with DAG(
                 spark-submit \
                 --master spark://spark-master:7077 \
                 --deploy-mode client \
-                /opt/spark/jobs/bronze_arclim.py {{ ds }}
+                /opt/spark/jobs/bronze_arclim.py {{ ti.xcom_pull(task_ids='extract_indicadores')['fecha'] }}
         """,
     )
 

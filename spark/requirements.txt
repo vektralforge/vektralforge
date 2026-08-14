@@ -1,9 +1,14 @@
-# PySpark 4.0 + delta-spark 4.0 — compatibles con Python 3.14
-# PySpark 3.5.x solo llegaba hasta Python 3.12
+# Dependencias de ejecución de los jobs Spark.
+#
+# Las herramientas de desarrollo (pytest, ruff, chispa) están en
+# requirements-dev.txt y no forman parte del entorno de ejecución.
+#
+# Restricción de intérprete: los ejecutores Spark corren su propia versión de
+# Python, distinta de la del host. Verificar con:
+#   docker exec docker-compose-spark-worker-1 python3 --version
+# El código que corre dentro de Spark debe usar sintaxis compatible con esa
+# versión —por ejemplo isinstance(v, (int, float)) con # noqa: UP038 en vez de
+# la sintaxis de unión de Python 3.10+.
 
-pyspark==4.0.0
-delta-spark==4.0.0
-pytest==8.2.0
-pytest-cov==5.0.0
-chispa==0.12.0
-ruff==0.4.4
+pyspark==3.5.3
+delta-spark==3.2.0

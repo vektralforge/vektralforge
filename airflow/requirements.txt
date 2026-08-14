@@ -1,31 +1,42 @@
-# ─────────────────────────────────────────────────────────────────────────────
-# airflow/requirements.txt — Apache Airflow 3.x / Python 3.12
+# Dependencias de ejecución de Airflow — se instalan en la imagen.
 #
-# NOTA: apache-airflow-providers-amazon excluido intencionalmente.
-# Motivo: arrastra sqlalchemy-redshift que requiere SQLAlchemy <2.0,
-#         incompatible con Airflow 3.x (requiere SQLAlchemy >=2.0).
-# El stack lakeforge usa MinIO via boto3 directo, sin provider AWS completo.
-# ─────────────────────────────────────────────────────────────────────────────
+# La versión de Airflow NO se declara aquí: la fija la etiqueta de la imagen
+# base en el Dockerfile. Declararla en dos sitios fue lo que hizo que el
+# contenedor corriera 2.9.1 mientras este archivo decía otra cosa.
+#
+# Los providers van sin fijar versión a propósito: el archivo de constraints de
+# Airflow elige la combinación compatible. Fijarlos aquí produce conflictos con
+# ese archivo.
+#
+# Las herramientas de desarrollo (pytest, ruff, detect-secrets) están en
+# requirements-dev.txt y no se instalan en la imagen.
 
-apache-airflow==3.1.8
+# ── Linaje ───────────────────────────────────────────────────────────────────
+apache-airflow-providers-openlineage
 
-# Providers necesarios para lakeforge
-apache-airflow-providers-apache-spark==4.8.0
-apache-airflow-providers-apache-kafka==1.3.0
-apache-airflow-providers-microsoft-mssql==3.6.0
-apache-airflow-providers-apache-hive==8.2.0
+# ── Autenticación (FabAuthManager: usuarios y roles) ─────────────────────────
+apache-airflow-providers-fab
 
-# MinIO: conexión directa vía boto3 (sin sqlalchemy-redshift)
-boto3==1.34.0
-botocore==1.34.0
+# ── Motores de procesamiento y consulta ──────────────────────────────────────
+apache-airflow-providers-apache-spark
+apache-airflow-providers-apache-hive
+apache-airflow-providers-apache-kafka
 
-# Secretos (OpenBao / Vault API compatible)
-hvac==2.3.0
+# ── Conectores de origen ─────────────────────────────────────────────────────
+apache-airflow-providers-microsoft-mssql
 
-# Testing
-pytest==8.2.0
-pytest-cov==5.0.0
+# ── Secretos ─────────────────────────────────────────────────────────────────
+hvac
 
-# Calidad de código
-ruff==0.4.4
-detect-secrets==1.5.0
+# NOTA: apache-airflow-providers-amazon queda excluido por incompatibilidad con
+# SQLAlchemy 2.x. Revisar si la restricción sigue vigente en Airflow 3.
+
+# ── Cliente Spark ────────────────────────────────────────────────────────────
+# SparkSubmitOperator ejecuta spark-submit desde el contenedor de Airflow, no
+# desde el de Spark. Requiere pyspark (que provee el binario) y una JVM, que se
+# instala en el Dockerfile.
+#
+# La versión debe coincidir con la de spark-master y spark-worker: un cliente y
+# un cluster desalineados fallan con errores de protocolo poco descriptivos.
+pyspark==3.5.3
+delta-spark==3.2.0
