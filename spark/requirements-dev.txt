@@ -10,6 +10,7 @@ pytest==9.0.3
 pytest-cov==5.0.0
 ruff==0.4.4
 
-# Comparación de DataFrames en tests. Actualmente sin uso: se conserva para
-# los tests de bronze_indicadores.py y bronze_arclim.py que están pendientes.
+# Comparación de DataFrames en tests. Sin uso actualmente: se conserva para los
+# tests pendientes de bronze_indicadores.py y bronze_arclim.py.
+# chispa soporta PySpark 3.5.x / 4.0.x / 4.1.x y Python 3.10–3.12.
 chispa==0.12.0

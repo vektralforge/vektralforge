@@ -1,14 +1,11 @@
-# Dependencias de ejecución de los jobs Spark.
+# Dependencias de ejecución de los jobs Spark — se instalan en la imagen.
 #
-# Las herramientas de desarrollo (pytest, ruff, chispa) están en
-# requirements-dev.txt y no forman parte del entorno de ejecución.
+# Alineadas con Spark 4.0.0 (Scala 2.13, Java 17) y Delta 4.0.0.
+# Deben coincidir con airflow/requirements.txt: el driver corre en el
+# contenedor de Airflow y PySpark rechaza versiones distintas entre driver
+# y executors.
 #
-# Restricción de intérprete: los ejecutores Spark corren su propia versión de
-# Python, distinta de la del host. Verificar con:
-#   docker exec docker-compose-spark-worker-1 python3 --version
-# El código que corre dentro de Spark debe usar sintaxis compatible con esa
-# versión —por ejemplo isinstance(v, (int, float)) con # noqa: UP038 en vez de
-# la sintaxis de unión de Python 3.10+.
+# Las herramientas de desarrollo están en requirements-dev.txt.
 
-pyspark==3.5.3
-delta-spark==3.2.0
+pyspark==4.0.0
+delta-spark==4.0.0
