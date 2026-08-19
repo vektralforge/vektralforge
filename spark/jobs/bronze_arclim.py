@@ -10,14 +10,23 @@ Tablas generadas:
 Uso:
   spark-submit bronze_arclim.py <fecha>
   Ejemplo: spark-submit bronze_arclim.py 2026-07-14
+
+Código de salida:
+  0 — al menos una tabla escrita
+  1 — ninguna tabla escrita, o falta configuración
+
+Los JSON se leen con boto3 en el driver en lugar de sparkContext.textFile():
+son archivos de pocos MB que de todas formas acaban íntegros en memoria del
+driver, y evitar RDDs de Python elimina una fuente de fallos cuando driver y
+executors no comparten exactamente la misma versión del intérprete.
 """
 
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 
-from delta import configure_spark_with_delta_pip
+import boto3
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     IntegerType,
@@ -27,30 +36,30 @@ from pyspark.sql.types import (
 )
 
 # ── Argumentos ────────────────────────────────────────────────────────────────
-fecha = sys.argv[1] if len(sys.argv) > 1 else datetime.now().strftime("%Y-%m-%d")
+fecha = sys.argv[1] if len(sys.argv) > 1 else datetime.now(UTC).strftime("%Y-%m-%d")
 anio = fecha[:4]
 mes = fecha[5:7]
 
 # ── Config ────────────────────────────────────────────────────────────────────
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
-MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
-RAW_PREFIX = f"s3a://raw/arclim/fecha={fecha}"
+# Sin valores por defecto: una credencial silenciosamente incorrecta produce un
+# error de S3 confuso mucho después. Es preferible fallar aquí.
+try:
+    MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
+    MINIO_ACCESS = os.environ["MINIO_ROOT_USER"]
+    MINIO_SECRET = os.environ["MINIO_ROOT_PASSWORD"]
+except KeyError as e:
+    print(f"✗ Falta la variable de entorno {e}")
+    sys.exit(1)
+
+RAW_BUCKET = "raw"
+RAW_PREFIX = f"arclim/fecha={fecha}"
 BRONZE_BASE = "s3a://bronze"
 
-# Indicadores extraídos en el DAG
-INDICADORES = [
-    "hot_days",
-    "consecutive_days_over_25C",
-    "dry_days",
-    "frost_days",
-    "mean_temperature",
-    "total_precipitation",
-]
-
 # ── SparkSession ──────────────────────────────────────────────────────────────
-builder = (
-    SparkSession.builder.appName(f"lakeforge-bronze-arclim-{fecha}")
+# Sin configure_spark_with_delta_pip: los JAR de Delta están tanto en
+# /opt/spark/jars del cluster como en el pyspark del contenedor de Airflow.
+spark = (
+    SparkSession.builder.appName(f"vektralforge-bronze-arclim-{fecha}")
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
     .config(
         "spark.sql.catalog.spark_catalog",
@@ -60,52 +69,74 @@ builder = (
     .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS)
     .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET)
     .config("spark.hadoop.fs.s3a.path.style.access", "true")
-    .config(
-        "spark.hadoop.fs.s3a.impl",
-        "org.apache.hadoop.fs.s3a.S3AFileSystem",
-    )
+    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .config("spark.sql.shuffle.partitions", "2")
+    .getOrCreate()
 )
-
-spark = configure_spark_with_delta_pip(builder).getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 print(f"→ Spark {spark.version} — procesando ARClim para fecha: {fecha}")
 
+_s3 = boto3.client(
+    "s3",
+    endpoint_url=MINIO_ENDPOINT,
+    aws_access_key_id=MINIO_ACCESS,
+    aws_secret_access_key=MINIO_SECRET,
+)
 
-def leer_json_s3(path):
-    """Lee un archivo JSON desde S3A."""
-    rdd = spark.sparkContext.textFile(path)
-    return json.loads("\n".join(rdd.collect()))
+escritos = {}
+vacios = []
+fallidos = []
 
 
-def escribir_delta(df, path, nombre, merge_key=None):
-    """Escribe DataFrame en Delta Lake."""
-    if df.count() == 0:
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def leer_json(key):
+    """Lee un JSON desde MinIO. No usa Spark a propósito."""
+    obj = _s3.get_object(Bucket=RAW_BUCKET, Key=f"{RAW_PREFIX}/{key}")
+    return json.loads(obj["Body"].read().decode("utf-8"))
+
+
+def escribir_delta(df, path, nombre):
+    """Escribe el DataFrame en Delta Lake y devuelve el número de filas.
+
+    Devuelve 0 sin escribir si el DataFrame está vacío, para que quien llama
+    pueda distinguir 'sin datos' de 'escrito'.
+    """
+    n = df.count()
+    if n == 0:
         print(f"  ⚠ {nombre}: DataFrame vacío, omitiendo")
-        return
+        return 0
     df.write.format("delta").mode("append").option("mergeSchema", "true").save(path)
-    print(f"  ✓ {nombre}: {df.count()} filas → {path}")
+    print(f"  ✓ {nombre}: {n} filas → {path}")
+    return n
 
 
-# ── 1. Tabla arclim_indicadores (catálogo) ───────────────────────────────────
+def registrar(nombre, n):
+    if n:
+        escritos[nombre] = n
+    else:
+        vacios.append(nombre)
+
+
+# ── 1. arclim_indicadores (catálogo) ─────────────────────────────────────────
 print("\n→ Procesando catálogo de indicadores climáticos...")
 try:
-    data = leer_json_s3(f"{RAW_PREFIX}/indicadores_climaticos.json")
-    rows = []
-    for item in data.get("data", []):
-        rows.append(
-            {
-                "code": item.get("code", ""),
-                "name": item.get("name", ""),
-                "description": item.get("description", ""),
-                "units": item.get("units", ""),
-                "delta_fn": item.get("delta_fn", ""),
-                "fecha_carga": fecha,
-                "anio": int(anio),
-                "mes": int(mes),
-            }
-        )
+    data = leer_json("indicadores_climaticos.json")
+    rows = [
+        {
+            "code": item.get("code", ""),
+            "name": item.get("name", ""),
+            "description": item.get("description", ""),
+            "units": item.get("units", ""),
+            "delta_fn": item.get("delta_fn", ""),
+            "fecha_carga": fecha,
+            "anio": int(anio),
+            "mes": int(mes),
+        }
+        for item in data.get("data", [])
+    ]
 
     schema = StructType(
         [
@@ -121,23 +152,27 @@ try:
     )
 
     df_ind = spark.createDataFrame(rows, schema)
-    escribir_delta(df_ind, f"{BRONZE_BASE}/arclim_indicadores", "arclim_indicadores")
+    registrar(
+        "arclim_indicadores",
+        escribir_delta(df_ind, f"{BRONZE_BASE}/arclim_indicadores", "arclim_indicadores"),
+    )
 
 except Exception as e:
-    print(f"  ⚠ Error procesando indicadores: {e}")
+    print(f"  ✗ arclim_indicadores: {type(e).__name__}: {e}")
+    fallidos.append(("arclim_indicadores", f"{type(e).__name__}: {e}"))
 
 
-# ── 2. Tabla arclim_comunas (riesgo por comuna) ──────────────────────────────
+# ── 2. arclim_comunas (riesgo por comuna) ────────────────────────────────────
 print("\n→ Procesando riesgo climático por comunas...")
 try:
-    data = leer_json_s3(f"{RAW_PREFIX}/riesgo_comunas.json")
+    data = leer_json("riesgo_comunas.json")
 
     index = data.get("index", [])
     columns = data.get("columns", [])
     values = data.get("values", [])
 
     rows = []
-    for i, (cod_comuna, row_vals) in enumerate(zip(index, values)):
+    for cod_comuna, row_vals in zip(index, values):
         row = {
             "cod_comuna": str(cod_comuna),
             "fecha_carga": fecha,
@@ -145,33 +180,39 @@ try:
             "mes": int(mes),
         }
         for j, col in enumerate(columns):
-            val = row_vals[j] if j < len(row_vals) else None
-            # Limpiar nombre de columna para Delta Lake (sin $ ni caracteres especiales)
+            # Delta Lake no admite $ ni otros caracteres especiales en los
+            # nombres de columna; ARClim los usa en sus atributos climáticos.
             col_clean = (
                 col.replace("$CLIMA$", "clima_")
                 .replace("$annual$", "_anual_")
                 .replace("$", "_")
                 .lower()
             )
-            row[col_clean] = val
+            row[col_clean] = row_vals[j] if j < len(row_vals) else None
         rows.append(row)
 
     if rows:
-        df_comunas = spark.createDataFrame(rows)
-        escribir_delta(
-            df_comunas,
-            f"{BRONZE_BASE}/arclim_comunas",
+        registrar(
             "arclim_comunas",
+            escribir_delta(
+                spark.createDataFrame(rows),
+                f"{BRONZE_BASE}/arclim_comunas",
+                "arclim_comunas",
+            ),
         )
+    else:
+        print("  ⚠ arclim_comunas: sin filas")
+        vacios.append("arclim_comunas")
 
 except Exception as e:
-    print(f"  ⚠ Error procesando comunas: {e}")
+    print(f"  ✗ arclim_comunas: {type(e).__name__}: {e}")
+    fallidos.append(("arclim_comunas", f"{type(e).__name__}: {e}"))
 
 
-# ── 3. Tabla arclim_series (series de tiempo) ─────────────────────────────────
+# ── 3. arclim_series (series de tiempo) ──────────────────────────────────────
 print("\n→ Procesando series de tiempo 1970-2070...")
 try:
-    data = leer_json_s3(f"{RAW_PREFIX}/series_comunas_capitales.json")
+    data = leer_json("series_comunas_capitales.json")
 
     rows = []
     for cod_comuna, info in data.items():
@@ -200,24 +241,51 @@ try:
                 )
 
     if rows:
-        df_series = spark.createDataFrame(rows)
-        escribir_delta(
-            df_series,
-            f"{BRONZE_BASE}/arclim_series",
+        registrar(
             "arclim_series",
+            escribir_delta(
+                spark.createDataFrame(rows),
+                f"{BRONZE_BASE}/arclim_series",
+                "arclim_series",
+            ),
         )
+    else:
+        print("  ⚠ arclim_series: sin filas")
+        vacios.append("arclim_series")
 
 except Exception as e:
-    print(f"  ⚠ Error procesando series: {e}")
+    print(f"  ✗ arclim_series: {type(e).__name__}: {e}")
+    fallidos.append(("arclim_series", f"{type(e).__name__}: {e}"))
 
 
 # ── Resumen ───────────────────────────────────────────────────────────────────
 print("\n" + "=" * 60)
-print(f"✓ Bronze ARClim completado para fecha: {fecha}")
-print("  Tablas Delta Lake actualizadas:")
-print("    s3a://bronze/arclim_indicadores/")
-print("    s3a://bronze/arclim_comunas/")
-print("    s3a://bronze/arclim_series/")
+print(f"Bronze ARClim — fecha {fecha}")
 print("=" * 60)
 
+if escritos:
+    total = sum(escritos.values())
+    print(f"\n✓ Escritas {len(escritos)}/3 tablas ({total} filas)")
+    for nombre, n in escritos.items():
+        print(f"    s3a://bronze/{nombre}/  ({n} filas)")
+
+if vacios:
+    print(f"\n⚠ Sin datos: {', '.join(vacios)}")
+
+if fallidos:
+    print(f"\n✗ Con error: {len(fallidos)}")
+    for nombre, err in fallidos:
+        print(f"    {nombre}: {err}")
+
+print("\n" + "=" * 60)
+
 spark.stop()
+
+# Un job que reporta éxito sin haber escrito nada es peor que uno que falla: los
+# dashboards siguen mostrando datos antiguos y nadie se entera.
+if not escritos:
+    print("✗ Ninguna tabla ARClim llegó a bronze.")
+    sys.exit(1)
+
+if fallidos:
+    print(f"⚠ Completado con {len(fallidos)} error(es).")

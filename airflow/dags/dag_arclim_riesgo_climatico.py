@@ -24,14 +24,16 @@ from datetime import UTC, datetime, timedelta
 
 import requests
 from airflow import DAG
-from airflow.providers.standard.operators.bash import BashOperator
+from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.providers.standard.operators.python import PythonOperator
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 ARCLIM_BASE = "https://arclim.mma.gob.cl/api"
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://minio:9000")
-MINIO_ACCESS = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+# Sin valores por defecto: unas credenciales silenciosamente incorrectas
+# fallan mucho después y con un error de S3 que no señala la causa.
+MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
+MINIO_ACCESS = os.environ["MINIO_ROOT_USER"]
+MINIO_SECRET = os.environ["MINIO_ROOT_PASSWORD"]
 TIMEOUT = 60  # segundos por request
 
 # Indicadores climáticos a extraer
@@ -66,7 +68,7 @@ COMUNAS_CAPITALES = {
 }
 
 default_args = {
-    "owner": "alephserver",
+    "owner": "vektralforge",
     "retries": 0,
     "retry_delay": timedelta(minutes=5),
     "execution_timeout": timedelta(minutes=30),
@@ -187,13 +189,16 @@ def extract_arclim(**context):
 
     print(f"\n✓ Extracción ARClim completada → raw/{prefix}/")
 
+    # transform_bronze necesita la misma fecha con la que se escribió raw/.
+    return {"fecha": ds, "prefix": prefix}
+
 
 def validar_arclim(**context):
     """Valida que los archivos raw existen y tienen datos mínimos."""
     import boto3
     from botocore.client import Config
 
-    ds = context["ds"]
+    ds = _fecha_ejecucion(context)
     prefix = f"arclim/fecha={ds}"
 
     s3 = boto3.client(
@@ -270,15 +275,33 @@ with DAG(
         python_callable=extract_arclim,
     )
 
-    transform = BashOperator(
+    # La fecha viaja por XCom desde extract_arclim: es la misma con la que se
+    # escribió en raw/, y evita depender de {{ ds }}, que no existe en los runs
+    # manuales de Airflow 3.
+    FECHA = "{{ ti.xcom_pull(task_ids='extract_arclim')['fecha'] }}"
+
+    transform = SparkSubmitOperator(
         task_id="transform_bronze",
-        bash_command="""
-            docker exec docker-compose-spark-master-1 \
-                spark-submit \
-                --master spark://spark-master:7077 \
-                --deploy-mode client \
-                /opt/spark/jobs/bronze_arclim.py {{ ti.xcom_pull(task_ids='extract_indicadores')['fecha'] }}
-        """,
+        conn_id="spark_default",
+        application="/opt/spark/jobs/bronze_arclim.py",
+        application_args=[FECHA],
+        # Sin --packages: delta-spark y delta-storage ya están en
+        # /opt/spark/jars del cluster y en el pyspark del contenedor de Airflow.
+        driver_memory="512m",
+        executor_memory="512m",
+        conf={
+            "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
+            "spark.sql.catalog.spark_catalog": ("org.apache.spark.sql.delta.catalog.DeltaCatalog"),
+            "spark.hadoop.fs.s3a.endpoint": MINIO_ENDPOINT,
+            "spark.hadoop.fs.s3a.access.key": MINIO_ACCESS,
+            "spark.hadoop.fs.s3a.secret.key": MINIO_SECRET,
+            "spark.hadoop.fs.s3a.path.style.access": "true",
+            "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
+            "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",
+            "spark.driver.maxResultSize": "128m",
+            "spark.sql.shuffle.partitions": "2",
+        },
+        execution_timeout=timedelta(minutes=20),
     )
 
     validar = PythonOperator(
