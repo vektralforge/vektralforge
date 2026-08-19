@@ -1,326 +1,351 @@
-# Lakeforge — Arquitectura Lakehouse Open Source Stack
+# VektralForge — Arquitectura
 
-**ALEPH SERVER LTDA. — Documento técnico de referencia**
-Versión 2.0 — Stack validado y operativo en PoC — 2026
-
----
+Documento técnico de referencia. Describe el stack tal como está implementado,
+no como se planea que esté.
 
 ## Convenciones de madurez
 
-| Badge | Significado |
+Las insignias indican qué está realmente funcionando. Un componente marcado
+`Operativo` se levanta con `make dev-up` y participa en los pipelines de
+ejemplo; uno `Planificado` no está en el stack todavía.
+
+| Insignia | Significado |
 |---|---|
-| `PoC / Dev` | Validado en entorno local, no productivo aún |
-| `Producción` | Desplegado y estable en producción |
-| `Fase futura` | Planificado para etapa siguiente |
+| `Operativo` | En el stack, levanta con `make dev-up` y se usa en los pipelines |
+| `Parcial` | Presente en el stack, sin integración completa |
+| `Planificado` | Decidido pero no implementado |
+| `En evaluación` | Considerado, sin decisión tomada |
 
 ---
 
-## 1. Introducción
+## 1. Qué es
 
-Lakeforge es el mono-repositorio oficial de ALEPH SERVER LTDA. para el stack de datos Lakehouse open source. Centraliza el código de orquestación (Apache Airflow), procesamiento (Apache Spark), consulta (Trino), esquemas (Hive Metastore) e infraestructura (K3s/Helm) bajo un único repositorio Git con pipelines CI/CD agnósticos por dominio.
+VektralForge integra Apache Airflow, Spark, Delta Lake, Trino y Superset en un
+stack desplegable, con trazabilidad de extremo a extremo mediante OpenLineage y
+Marquez. Corre en local con Docker Compose y está pensado para producción sobre
+K3s.
+
+El proyecto está patrocinado por ALEPH SERVER LTDA. y gobernado de forma
+independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 
 ---
 
-## 2. Stack técnico completo
+## 2. Stack
 
-| Componente | Versión | Estado | Notas |
+| Componente | Versión | Estado | Rol |
 |---|---|---|---|
-| Apache Kafka | 7.6.1 (CP) | `PoC / Dev` | Streaming tiempo real |
-| Apache Airflow | 2.9.1 | `Producción` | Orquestación ETL batch |
-| MinIO | 2024-04 | `PoC / Dev` | Object storage S3-compatible |
-| Delta Lake | 3.2.0 | `PoC / Dev` | Tablas ACID sobre MinIO |
-| Hive Metastore | 4.0.0 | `PoC / Dev` | Catálogo central |
-| Apache Spark | 3.5.3 | `PoC / Dev` | Motor de escritura ACID |
-| Trino | 448 | `PoC / Dev` | Motor SQL federado de lectura |
-| Apache Atlas | — | `PoC / Dev` | Linaje de datos |
-| Apache Ranger | — | `Producción` | Control de acceso |
-| Great Expectations | — | `PoC / Dev` | Calidad de datos |
-| Power BI | — | `Producción` | BI empresarial vía ODBC |
-| Apache Superset | 3.1.3 | `PoC / Dev` | Exploración Big Data |
-| Redis | 7.2 | `PoC / Dev` | Caché Superset |
-| OpenBao | 2.0.0 | `Producción` | Secretos MPL 2.0 / Linux Foundation |
-| Sealed Secrets | — | `PoC / Dev` | Secretos cifrados en Git |
-| Graylog | — | `Producción` | Centralización de logs |
-| Prometheus + Grafana | — | `Fase futura` | Métricas e infraestructura |
-| Docker Compose | — | `PoC / Dev` | Entorno local |
-| K3s / Kubernetes | — | `Producción` | Plataforma de producción |
+| Apache Airflow | 3.3.0 | `Operativo` | Orquestación |
+| Apache Spark | 4.0.0 | `Operativo` | Procesamiento y escritura ACID |
+| Delta Lake | 4.0.0 | `Operativo` | Formato de tabla transaccional |
+| Hive Metastore | 4.0.0 | `Operativo` | Catálogo compartido Spark ↔ Trino |
+| Trino | 448 | `Operativo` | Consulta SQL |
+| MinIO | 2024-04 | `Operativo` | Almacenamiento de objetos S3 |
+| Apache Superset | 3.1.3 | `Operativo` | Visualización |
+| OpenLineage + Marquez | — | `Operativo` | Linaje de datos |
+| PostgreSQL | 15 | `Operativo` | Metadatos de Airflow, Hive, Marquez y Superset |
+| Redis | 7.2 | `Operativo` | Caché de Superset |
+| OpenBao | 2.1.0 | `Parcial` | Secretos; en local corre en modo dev |
+| Apache Kafka | 7.6.1 (CP) | `Parcial` | En el stack, sin pipeline de streaming aún |
+| Docker Compose | — | `Operativo` | Entorno local |
+| K3s / Kubernetes | — | `Planificado` | Plataforma de producción |
+| Sealed Secrets | — | `En evaluación` | Alternativa a OpenBao para K3s |
+| Great Expectations | — | `Planificado` | Calidad de datos |
+| Prometheus + Grafana | — | `Planificado` | Métricas |
+| Graylog | — | `En evaluación` | Logs; su licencia SSPL es un factor en la decisión |
+
+Sobre el linaje: se usa **OpenLineage con Marquez**, no Apache Atlas. Atlas
+cubre catalogación además de linaje, pero OpenLineage tiene integración nativa
+con Airflow y Spark, y Marquez es su implementación de referencia bajo la Linux
+Foundation.
+
+Sobre control de acceso: **no hay una capa transversal**. Trino usa
+`delta.security=ALLOW_ALL` en desarrollo y Airflow gestiona usuarios con
+FabAuthManager. Apache Ranger daría políticas unificadas a nivel de tabla,
+columna y fila, pero no está implementado.
+
+Las licencias de terceros, incluidas MinIO (AGPLv3) y Graylog (SSPL), están en
+[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+
+Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
+versión menor o PySpark rechaza la ejecución.
 
 ---
 
-## 3. Flujo de datos end-to-end
+## 3. Flujo de datos
 
 ![Flujo de datos end-to-end](img/01-flujo-datos.svg)
 
+**Spark escribe, Trino lee.** Las operaciones ACID sobre Delta Lake —`MERGE`,
+`UPDATE`, `DELETE`, `VACUUM`— solo las hace Spark. Trino aporta consulta SQL
+interactiva sobre las mismas tablas.
+
+Ambos comparten el Hive Metastore, de modo que una tabla escrita por Spark es
+consultable desde Trino sin registrarla dos veces. Esa decisión tiene un costo:
+el metastore necesita el conector S3A y su propia configuración de credenciales,
+porque valida rutas en el object store al gestionar esquemas externos.
+
 ---
 
-## 4. Arquitectura del stack de servicios
+## 4. Arquitectura de servicios
 
 ![Stack de servicios](img/02-stack-servicios.svg)
 
+`SparkSubmitOperator` ejecuta `spark-submit` desde el contenedor de Airflow, no
+desde el de Spark. Eso evita montar el socket de Docker —que daría a Airflow
+control del demonio del host— a cambio de que la imagen de Airflow necesite una
+JVM y los mismos JAR que el cluster.
+
 ---
 
-## 5. Mono-repo lakeforge
+## 5. Estructura del repositorio
 
 ```
-lakeforge/
+vektralforge/
 ├── airflow/
-│   ├── dags/               # DAGs Python de Airflow
-│   ├── plugins/            # Operadores y hooks custom
-│   ├── tests/              # Tests unitarios de DAGs
-│   └── requirements.txt    # Dependencias Python (pinning estricto)
+│   ├── dags/                  # DAGs de los pipelines
+│   ├── plugins/               # Operadores y hooks propios
+│   ├── tests/                 # Tests de DAGs
+│   ├── requirements.txt       # Dependencias de ejecución
+│   └── requirements-dev.txt   # Herramientas de desarrollo
 ├── spark/
-│   ├── jobs/               # Scripts PySpark
-│   ├── tests/              # Tests con pytest + chispa
-│   └── requirements.txt    # Dependencias Python de Spark
-├── trino/
-│   └── catalog/            # Configuraciones de conectores
-├── hive/
-│   └── schemas/            # DDL numeradas (convención Flyway)
-├── superset/
-│   └── dashboards/         # Exports JSON de dashboards
+│   ├── jobs/                  # Jobs PySpark
+│   ├── tests/                 # Tests de jobs
+│   ├── requirements.txt
+│   └── requirements-dev.txt
+├── trino/catalog/             # Catálogos de Trino
+├── superset/dashboards/       # Scripts de configuración de dashboards
 ├── infra/
-│   ├── k3s/                # Manifiestos Kubernetes
-│   ├── docker-compose/     # Stack local completo
-│   └── helm/               # Charts Helm personalizados
-├── .ci/
-│   ├── scripts/            # Scripts bash portables (lógica CI/CD)
-│   └── pipelines/          # Adaptadores YAML por plataforma
-├── docs/                   # Documentación técnica
-├── Makefile                # Interfaz unificada de comandos
-└── README.md               # Guía de onboarding
+│   ├── docker-compose/        # Stack local y Dockerfiles
+│   ├── k3s/                   # Manifiestos Kubernetes
+│   └── helm/                  # Charts propios
+├── .ci/scripts/               # Lógica de lint, test y deploy
+├── .github/workflows/         # CI en GitHub Actions
+├── docs/
+│   ├── arquitectura.md
+│   ├── brand/                 # Activos de marca
+│   └── img/                   # Diagramas SVG
+├── Makefile
+└── README.md
 ```
 
-### Makefile — comandos principales
-
-```bash
-make setup           # Crea .venv e instala dependencias (Python 3.12)
-make dev-up          # Levanta stack Docker Compose
-make dev-down        # Detiene stack
-make lint-all        # Lint completo (Ruff + sqlfluff)
-make test-all        # Tests completos
-make detect-secrets  # Escaneo de secretos
-make deploy-staging  # Deploy K3s staging
-make deploy-prod     # Deploy K3s producción (requiere confirmación)
-```
+Las dependencias están separadas en `requirements.txt` y `requirements-dev.txt`
+a propósito: las herramientas de test no forman parte del entorno de ejecución,
+y tenerlas fuera evita que un CVE de una herramienta aparezca como
+vulnerabilidad de producción.
 
 ---
 
-## 6. GitOps y CI/CD agnóstico
+## 6. CI/CD
 
-### Principio de agnosis
+La lógica vive en **`.ci/scripts/`** —scripts bash con lint, tests, escaneo de
+secretos y deploy— y los workflows de `.github/workflows/` solo los invocan.
 
-El CI/CD opera en dos niveles independientes:
+La portabilidad está en los scripts, no en mantener un YAML por plataforma:
+migrar a otro CI significa escribir un archivo que llame a los mismos scripts.
+El proyecto tuvo adaptadores para Bitbucket, Azure y Woodpecker que nunca se
+ejecutaron y habrían fallado; se eliminaron por eso.
 
-- **Nivel 1 — lógica portable:** scripts bash en `.ci/scripts/` con la lógica real de lint, test, build y deploy.
-- **Nivel 2 — adaptadores de plataforma:** archivos YAML en `.ci/pipelines/` que solo invocan los scripts del Nivel 1.
+### Workflows
 
-**Plataformas soportadas:** Woodpecker CI, Bitbucket Pipelines, Azure DevOps, GitHub Actions.
+| Workflow | Se ejecuta en | Verifica |
+|---|---|---|
+| `ci.yml` | Pull requests, push a `main` y `develop` | Lint, tests, escaneo de secretos |
+| `dco.yml` | Pull requests | Firma DCO en cada commit |
 
-### Estrategia de branching
+CodeQL corre por el *default setup* de GitHub Advanced Security, sin workflow
+propio.
+
+### Ramas
 
 ![Estrategia de branching](img/05-cicd-ambientes.svg)
 
-| Branch | Ambiente destino | Pipeline mínimo |
+| Rama | Destino | Verificación |
 |---|---|---|
-| `feature/*` | Local (Docker Compose) | Lint + secrets check |
-| `develop` | Staging (K3s namespace) | Escenario 1 + deploy staging |
-| `main` | Producción (K3s namespace) | Escenario 2/3 + smoke test |
+| `feature/*` | Local | CI completo en el pull request |
+| `develop` | Staging (K3s) — `Planificado` | CI completo |
+| `main` | Producción (K3s) — `Planificado` | CI completo |
 
-### Pipelines por dominio
+### Qué no cubre el CI
 
-| Carpeta | Trigger | Pasos |
-|---|---|---|
-| `airflow/dags/` | Push a branch | Lint → test DAG → sync PVC Airflow |
-| `spark/jobs/` | Push a branch | Lint → test PySpark → build imagen → deploy |
-| `trino/catalog/` | Push a branch | Validar YAML → reload conector |
-| `hive/schemas/` | Push a branch | Validar DDL → migración via DAG Airflow |
-| `infra/k3s/` | Push a main | Validar manifiestos → kubectl apply |
+Nadie comprueba que el stack levante. Los tests verifican que los DAGs se
+parsean y que las funciones puras hacen lo suyo, pero `make dev-up` y
+`make dev-load-example` no se ejecutan en CI: requieren Docker y del orden de
+diez minutos. Es la comprobación que más valdría tener y también la más cara;
+lo habitual es dejarla como ejecución nocturna.
 
 ---
 
-## 7. Escenarios CI/CD
-
-| Requisito | E1 Básico | E2 Intermedio | E3 Avanzado |
-|---|---|---|---|
-| Lint (Ruff / sqlfluff) | Bloquea | Bloquea | Bloquea |
-| detect-secrets | Bloquea | Bloquea | Bloquea |
-| Sintaxis DAG válida | Bloquea | Bloquea | Bloquea |
-| Tests unitarios (pytest) | — | Bloquea | Bloquea |
-| Cobertura mínima 40% | — | Bloquea | Bloquea |
-| Schema Delta válido (GE) | — | Bloquea | Bloquea |
-| Cobertura mínima 70% | — | — | Bloquea |
-| Tests de integración | — | — | Bloquea |
-| Deploy staging OK | — | — | Bloquea |
-| Smoke test en staging | — | — | Bloquea |
-| Tiempo estimado | < 2 min | 4-8 min | 15-25 min |
-
----
-
-## 8. Stack técnico por equipo
-
-### Desarrollador de DAGs (Airflow)
-```
-Python 3.12 · Airflow 2.9.1 · Ruff · pytest · pre-commit
-```
-
-### Desarrollador de jobs Spark
-```
-Python 3.12 · PySpark 3.5.3 · delta-spark 3.2.0 · chispa · Ruff
-```
-
-### Analista SQL / Trino
-```
-DBeaver / DataGrip · trino-cli · sqlfluff
-```
-
-### Ingeniero de infraestructura
-```
-kubectl · helm · k9s · kubectx · Docker Desktop (min 8 GB RAM)
-```
-
----
-
-## 9. Gestión de secretos
-
-![Gestión de secretos](img/04-gestion-secretos.svg)
-
-| Ambiente | Herramienta | Licencia | Notas |
-|---|---|---|---|
-| Local | `.env` file | — | Nunca commitear |
-| Staging | Sealed Secrets | Apache 2.0 | Cifrado en Git, descifrado por K3s |
-| Producción | **OpenBao** | MPL 2.0 | Fork Vault, Linux Foundation, API compatible |
-
-### Cliente Python (hvac)
-
-```python
-import hvac, os
-
-client = hvac.Client(
-    url=os.getenv("OPENBAO_ADDR", "http://openbao:8200"),
-    token=os.getenv("OPENBAO_TOKEN"),
-)
-secret = client.secrets.kv.v2.read_secret_version(path="sqlserver/credentials")
-password = secret["data"]["data"]["password"]
-```
-
----
-
-## 10. Capas del Lakehouse
+## 7. Capas del lakehouse
 
 ![Capas del Lakehouse](img/03-capas-lakehouse.svg)
 
-### Retención de datos
-
-| Capa | Retención | Mecanismo |
+| Capa | Contenido | Retención prevista |
 |---|---|---|
-| `raw/` | 30 días | Lifecycle policy en MinIO |
-| `bronze/` | 90 días | Lifecycle policy en MinIO |
-| `silver/` | Indefinido | Política de negocio |
-| `gold/` | Indefinido | Política de negocio |
-| Delta versions | 7 días | VACUUM DAG en Airflow |
+| `raw/` | Respuesta cruda de la fuente, sin transformar | 30 días |
+| `bronze/` | Tablas Delta tipadas | 90 días |
+| `silver/` | Modelos limpios y deduplicados | Indefinido |
+| `gold/` | Agregados para consumo | Indefinido |
+
+Las políticas de retención son de diseño: **no hay lifecycle policies
+configuradas en MinIO ni un DAG de `VACUUM`**. Delta conserva todas las
+versiones hasta que alguien las purgue.
 
 ---
 
-## 11. Gobernanza y calidad de datos
+## 8. Secretos
 
-### Apache Atlas — `PoC / Dev`
-Linaje de datos y catalogación de metadatos. Clasificaciones: PII, financiero, confidencial.
+![Gestión de secretos](img/04-gestion-secretos.svg)
 
-### Apache Ranger — `Producción`
-Control de acceso centralizado para Trino, Spark y Hive Metastore. Políticas a nivel de tabla, columna y fila. Integración con LDAP / Active Directory.
-
-### Great Expectations — `PoC / Dev`
-Validación de schema, nulos, rangos y unicidad antes de capas silver/gold. Integrado en CI/CD Escenario 2.
-
----
-
-## 12. Observabilidad
-
-### Graylog — `Producción` (activo)
-Centralización de logs via GELF/Syslog. Dashboards por componente. Alertas por patrones de error.
-
-### Prometheus + Grafana — `Fase futura`
-Métricas de infraestructura K3s y pipelines Airflow (duración, tasa de fallos).
-
----
-
-## 13. Ambientes y despliegue
-
-![Ambientes y despliegue](img/05-cicd-ambientes.svg)
-
-### Servicios disponibles tras `make dev-up`
-
-| Servicio | URL | Credenciales |
+| Entorno | Herramienta | Estado |
 |---|---|---|
-| Airflow UI | http://localhost:8090 | admin / admin |
-| Trino UI | http://localhost:8081 | — |
-| MinIO Console | http://localhost:9001 | minioadmin / minioadmin |
-| Superset | http://localhost:8088 | admin / admin |
-| OpenBao | http://localhost:8200 | token: dev-root-token |
-| Spark Master | http://localhost:8082 | — |
+| Local | `.env` | `Operativo` |
+| Staging | Sealed Secrets | `En evaluación` |
+| Producción | OpenBao | `Planificado` |
+
+Ningún archivo del repositorio contiene credenciales. Los que las necesitan
+—`marquez.yml`, el `core-site.xml` del metastore— se generan al arrancar el
+contenedor a partir del `.env`, y los catálogos de Trino usan interpolación
+`${ENV:...}` en tiempo de ejecución.
+
+En local, OpenBao corre en modo `-dev`: almacenamiento en memoria y sellado
+automático. No es una configuración de producción.
+
+### Cliente Python
+
+```python
+import os
+
+import hvac
+
+client = hvac.Client(
+    url=os.environ["OPENBAO_ADDR"],
+    token=os.environ["OPENBAO_TOKEN"],
+)
+secreto = client.secrets.kv.v2.read_secret_version(path="ejemplo/credenciales")
+password = secreto["data"]["data"]["password"]
+```
 
 ---
 
-## 14. Requisitos de hardware
+## 9. Pipelines de ejemplo
 
-### PoC — Servidor único
+| DAG | Fuente | Frecuencia |
+|---|---|---|
+| `indicadores_financieros_chile` | mindicador.cl | Lunes a viernes, 10:00 |
+| `arclim_riesgo_climatico_chile` | ARClim — Ministerio del Medio Ambiente | Lunes, 06:00 |
+
+Ambas APIs son públicas y no requieren clave, de modo que cualquiera que clone
+el repositorio puede ejecutar los pipelines completos sin registrarse en ningún
+sitio. Fue un criterio de selección: un ejemplo que necesita credenciales no es
+un ejemplo.
+
+Cada DAG sigue el mismo patrón: extracción a `raw/`, transformación a Delta en
+`bronze/` con Spark, y validación de que los datos llegaron. Los jobs salen con
+código distinto de cero si ninguna tabla se escribió, para que un fallo no se
+reporte como éxito.
+
+---
+
+## 10. Servicios locales
+
+| Servicio | URL |
+|---|---|
+| Airflow | http://localhost:8090 |
+| Superset | http://localhost:8088 |
+| Trino | http://localhost:8081 |
+| MinIO | http://localhost:9001 |
+| Marquez | http://localhost:3000 |
+| Spark Master | http://localhost:8082 |
+| OpenBao | http://localhost:8200 |
+
+Las credenciales salen de `infra/docker-compose/.env` y se muestran al terminar
+`make dev-up`.
+
+---
+
+## 11. Hardware
+
+### Entorno de desarrollo
+
+Docker Desktop con al menos **8 GB de RAM** asignados. Con menos, los
+contenedores mueren por OOM.
+
+### Servidor único
 
 | Componente | Mínimo | Recomendado |
 |---|---|---|
-| CPU | 8 cores | 16 cores |
+| CPU | 8 núcleos | 16 núcleos |
 | RAM | 32 GB | 64 GB |
-| Disco OS | 100 GB SSD | 200 GB SSD |
-| Disco datos (MinIO) | 500 GB HDD | 2 TB SSD |
+| Disco de sistema | 100 GB SSD | 200 GB SSD |
+| Disco de datos | 500 GB HDD | 2 TB SSD |
 
-> Referencia: Hetzner AX42 (16 cores / 64 GB / 2×512 GB NVMe) — EUR 79/mes
+Referencia de costo: Hetzner AX42 (16 núcleos, 64 GB, 2×512 GB NVMe), unos
+EUR 79 al mes.
 
-### Producción mínima — Cluster K3s 3 nodos
-
-![Cluster K3s 3 nodos](img/02-stack-servicios.svg)
+### Cluster K3s — `Planificado`
 
 | Nodo | Rol | CPU | RAM | Datos |
 |---|---|---|---|---|
-| node-1 | Control plane + Airflow + OpenBao | 8 cores | 32 GB | — |
-| node-2 | Spark + Trino | 16 cores | 64 GB | — |
-| node-3 | MinIO + Kafka + Atlas | 8 cores | 32 GB | 4 TB |
-| **Total** | | **32 cores** | **128 GB** | **4 TB** |
+| node-1 | Control plane, Airflow, OpenBao | 8 núcleos | 32 GB | — |
+| node-2 | Spark, Trino | 16 núcleos | 64 GB | — |
+| node-3 | MinIO, Kafka, Marquez | 8 núcleos | 32 GB | 4 TB |
+| **Total** | | **32 núcleos** | **128 GB** | **4 TB** |
 
 ---
 
-## 15. Correcciones de validación arquitectural
+## 12. Decisiones de arquitectura
 
-### 15.1 HashiCorp Vault → OpenBao
+### OpenBao en lugar de HashiCorp Vault
 
-HashiCorp cambió Vault a BSL v1.1 en agosto 2023. OpenBao es el fork MPL 2.0 bajo Linux Foundation con API 100% compatible.
+HashiCorp cambió Vault a BSL 1.1 en agosto de 2023, una licencia
+source-available que no aprueba la OSI. OpenBao es el fork bajo Linux
+Foundation, mantiene MPL 2.0 y su API es compatible.
 
-| Aspecto | HashiCorp Vault | OpenBao |
+| Aspecto | Vault | OpenBao |
 |---|---|---|
-| Licencia | BSL 1.1 (source-available) | MPL 2.0 (open source OSI) |
+| Licencia | BSL 1.1 | MPL 2.0 |
 | Gobernanza | HashiCorp / IBM | Linux Foundation + OpenSSF |
-| API | Referencia | 100% compatible |
-| Namespaces | Solo Enterprise (pago) | Incluido en open source |
+| Namespaces | Solo Enterprise | Incluido |
 
-### 15.2 Rol real de Apache Spark
+### OpenLineage en lugar de Apache Atlas
 
-| Rol | Descripción |
+OpenLineage tiene integración nativa con Airflow y Spark: el linaje se captura
+sin instrumentar los pipelines a mano. Atlas cubre además catalogación de
+metadatos, que OpenLineage no, y sigue siendo una opción si esa necesidad
+aparece.
+
+### Metastore compartido en lugar de catálogos separados
+
+Trino puede mantener su propio catálogo en disco, que es más simple. Compartir
+el Hive Metastore con Spark exige darle el conector S3A y credenciales propias,
+pero es lo que hace que una tabla escrita por Spark aparezca en Trino sin un
+paso de registro adicional.
+
+### Spark 4 y Scala 2.13
+
+Spark 4 solo se publica para Scala 2.13, así que todas las coordenadas de JAR
+cambian respecto a Spark 3.5. Además Hadoop 3.4 migró del AWS SDK v1 al v2: el
+artefacto pasa de `com.amazonaws:aws-java-sdk-bundle` a
+`software.amazon.awssdk:bundle`, que es otro paquete y no una versión nueva del
+mismo. Los Dockerfiles resuelven esos JAR con Maven en vez de fijarlos a mano,
+porque `hadoop-aws` hereda la versión del SDK de su POM padre.
+
+---
+
+## 13. Hoja de ruta
+
+![Hoja de ruta](img/06-hoja-de-ruta.svg)
+
+| Fase | Hito |
 |---|---|
-| Escritura ACID | Único motor con MERGE, UPDATE, DELETE, VACUUM sobre Delta Lake |
-| ELT batch | Transforma raw → bronze → silver → gold |
-| Streaming | Spark Structured Streaming: Kafka → Delta Lake exactly-once |
+| 1 — Base | Stack local, dos pipelines, linaje, CI, gobernanza ✓ |
+| 2 — Producción | K3s, secretos gestionados, Kafka en streaming |
+| 3 — Madurez | Calidad de datos, métricas, control de acceso |
+| 4 — Exploración | Consulta en lenguaje natural sobre el catálogo |
+
+Las fechas dependen de la disponibilidad de quienes mantienen el proyecto. Ver
+las issues del repositorio para lo que está en curso.
 
 ---
 
-## 16. Hoja de ruta 2026
-
-![Hoja de ruta 2026](img/06-hoja-de-ruta.svg)
-
-| Fase | Período | Hito principal |
-|---|---|---|
-| 1 — PoC | Q1 2026 ✓ | Stack Docker + pipeline bronze + CI/CD E1 + Superset |
-| 2 — Producción | Q2 2026 | K3s + Kafka + SQL Server real + Power BI |
-| 3 — Madurez | Q3 2026 | CI/CD E3 + Prometheus + Atlas completo |
-| 4 — Agentes | Q4 2026 | NL2SQL + automatización LLM via VEKTRAL |
-
----
-
-*ALEPH SERVER LTDA. — Documento técnico confidencial — lakeforge v2.0 — 2026*
+*Apache 2.0 · Copyright The VektralForge Authors*

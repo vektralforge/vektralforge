@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+# Sin permisos de escritura: este workflow solo lee el repositorio.
+permissions:
+  contents: read
+
+# Un push nuevo sobre la misma rama cancela la ejecución anterior: no tiene
+# sentido gastar minutos validando un commit ya superado.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      # Las versiones se leen de los requirements-dev para que CI y entorno
+      # local usen exactamente las mismas herramientas.
+      - name: Instalar herramientas
+        run: |
+          pip install --quiet \
+            "$(grep '^ruff==' airflow/requirements-dev.txt)" \
+            sqlfluff
+
+      - run: .ci/scripts/lint_dags.sh
+      - run: .ci/scripts/lint_spark.sh
+      - run: .ci/scripts/lint_sql.sh
+
+  secrets:
+    name: Escaneo de secretos
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # detect-secrets compara contra el baseline; el historial completo
+          # permite además revisar los commits del pull request.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Instalar detect-secrets
+        run: pip install --quiet "$(grep '^detect-secrets==' airflow/requirements-dev.txt)"
+
+      - run: .ci/scripts/detect_secrets.sh
+
+  test-dags:
+    name: Tests de DAGs
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            airflow/requirements.txt
+            airflow/requirements-dev.txt
+
+      # Se instalan los mismos requirements que la imagen, con el archivo de
+      # constraints de Airflow. Sin él, pip puede resolver una combinación de
+      # providers distinta de la que corre en producción y los tests dejarían
+      # de ser representativos.
+      #
+      # La primera ejecución tarda varios minutos —pyspark pesa unos 400 MB—;
+      # las siguientes reutilizan la caché de pip.
+      - name: Instalar dependencias
+        run: |
+          pip install --quiet -r airflow/requirements.txt \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.0/constraints-3.12.txt"
+          pip install --quiet -r airflow/requirements-dev.txt
+
+      - run: .ci/scripts/test_dags.sh
+
+  test-spark:
+    name: Tests de jobs Spark
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: spark/requirements-dev.txt
+
+      # No se instala pyspark: los tests que existirán prueban funciones puras
+      # de transformación, no necesitan una SparkSession. Añadirlo cuando algún
+      # test lo requiera de verdad.
+      - name: Instalar dependencias
+        run: pip install --quiet -r spark/requirements-dev.txt
+
+      - run: .ci/scripts/test_spark.sh
+
+  # Resultado único al que apuntar en las reglas de protección de rama: así no
+  # hay que actualizarlas cada vez que se añade o renombra un job.
+  ci:
+    name: CI
+    if: always()
+    needs: [lint, secrets, test-dags, test-spark]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verificar que todo pasó
+        run: |
+          resultados='${{ join(needs.*.result, " ") }}'
+          echo "Resultados: $resultados"
+          for r in $resultados; do
+            if [ "$r" != "success" ]; then
+              echo "✗ Algún job no terminó correctamente"
+              exit 1
+            fi
+          done
+          echo "✓ CI OK"

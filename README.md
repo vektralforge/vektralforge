@@ -248,7 +248,6 @@ Issues y pull requests se aceptan en español o en inglés.
 | Documento | Contenido |
 |---|---|
 | [docs/arquitectura.md](docs/arquitectura.md) | Arquitectura, flujo de datos, GitOps, hardware y hoja de ruta |
-| [docs/BASE_DE_CONOCIMIENTO.md](docs/BASE_DE_CONOCIMIENTO.md) | Comandos, troubleshooting y referencias rápidas |
 | [docs/airflow-fab-auth.md](docs/airflow-fab-auth.md) | Gestión de usuarios y roles en Airflow |
 | [docs/marca.md](docs/marca.md) | Manual de marca e imagotipo |
 | [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Inventario de licencias de terceros |
