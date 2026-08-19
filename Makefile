@@ -153,7 +153,7 @@ lint-all: lint-dags lint-spark lint-sql
 	@echo "✓ Lint completo OK"
 
 test-all: test-dags test-spark
-	@echo "✓ Tests completos OK"
+	@echo "✓ Tests ejecutados (ver avisos arriba)"
 
 detect-secrets:
 	@bash .ci/scripts/detect_secrets.sh
