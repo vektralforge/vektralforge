@@ -1,10 +1,10 @@
 # Gestión de secretos en vektralforge
 
-| Ambiente | Herramienta | Licencia | Notas |
-|---|---|---|---|
-| Local | .env file | — | Nunca commitear |
-| Staging | Sealed Secrets | Apache 2.0 | Cifrado en Git |
-| Producción | **OpenBao** | MPL 2.0 | Fork Vault, Linux Foundation |
+| Ambiente | Herramienta | Estado |
+|---|---|---|
+| Local | `.env` | Operativo |
+| Staging | Sealed Secrets | En evaluación |
+| Producción | OpenBao | Planificado |
 
 ## Por qué OpenBao y no HashiCorp Vault
 
@@ -18,8 +18,8 @@ import hvac
 import os
 
 client = hvac.Client(
-    url=os.getenv("OPENBAO_ADDR", "http://openbao:8200"),
-    token=os.getenv("OPENBAO_TOKEN"),
+    url=os.environ["OPENBAO_ADDR"],
+    token=os.environ["OPENBAO_TOKEN"],
 )
 
 # Leer secreto

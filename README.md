@@ -11,6 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-Apache%202.0-B4552D" alt="Apache 2.0"></a>
   <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/contribuciones-DCO-B4552D" alt="DCO"></a>
   <a href="GOVERNANCE.md"><img src="https://img.shields.io/badge/gobernanza-TSC-B4552D" alt="Gobernanza"></a>
+  <a href="../../actions/workflows/ci.yml"><img src="../../actions/workflows/ci.yml/badge.svg?branch=develop" alt="CI"></a>
 </p>
 
 ---
@@ -20,9 +21,9 @@ stack desplegable, con trazabilidad de extremo a extremo mediante OpenLineage y
 Marquez. Levanta en local con Docker Compose y está pensado para producción
 sobre K3s.
 
-Dos pipelines reales vienen incluidos como ejemplo, ambos contra APIs públicas
-chilenas sin credenciales: indicadores financieros de mindicador.cl y riesgo
-climático comunal de ARClim (Ministerio del Medio Ambiente).
+Dos pipelines reales vienen incluidos, ambos contra APIs públicas chilenas sin
+credenciales: indicadores financieros de mindicador.cl y riesgo climático
+comunal de ARClim (Ministerio del Medio Ambiente).
 
 **Licencia [Apache 2.0](LICENSE) con [DCO](CONTRIBUTING.md) en lugar de CLA**: el
 copyright queda distribuido entre quienes contribuyen, no concentrado en una
@@ -41,15 +42,15 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Apache Airflow | 3.3.0 | Orquestación |
 | Apache Spark | 4.0.0 | Procesamiento y escritura ACID |
 | Delta Lake | 4.0.0 | Formato de tabla transaccional |
-| Trino | 448 | Consulta SQL |
 | Apache Hive Metastore | 4.0.0 | Catálogo compartido Spark ↔ Trino |
+| Trino | 448 | Consulta SQL |
 | MinIO | 2024-04 | Almacenamiento de objetos S3 |
 | Apache Superset | 3.1.3 | Visualización |
 | OpenLineage / Marquez | — | Linaje de datos |
-| Apache Kafka | 7.6.1 (CP) | Ingesta en streaming |
-| OpenBao | 2.1.0 | Gestión de secretos |
 | PostgreSQL | 15 | Metadatos |
 | Redis | 7.2 | Caché de Superset |
+| OpenBao | 2.1.0 | Secretos (modo dev en local) |
+| Apache Kafka | 7.6.1 (CP) | En el stack, sin pipeline de streaming aún |
 
 Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
 versión menor o PySpark rechaza la ejecución.
@@ -79,17 +80,18 @@ Docker Desktop necesita al menos **8 GB de RAM** asignados
 git clone https://github.com/vektralforge/vektralforge.git
 cd vektralforge
 
-cp .env.example infra/docker-compose/.env
-# Editar las credenciales antes de continuar
-
-make setup        # Crea .venv con Python 3.12
-make dev-up       # Levanta el stack
-make dev-load-example
+make init-env          # Genera claves y pide contraseñas
+make setup             # Crea .venv con Python 3.12
+make dev-up            # Levanta el stack
+make dev-load-example  # Ejecuta los pipelines y configura los dashboards
 ```
 
-`make dev-load-example` ejecuta los dos pipelines de ejemplo, registra las tablas
-Delta en Trino y configura los dashboards de Superset. Tarda unos cinco minutos
-la primera vez.
+`make init-env` crea `infra/docker-compose/.env` a partir de `.env.example`:
+genera las claves criptográficas y ofrece una contraseña por servicio, que
+puedes aceptar o reemplazar. Es idempotente, así que puedes volver a
+ejecutarlo cuando aparezcan variables nuevas.
+
+`make dev-load-example` tarda unos cinco minutos la primera vez.
 
 ### Servicios
 
@@ -104,8 +106,7 @@ la primera vez.
 | OpenBao | http://localhost:8200 |
 
 Las credenciales salen de `infra/docker-compose/.env` y se muestran al terminar
-`make dev-up`. **Los valores de `.env.example` son de ejemplo y no sirven para
-nada que no sea desarrollo local.**
+`make dev-up`.
 
 ---
 
@@ -129,21 +130,39 @@ API pública → Airflow → Spark → Delta Lake → MinIO
 Las capas siguen el patrón medallón: `raw/` guarda la respuesta cruda de la API,
 `bronze/` las tablas Delta tipadas, `silver/` y `gold/` los modelos derivados.
 
-Detalle completo en [docs/arquitectura.md](docs/arquitectura.md), con diagramas
-en `docs/img/`.
+Detalle completo en [docs/arquitectura.md](docs/arquitectura.md).
+
+### Estructura
+
+```
+airflow/          DAGs, plugins y tests
+spark/            Jobs PySpark y tests
+trino/catalog/    Catálogos de Trino
+superset/         Configuración de dashboards
+infra/
+  docker-compose/ Stack local y Dockerfiles
+  k3s/            Manifiestos Kubernetes
+.ci/scripts/      Lógica de lint, test y deploy
+.github/          CI y plantillas
+docs/             Documentación, marca y diagramas
+```
+
+Las dependencias están separadas en `requirements.txt` y `requirements-dev.txt`:
+las herramientas de test no forman parte del entorno de ejecución.
 
 ---
 
 ## Pipelines de ejemplo
 
-| DAG | Fuente | Frecuencia |
-|---|---|---|
-| `indicadores_financieros_chile` | [mindicador.cl](https://mindicador.cl) | Lunes a viernes, 10:00 |
-| `arclim_riesgo_climatico_chile` | [ARClim](https://arclim.mma.gob.cl) — MMA Chile | Lunes, 06:00 |
+| DAG | Fuente | Frecuencia | Salida |
+|---|---|---|---|
+| `indicadores_financieros_chile` | [mindicador.cl](https://mindicador.cl) | Lunes a viernes, 10:00 | 5 tablas Delta |
+| `arclim_riesgo_climatico_chile` | [ARClim](https://arclim.mma.gob.cl) — MMA Chile | Lunes, 06:00 | 3 tablas Delta |
 
-Ambas APIs son públicas y no requieren clave, de modo que cualquiera que clone el
-repositorio puede ejecutar los pipelines completos sin registrarse en ningún
-sitio.
+Ambas APIs son públicas y no requieren clave, de modo que cualquiera que clone
+el repositorio puede ejecutar los pipelines completos sin registrarse en ningún
+sitio. Fue un criterio de selección: un ejemplo que necesita credenciales no es
+un ejemplo.
 
 **Indicadores financieros**: UF, dólar, euro, UTM y TPM se publican cada día
 hábil; el IPC es mensual, así que una serie vacía no se trata como error.
@@ -157,7 +176,7 @@ tiempo 1970–2070 bajo escenario SSP5-8.5 para las capitales regionales.
 SHOW TABLES FROM delta.bronze;
 
 SELECT indicador, count(*) AS filas, min(fecha) AS desde, max(fecha) AS hasta
-FROM delta.bronze.indicadores_uf
+FROM delta.bronze.indicadores_todos
 GROUP BY indicador;
 
 SELECT nombre, indicador, anio_serie, valor_medio
@@ -171,6 +190,7 @@ ORDER BY anio_serie;
 ## Comandos
 
 ```bash
+make init-env           # Prepara .env con claves generadas
 make setup              # Crea .venv con Python 3.12
 make dev-up             # Levanta el stack
 make dev-down           # Lo detiene
@@ -187,23 +207,26 @@ make deploy-prod        # Deploy K3s producción (pide confirmación)
 ```
 
 `dev-reset` tarda alrededor de un minuto y sirve cuando los datos quedaron
-inconsistentes. `dev-reset-hard` tarda unos tres minutos y hace falta cuando
-cambiaste algún Dockerfile.
+inconsistentes, o tras cambiar `POSTGRES_USER` o `POSTGRES_PASSWORD` — el
+usuario se fija al crear el volumen. `dev-reset-hard` tarda unos tres minutos y
+hace falta cuando cambiaste algún Dockerfile.
 
 ---
 
 ## Secretos
 
-| Entorno | Herramienta | Notas |
+| Entorno | Herramienta | Estado |
 |---|---|---|
-| Local | `.env` | Nunca versionado; `.env.example` documenta las variables |
-| Staging | Sealed Secrets | Cifrado en Git, descifrado por K3s |
-| Producción | OpenBao | Fork de Vault bajo MPL 2.0, con rotación automática |
+| Local | `.env` | Operativo |
+| Staging | Sealed Secrets | En evaluación |
+| Producción | OpenBao | Planificado |
 
 Ningún archivo del repositorio contiene credenciales. Los que las necesitan
-—`marquez.yml`, `core-site.xml` del metastore— se generan al arrancar el
+—`marquez.yml`, el `core-site.xml` del metastore— se generan al arrancar el
 contenedor a partir del `.env`, y los catálogos de Trino usan interpolación
 `${ENV:...}` en tiempo de ejecución.
+
+Detalle en [docs/secretos.md](docs/secretos.md).
 
 ---
 
@@ -217,6 +240,11 @@ Las contribuciones son bienvenidas. Antes de tu primer pull request:
 - [SECURITY.md](SECURITY.md) — reporte de vulnerabilidades (**no** por issue público)
 
 Issues y pull requests se aceptan en español o en inglés.
+
+El CI ejecuta lint, tests y escaneo de credenciales en cada pull request. Los
+tests cubren el parseo de los DAGs y sus funciones puras; **la ejecución del
+stack completo no está automatizada**, así que verifica con `make dev-up` y
+`make dev-load-example` antes de proponer cambios en la infraestructura.
 
 ---
 
@@ -233,13 +261,13 @@ Issues y pull requests se aceptan en español o en inglés.
   a mano.
 - **ANSI mode activo por defecto en Spark 4.** Los casts inválidos lanzan
   excepción en lugar de devolver `null`.
-- **`apache-airflow-providers-amazon` excluido** por incompatibilidad con
-  SQLAlchemy 2.x. El acceso a MinIO se hace con `boto3` directo.
 - **Airflow 3 exige `execution_api_server_url` y un JWT compartido** entre
   contenedores. Las tareas ya no acceden a la base de metadatos: hablan con el
   api-server por HTTP.
 - **Trino usa `s3://`, Spark usa `s3a://`.** El metastore mapea ambos esquemas al
   conector S3A.
+- **`apache-airflow-providers-amazon` excluido** por incompatibilidad con
+  SQLAlchemy 2.x. El acceso a MinIO se hace con `boto3` directo.
 
 ---
 
@@ -247,8 +275,9 @@ Issues y pull requests se aceptan en español o en inglés.
 
 | Documento | Contenido |
 |---|---|
-| [docs/arquitectura.md](docs/arquitectura.md) | Arquitectura, flujo de datos, GitOps, hardware y hoja de ruta |
-| [docs/airflow-fab-auth.md](docs/airflow-fab-auth.md) | Gestión de usuarios y roles en Airflow |
+| [docs/arquitectura.md](docs/arquitectura.md) | Arquitectura, flujo de datos, CI/CD, hardware y decisiones de diseño |
+| [docs/secretos.md](docs/secretos.md) | Gestión de credenciales por entorno |
+| [docs/airflow-fab-auth.md](docs/airflow-fab-auth.md) | Usuarios y roles en Airflow |
 | [docs/marca.md](docs/marca.md) | Manual de marca e imagotipo |
 | [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Inventario de licencias de terceros |
 
