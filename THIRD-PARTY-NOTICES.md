@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-VektralForge itself is licensed under the [Apache License 2.0](../LICENSE). This
+VektralForge itself is licensed under the [Apache License 2.0](LICENSE). This
 document lists the third-party components the project orchestrates, together with
 their copyright holders and licence terms.
 
@@ -64,25 +64,39 @@ Logging is the most loosely coupled part of the stack and the easiest to swap.
 
 ## Core stack
 
-| Component | Licence | Source |
-| --- | --- | --- |
-| Apache Airflow | Apache-2.0 | https://github.com/apache/airflow |
-| Apache Spark / PySpark | Apache-2.0 | https://github.com/apache/spark |
-| Delta Lake | Apache-2.0 | https://github.com/delta-io/delta |
-| Apache Hive (Metastore) | Apache-2.0 | https://github.com/apache/hive |
-| Trino | Apache-2.0 | https://github.com/trinodb/trino |
-| Apache Superset | Apache-2.0 | https://github.com/apache/superset |
-| Apache Kafka | Apache-2.0 | https://github.com/apache/kafka |
-| OpenLineage | Apache-2.0 | https://github.com/OpenLineage/OpenLineage |
-| Marquez | Apache-2.0 | https://github.com/MarquezProject/marquez |
-| OpenBao | MPL-2.0 | https://github.com/openbao/openbao |
-| PostgreSQL | PostgreSQL Licence | https://www.postgresql.org/about/licence/ |
-| MinIO | **AGPL-3.0** | https://github.com/minio/minio |
-| Graylog Open | **SSPL-1.0** | https://github.com/Graylog2/graylog2-server |
+| Component               | Licence                 | Source                                      |
+| ----------------------- | ----------------------- | ------------------------------------------- |
+| Apache Airflow          | Apache-2.0              | https://github.com/apache/airflow           |
+| Apache Spark / PySpark  | Apache-2.0              | https://github.com/apache/spark             |
+| Delta Lake              | Apache-2.0              | https://github.com/delta-io/delta           |
+| Apache Hive (Metastore) | Apache-2.0              | https://github.com/apache/hive              |
+| Trino                   | Apache-2.0              | https://github.com/trinodb/trino            |
+| Apache Superset         | Apache-2.0              | https://github.com/apache/superset          |
+| Apache Kafka            | Apache-2.0              | https://github.com/apache/kafka             |
+| OpenLineage             | Apache-2.0              | https://github.com/OpenLineage/OpenLineage  |
+| Marquez                 | Apache-2.0              | https://github.com/MarquezProject/marquez   |
+| OpenBao                 | MPL-2.0                 | https://github.com/openbao/openbao          |
+| PostgreSQL              | PostgreSQL Licence      | https://www.postgresql.org/about/licence/   |
+| Redis                   | BSD-3-Clause (see note) | https://github.com/redis/redis              |
+| Apache ZooKeeper        | Apache-2.0              | https://github.com/apache/zookeeper         |
+| MinIO                   | **AGPL-3.0**            | https://github.com/minio/minio              |
+| Graylog Open            | **SSPL-1.0**            | https://github.com/Graylog2/graylog2-server |
 
 A note on **OpenBao**: it is the Linux Foundation fork of HashiCorp Vault, created
 after Vault moved to the Business Source Licence. OpenBao remains under MPL 2.0,
 which is why VektralForge uses it rather than Vault.
+
+A note on **Redis**: the image is pinned to 7.2, which is BSD-3-Clause. From 7.4
+onward Redis moved to a dual RSALv2 / SSPLv1 licence that is not OSI-approved.
+The pin is what preserves the permissive terms, so an automated version bump
+would silently change them. Valkey, the Linux Foundation fork, stays under
+BSD-3-Clause if you prefer a version that keeps receiving updates on those terms.
+
+A note on **Kafka**: the images come from `confluentinc/cp-kafka` and
+`confluentinc/cp-zookeeper`, which package Apache Kafka under Apache 2.0. Other
+images in the `cp-` family — `cp-server` among them — carry the Confluent
+Community Licence instead, which is not OSI-approved. Check the image name if
+you change it.
 
 ## Python dependencies
 
@@ -101,14 +115,41 @@ Insights tab.
 
 ## Fonts and brand assets
 
-| Asset | Licence | Source |
-| --- | --- | --- |
-| Archivo Black | SIL Open Font License 1.1 | Omnibus Type |
-| JetBrains Mono | SIL Open Font License 1.1 | JetBrains |
+| Asset          | Licence                   | Source                                          |
+| -------------- | ------------------------- | ----------------------------------------------- |
+| Space Grotesk  | SIL Open Font License 1.1 | https://github.com/floriankarsten/space-grotesk |
+| JetBrains Mono | SIL Open Font License 1.1 | https://github.com/JetBrains/JetBrainsMono      |
+| Inter          | SIL Open Font License 1.1 | https://github.com/rsms/inter                   |
 
-Both are converted to outlines in the distributed brand assets, so no font files
-are redistributed. The VektralForge wordmark and logo are **not** covered by the
-Apache licence — see [TRADEMARK.md](../TRADEMARK.md).
+The wordmark in `docs/brand/` ships as vector paths rather than text, so **no
+font file is redistributed** by this repository. Converting to outlines is also
+what keeps the logo rendering identically everywhere: an SVG declaring
+`font-family` falls back to Arial wherever the font is absent, including on
+GitHub.
+
+The VektralForge name, wordmark and logo are **not** covered by the Apache
+licence — see [TRADEMARK.md](TRADEMARK.md).
+
+## JAR dependencies
+
+These are downloaded at build time into the Spark, Airflow and Hive Metastore
+images. They are not vendored in this repository; the Dockerfiles resolve them
+through Maven so that the versions stay consistent with the base images.
+
+| Artefact                            | Licence          | Notes                                                |
+| ----------------------------------- | ---------------- | ---------------------------------------------------- |
+| `io.delta:delta-spark_2.13`         | Apache-2.0       | Delta Lake for Spark 4 / Scala 2.13                  |
+| `io.delta:delta-storage`            | Apache-2.0       | Delta transaction log storage layer                  |
+| `org.apache.hadoop:hadoop-aws`      | Apache-2.0       | S3A connector                                        |
+| `software.amazon.awssdk:bundle`     | Apache-2.0       | AWS SDK v2, required by Hadoop 3.4                   |
+| `com.amazonaws:aws-java-sdk-bundle` | Apache-2.0       | AWS SDK v1, required by Hadoop 3.3 in the Hive image |
+| `org.antlr:antlr4-runtime`          | **BSD-3-Clause** | Parser runtime; the only non-Apache entry here       |
+| PostgreSQL JDBC driver              | BSD-2-Clause     | Metastore connection                                 |
+
+All are permissive and compatible with Apache 2.0. Note that Spark 4 (Hadoop
+3.4) uses the AWS SDK **v2** while the Hive Metastore image (Hadoop 3.3) still
+uses **v1** — they are different artefacts under different group IDs, not
+versions of the same one.
 
 ## Container images
 

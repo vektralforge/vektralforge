@@ -1,289 +1,263 @@
-# lakeforge
+<p align="center">
+  <img src="docs/brand/logo/vektralforge-logo-horizontal-dark.svg#gh-dark-mode-only" width="420" alt="VektralForge">
+  <img src="docs/brand/logo/vektralforge-logo-horizontal-light.svg#gh-light-mode-only" width="420" alt="VektralForge">
+</p>
 
-**ALEPH SERVER LTDA. — Lakehouse Open Source Stack**
+<p align="center">
+  <strong>Data Lakehouse open source con linaje de datos integrado</strong>
+</p>
 
-Mono-repositorio oficial del stack de datos: Apache Airflow, Apache Spark,
-Delta Lake, MinIO, Trino y OpenBao. Desplegado sobre K3s con CI/CD agnóstico.
-
-Documentación completa: [docs/arquitectura.md](docs/arquitectura.md)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-Apache%202.0-B4552D" alt="Apache 2.0"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/contribuciones-DCO-B4552D" alt="DCO"></a>
+  <a href="GOVERNANCE.md"><img src="https://img.shields.io/badge/gobernanza-TSC-B4552D" alt="Gobernanza"></a>
+</p>
 
 ---
 
-## Stack de versiones
+VektralForge integra Apache Airflow, Spark, Delta Lake, Trino y Superset en un
+stack desplegable, con trazabilidad de extremo a extremo mediante OpenLineage y
+Marquez. Levanta en local con Docker Compose y está pensado para producción
+sobre K3s.
 
-| Componente | Versión | Python requerido |
+Dos pipelines reales vienen incluidos como ejemplo, ambos contra APIs públicas
+chilenas sin credenciales: indicadores financieros de mindicador.cl y riesgo
+climático comunal de ARClim (Ministerio del Medio Ambiente).
+
+**Licencia [Apache 2.0](LICENSE) con [DCO](CONTRIBUTING.md) en lugar de CLA**: el
+copyright queda distribuido entre quienes contribuyen, no concentrado en una
+empresa. Ver [OPEN_SOURCE_PROMISE.md](OPEN_SOURCE_PROMISE.md).
+
+Patrocinado por [ALEPH SERVER LTDA.](https://alephserver.cl), que financia el
+proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
+[GOVERNANCE.md](GOVERNANCE.md).
+
+---
+
+## Stack
+
+| Componente | Versión | Rol |
 |---|---|---|
-| Apache Airflow | 2.9.1 | >= 3.12 |
-| PySpark | 3.5.3 | >= 3.12 |
-| delta-spark | 3.2.0 | >= 3.12 |
-| Trino | 448 | — |
-| OpenBao | 2.1.0 | — |
-| MinIO | 2024-04 | — |
-| Apache Superset | 3.1.3 | — |
-| Apache Kafka | 7.6.1 (CP) | — |
-| PostgreSQL | 15 | — |
-| Redis | 7.2 | — |
+| Apache Airflow | 3.3.0 | Orquestación |
+| Apache Spark | 4.0.0 | Procesamiento y escritura ACID |
+| Delta Lake | 4.0.0 | Formato de tabla transaccional |
+| Trino | 448 | Consulta SQL |
+| Apache Hive Metastore | 4.0.0 | Catálogo compartido Spark ↔ Trino |
+| MinIO | 2024-04 | Almacenamiento de objetos S3 |
+| Apache Superset | 3.1.3 | Visualización |
+| OpenLineage / Marquez | — | Linaje de datos |
+| Apache Kafka | 7.6.1 (CP) | Ingesta en streaming |
+| OpenBao | 2.1.0 | Gestión de secretos |
+| PostgreSQL | 15 | Metadatos |
+| Redis | 7.2 | Caché de Superset |
+
+Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
+versión menor o PySpark rechaza la ejecución.
+
+Licencias de terceros, incluidas las dos que no son permisivas —MinIO (AGPLv3) y
+Graylog (SSPL)— en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
 
-## Estructura
+## Arranque
 
-```
-lakeforge/
-├── airflow/
-│   └── dags/
-│       ├── dag_bronze_ejemplo.py          # Pipeline sintético validado
-│       └── dag_indicadores_financieros.py # mindicador.cl (sin API Key) ← activo
-├── spark/
-│   └── jobs/
-│       ├── bronze_clientes.py             # Job Spark clientes ejemplo
-│       └── bronze_indicadores.py          # Job Spark indicadores mindicador.cl
-├── trino/
-│   └── catalog/                           # Configuración Delta Lake connector
-├── hive/
-│   └── schemas/                           # DDL numeradas (Flyway)
-├── superset/
-│   └── dashboards/
-│       └── setup_superset_dashboard.py    # Script auto-configuración dashboard
-├── infra/
-│   ├── k3s/                               # Manifiestos Kubernetes (staging + prod)
-│   ├── docker-compose/
-│   │   ├── docker-compose.yml             # Stack completo 13 servicios
-│   │   ├── .env                           # Credenciales locales (NO versionado)
-│   │   ├── spark/Dockerfile               # JARs delta+hadoop-aws pre-instalados
-│   │   └── superset/Dockerfile            # trino[sqlalchemy] incluido
-│   └── helm/                              # Charts Helm personalizados
-├── .ci/
-│   ├── scripts/
-│   │   ├── setup.sh                       # Crea .venv Python 3.12
-│   │   ├── init_users.sh                  # Crea usuarios + buckets MinIO
-│   │   └── load_example.sh                # Carga datos de ejemplo post-reset
-│   └── pipelines/                         # Adaptadores YAML por plataforma CI/CD
-├── docs/
-│   ├── arquitectura.md                    # Arquitectura completa con diagramas SVG
-│   └── img/                               # 6 diagramas SVG del stack
-├── .env.example                           # Variables requeridas (SÍ versionado)
-├── .secrets.baseline                      # Baseline detect-secrets
-├── Makefile                               # Interfaz unificada de comandos
-└── README.md
-```
-
----
-
-## Rol de cada motor de datos
-
-| Motor | Escribe Delta Lake | Lee Delta Lake | Streaming Kafka |
-|---|---|---|---|
-| Spark | ✓ ACID completo | ✓ | ✓ Structured Streaming |
-| Trino | ✗ (solo lectura) | ✓ SQL ad-hoc | ✗ |
-
-**Spark escribe. Trino lee.** Esta separación es la base de la arquitectura.
-
----
-
-## Onboarding rápido (< 30 minutos)
-
-### 1. Requisitos previos
+### Requisitos
 
 ```bash
 docker --version        # >= 24.0
 docker compose version  # >= 2.20
-python3.12 --version    # >= 3.12 (brew install python@3.12)
+python3.12 --version    # 3.12 exacto — brew install python@3.12
 make --version
 ```
 
-> Docker Desktop requiere mínimo **8 GB de RAM** (Settings → Resources → Memory).
+Docker Desktop necesita al menos **8 GB de RAM** asignados
+(Settings → Resources → Memory). Con menos, los contenedores mueren por OOM.
 
-### 2. Clonar y configurar
-
-```bash
-git clone https://bitbucket.org/alephserver/lakeforge.git
-cd lakeforge
-```
-
-### 3. Configurar variables de entorno
+### Puesta en marcha
 
 ```bash
+git clone https://github.com/vektralforge/vektralforge.git
+cd vektralforge
+
 cp .env.example infra/docker-compose/.env
-nano infra/docker-compose/.env   # ajustar según el entorno
-```
+# Editar las credenciales antes de continuar
 
-> El archivo `.env` está en `.gitignore` y nunca se versiona.
-> `.env.example` documenta todas las variables con valores placeholder.
-
-### 4. Setup del entorno Python
-
-```bash
-make setup
-source .venv/bin/activate
-```
-
-### 5. Levantar stack local
-
-```bash
-make dev-up
-```
-
-Al finalizar se muestra la tabla de servicios con credenciales leídas del `.env`:
-
-| Servicio | URL | Usuario | Password |
-|---|---|---|---|
-| Airflow | http://localhost:8090 | admin | admin |
-| Superset | http://localhost:8088 | admin | admin |
-| MinIO Console | http://localhost:9001 | minioadmin | minioadmin |
-| Trino | http://localhost:8081 | trino | (sin password) |
-| OpenBao | http://localhost:8200 | token: | dev-root-token |
-| Spark Master | http://localhost:8082 | (sin auth) | — |
-
-> Las credenciales reales están en `infra/docker-compose/.env`.
-
-### 6. Cargar datos de ejemplo
-
-```bash
+make setup        # Crea .venv con Python 3.12
+make dev-up       # Levanta el stack
 make dev-load-example
 ```
 
-Ejecuta automáticamente en orden:
+`make dev-load-example` ejecuta los dos pipelines de ejemplo, registra las tablas
+Delta en Trino y configura los dashboards de Superset. Tarda unos cinco minutos
+la primera vez.
 
-1. Verifica que el stack está operativo
-2. Instala dependencias Spark si faltan (antlr4-runtime JAR)
-3. Activa y dispara el DAG `indicadores_financieros_chile`
-4. Monitorea cada task hasta completar (~3 min)
-5. Registra 5 tablas Delta en Trino + crea vista `indicadores_todos`
-6. Configura dashboard Superset con 10 charts
+### Servicios
 
-Al finalizar el dashboard está disponible en:
-```
-http://localhost:8088/superset/dashboard/indicadores-financieros-chile/
-```
+| Servicio | URL |
+|---|---|
+| Airflow | http://localhost:8090 |
+| Superset | http://localhost:8088 |
+| Trino | http://localhost:8081 |
+| MinIO | http://localhost:9001 |
+| Marquez (linaje) | http://localhost:3000 |
+| Spark Master | http://localhost:8082 |
+| OpenBao | http://localhost:8200 |
 
-### 7. Detener
-
-```bash
-make dev-down
-```
-
----
-
-## Comandos disponibles
-
-```bash
-make setup              # Crea .venv e instala dependencias (Python 3.12)
-make dev-up             # Levanta stack Docker Compose
-make dev-down           # Detiene stack
-make dev-logs           # Logs en tiempo real
-make dev-reset          # Reset completo: borra volúmenes, recrea usuarios desde .env
-make dev-reset-hard     # Reset extremo: borra volúmenes + imágenes custom (rebuild)
-make dev-load-example   # Carga datos de ejemplo y configura dashboard Superset
-make lint-all           # Lint completo (Ruff + sqlfluff)
-make test-all           # Tests completos
-make detect-secrets     # Escaneo de credenciales y secretos
-make deploy-staging     # Deploy K3s staging
-make deploy-prod        # Deploy K3s producción (requiere confirmación)
-```
-
-### Diferencia entre dev-reset y dev-reset-hard
-
-| Comando | Borra datos | Borra imágenes Docker | Velocidad | Cuándo usar |
-|---|---|---|---|---|
-| `dev-reset` | ✓ | ✗ | ~60s | Datos corruptos, empezar limpio |
-| `dev-reset-hard` | ✓ | ✓ (imágenes custom) | ~3 min | Cambios en Dockerfiles, caché corrupto |
-
-### Flujo típico post reset
-
-```bash
-make dev-reset-hard      # Stack completamente limpio
-make dev-load-example    # Datos + Trino + Dashboard (~5 min)
-```
+Las credenciales salen de `infra/docker-compose/.env` y se muestran al terminar
+`make dev-up`. **Los valores de `.env.example` son de ejemplo y no sirven para
+nada que no sea desarrollo local.**
 
 ---
 
-## DAGs disponibles
+## Arquitectura
 
-| DAG | Fuente | Schedule | Estado |
-|---|---|---|---|
-| `indicadores_financieros_chile` | mindicador.cl (sin API Key) | Lunes-Viernes 10:00 AM | ✓ Activo |
-| `bronze_clientes_ejemplo` | Datos sintéticos | Manual | ✓ Disponible |
+**Spark escribe, Trino lee.** Las operaciones ACID sobre Delta Lake —`MERGE`,
+`UPDATE`, `DELETE`, `VACUUM`— solo las hace Spark; Trino aporta consulta SQL
+interactiva sobre las mismas tablas. Ambos comparten el Hive Metastore, así que
+una tabla escrita por Spark es consultable desde Trino sin registrarla dos veces.
 
-### Indicadores financieros (mindicador.cl)
+```
+API pública → Airflow → Spark → Delta Lake → MinIO
+                                     ↓
+                          Hive Metastore (compartido)
+                                     ↓
+                                  Trino → Superset
 
-| Indicador | Tipo | Publicación |
+        OpenLineage captura el linaje en cada paso → Marquez
+```
+
+Las capas siguen el patrón medallón: `raw/` guarda la respuesta cruda de la API,
+`bronze/` las tablas Delta tipadas, `silver/` y `gold/` los modelos derivados.
+
+Detalle completo en [docs/arquitectura.md](docs/arquitectura.md), con diagramas
+en `docs/img/`.
+
+---
+
+## Pipelines de ejemplo
+
+| DAG | Fuente | Frecuencia |
 |---|---|---|
-| UF | Diario | Cada día hábil |
-| Dólar | Diario | Cada día hábil |
-| Euro | Diario | Cada día hábil |
-| UTM | Diario | Cada día hábil |
-| TPM | Diario | Cada día hábil |
-| IPC | Mensual | ~día 8 de cada mes (WARNING si no está) |
+| `indicadores_financieros_chile` | [mindicador.cl](https://mindicador.cl) | Lunes a viernes, 10:00 |
+| `arclim_riesgo_climatico_chile` | [ARClim](https://arclim.mma.gob.cl) — MMA Chile | Lunes, 06:00 |
 
----
+Ambas APIs son públicas y no requieren clave, de modo que cualquiera que clone el
+repositorio puede ejecutar los pipelines completos sin registrarse en ningún
+sitio.
 
-## Trino — consultas de referencia
+**Indicadores financieros**: UF, dólar, euro, UTM y TPM se publican cada día
+hábil; el IPC es mensual, así que una serie vacía no se trata como error.
+
+**Riesgo climático**: indicadores por las 346 comunas de Chile y series de
+tiempo 1970–2070 bajo escenario SSP5-8.5 para las capitales regionales.
+
+### Consultas de referencia
 
 ```sql
--- Ver todas las tablas
-SHOW TABLES IN delta.bronze;
+SHOW TABLES FROM delta.bronze;
 
--- Conteo por indicador
-SELECT indicador, COUNT(*) as filas, MIN(fecha) as desde, MAX(fecha) as hasta
-FROM delta.bronze.indicadores_todos
-GROUP BY indicador ORDER BY indicador;
-
--- Último valor de cada indicador
-SELECT indicador, MAX(fecha) as fecha, MAX(valor) as valor
-FROM delta.bronze.indicadores_todos
+SELECT indicador, count(*) AS filas, min(fecha) AS desde, max(fecha) AS hasta
+FROM delta.bronze.indicadores_uf
 GROUP BY indicador;
+
+SELECT nombre, indicador, anio_serie, valor_medio
+FROM delta.bronze.arclim_series
+WHERE cod_comuna = '13101' AND anio_serie >= 2050
+ORDER BY anio_serie;
 ```
 
 ---
 
-## Gestión de credenciales y secretos
+## Comandos
 
-| Ambiente | Herramienta | Licencia | Notas |
-|---|---|---|---|
-| Local | `.env` file | — | Basado en `.env.example`, nunca commitear |
-| Staging | Sealed Secrets | Apache 2.0 | Cifrado en Git, descifrado por K3s |
-| Producción | **OpenBao** | MPL 2.0 | Fork Vault, Linux Foundation, rotación automática |
+```bash
+make setup              # Crea .venv con Python 3.12
+make dev-up             # Levanta el stack
+make dev-down           # Lo detiene
+make dev-ps             # Estado de los contenedores
+make dev-logs           # Logs (SERVICE=airflow-scheduler para uno solo)
+make dev-reset          # Borra volúmenes y recrea usuarios
+make dev-reset-hard     # Además reconstruye las imágenes locales
+make dev-load-example   # Ejecuta los pipelines y configura los dashboards
+make lint-all           # Ruff + sqlfluff
+make test-all           # Tests
+make detect-secrets     # Escaneo de credenciales
+make deploy-staging     # Deploy K3s staging
+make deploy-prod        # Deploy K3s producción (pide confirmación)
+```
 
-> OpenBao gestiona contraseñas, tokens API, certificados y claves de cifrado.
-> La UI web no está disponible en el binario de desarrollo — la API REST funciona completamente en `:8200`.
+`dev-reset` tarda alrededor de un minuto y sirve cuando los datos quedaron
+inconsistentes. `dev-reset-hard` tarda unos tres minutos y hace falta cuando
+cambiaste algún Dockerfile.
 
 ---
 
-## Diagramas de arquitectura
+## Secretos
 
-Los diagramas SVG están en `docs/img/`:
+| Entorno | Herramienta | Notas |
+|---|---|---|
+| Local | `.env` | Nunca versionado; `.env.example` documenta las variables |
+| Staging | Sealed Secrets | Cifrado en Git, descifrado por K3s |
+| Producción | OpenBao | Fork de Vault bajo MPL 2.0, con rotación automática |
 
-| Diagrama | Archivo |
-|---|---|
-| Flujo de datos end-to-end | `docs/img/01-flujo-datos.svg` |
-| Stack de servicios Docker/K3s | `docs/img/02-stack-servicios.svg` |
-| Capas del Lakehouse | `docs/img/03-capas-lakehouse.svg` |
-| Gestión de credenciales y secretos | `docs/img/04-gestion-secretos.svg` |
-| CI/CD y ambientes | `docs/img/05-cicd-ambientes.svg` |
-| Hoja de ruta 2026 | `docs/img/06-hoja-de-ruta.svg` |
+Ningún archivo del repositorio contiene credenciales. Los que las necesitan
+—`marquez.yml`, `core-site.xml` del metastore— se generan al arrancar el
+contenedor a partir del `.env`, y los catálogos de Trino usan interpolación
+`${ENV:...}` en tiempo de ejecución.
+
+---
+
+## Contribuir
+
+Las contribuciones son bienvenidas. Antes de tu primer pull request:
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — flujo de trabajo y firma DCO (`git commit -s`)
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — normas de convivencia
+- [GOVERNANCE.md](GOVERNANCE.md) — cómo se toman las decisiones
+- [SECURITY.md](SECURITY.md) — reporte de vulnerabilidades (**no** por issue público)
+
+Issues y pull requests se aceptan en español o en inglés.
 
 ---
 
 ## Notas de compatibilidad
 
-- **Python 3.14 no soportado** — usar siempre Python 3.12. pandas y Airflow sin wheels para 3.14.
-- **delta-spark 3.2.0** — compatible con Spark 3.5.x. delta-spark 4.0.0 requiere Spark 4.x.
-- **isinstance con tupla en Spark** — Spark corre Python 3.8 internamente. Usar `isinstance(x, (int, float))` con `# noqa: UP038`, no `int | float` (requiere Python 3.10+).
-- **antlr4-runtime JAR** — puede corromperse en caché. `make dev-load-example` lo instala automáticamente. Fix manual: `docker exec -u root docker-compose-spark-master-1 curl -L -o /opt/spark/jars/antlr4-runtime-4.9.3.jar https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar`
-- **apache-airflow-providers-amazon excluido** — conflicto con SQLAlchemy 2.x. MinIO usa `boto3` directo.
-- **Trino usa file metastore** — más estable que Hive Metastore en PoC.
-- **Docker Desktop** — asignar mínimo 8 GB RAM para evitar OOM kills.
-- **OpenBao UI** — no disponible en binario de desarrollo. Usar API REST o CLI (`bao`).
-- **Superset driver Trino** — incluido en `infra/docker-compose/superset/Dockerfile`. Si falta: `docker exec -u root docker-compose-superset-1 pip install "trino[sqlalchemy]"`.
+- **Python 3.12 exacto.** Versiones más nuevas rompen la compilación de pandas,
+  que los providers de Airflow acotan a `<2.2`. Driver y executors de Spark
+  deben coincidir en versión menor.
+- **Spark 4 usa Scala 2.13.** El soporte de 2.12 se eliminó, así que todas las
+  coordenadas de JAR cambian respecto a Spark 3.5.
+- **AWS SDK v2 en Spark, v1 en el metastore.** Hadoop 3.4 (Spark 4) migró al v2;
+  Hadoop 3.3 (imagen de Hive) sigue con el v1. Son artefactos distintos, no
+  versiones del mismo. Los Dockerfiles los resuelven con Maven en vez de fijarlos
+  a mano.
+- **ANSI mode activo por defecto en Spark 4.** Los casts inválidos lanzan
+  excepción en lugar de devolver `null`.
+- **`apache-airflow-providers-amazon` excluido** por incompatibilidad con
+  SQLAlchemy 2.x. El acceso a MinIO se hace con `boto3` directo.
+- **Airflow 3 exige `execution_api_server_url` y un JWT compartido** entre
+  contenedores. Las tareas ya no acceden a la base de metadatos: hablan con el
+  api-server por HTTP.
+- **Trino usa `s3://`, Spark usa `s3a://`.** El metastore mapea ambos esquemas al
+  conector S3A.
 
 ---
 
 ## Documentación
 
-- [docs/arquitectura.md](docs/arquitectura.md) — Arquitectura completa: stack, flujo de datos, GitOps, CI/CD, credenciales, gobernanza, hardware y hoja de ruta 2026.
-- [docs/BASE_DE_CONOCIMIENTO_LAKEFORGE.md](docs/BASE_DE_CONOCIMIENTO_LAKEFORGE.md) — Base de conocimiento para Cowork: comandos, DAGs, troubleshooting y referencias rápidas.
+| Documento | Contenido |
+|---|---|
+| [docs/arquitectura.md](docs/arquitectura.md) | Arquitectura, flujo de datos, GitOps, hardware y hoja de ruta |
+| [docs/BASE_DE_CONOCIMIENTO.md](docs/BASE_DE_CONOCIMIENTO.md) | Comandos, troubleshooting y referencias rápidas |
+| [docs/airflow-fab-auth.md](docs/airflow-fab-auth.md) | Gestión de usuarios y roles en Airflow |
+| [docs/marca.md](docs/marca.md) | Manual de marca e imagotipo |
+| [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Inventario de licencias de terceros |
 
 ---
 
-ALEPH SERVER LTDA. — Documento técnico confidencial — 2026
+<p align="center">
+  <sub>
+    Apache 2.0 · Copyright The VektralForge Authors ·
+    Patrocinado por <a href="https://alephserver.cl">ALEPH SERVER LTDA.</a>
+  </sub>
+</p>
