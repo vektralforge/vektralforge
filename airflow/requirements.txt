@@ -39,4 +39,4 @@ hvac
 # La versión debe coincidir con la de spark-master y spark-worker: un cliente y
 # un cluster desalineados fallan con errores de protocolo poco descriptivos.
 pyspark==4.0.0,
-delta-spark==4.0.0
+delta-spark==4.3.1
