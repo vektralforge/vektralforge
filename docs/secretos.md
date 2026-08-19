@@ -1,4 +1,4 @@
-# Gestión de secretos en lakeforge
+# Gestión de secretos en vektralforge
 
 | Ambiente | Herramienta | Licencia | Notas |
 |---|---|---|---|

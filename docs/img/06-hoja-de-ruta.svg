@@ -6,7 +6,7 @@
   </defs>
 
   <rect width="900" height="380" fill="#FAFAFA" rx="8"/>
-  <text x="450" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">Lakeforge — Hoja de Ruta 2026</text>
+  <text x="450" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">VektralForge — Hoja de Ruta 2026</text>
 
   <!-- Timeline bar -->
   <rect x="30" y="55" width="840" height="8" rx="4" fill="#E2E8F0"/>
@@ -28,7 +28,7 @@
   <text x="130" y="100" text-anchor="middle" font-size="12" font-weight="bold" fill="white">FASE 1 — PoC</text>
   <text x="130" y="114" text-anchor="middle" font-size="9" fill="white">Q1 2026 · COMPLETADO ✓</text>
   <rect x="45" y="122" width="170" height="22" rx="3" fill="#BBF7D0"/>
-  <text x="130" y="137" text-anchor="middle" font-size="9" fill="#14532D">✓ Mono-repo lakeforge</text>
+  <text x="130" y="137" text-anchor="middle" font-size="9" fill="#14532D">✓ Mono-repo vektralforge</text>
   <rect x="45" y="148" width="170" height="22" rx="3" fill="#BBF7D0"/>
   <text x="130" y="163" text-anchor="middle" font-size="9" fill="#14532D">✓ Docker Compose 13 servicios</text>
   <rect x="45" y="174" width="170" height="22" rx="3" fill="#BBF7D0"/>
@@ -109,5 +109,5 @@
   <text x="775" y="295" text-anchor="middle" font-size="9" font-weight="bold" fill="#6B21A8">Lakehouse inteligente</text>
   <text x="775" y="308" text-anchor="middle" font-size="8" fill="#6B21A8">datos + IA + automatización</text>
 
-  <text x="450" y="348" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — lakeforge v2.0 — 2026  ·  VEKTRAL SpA como plataforma de IA</text>
+  <text x="450" y="348" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — vektralforge v2.0 — 2026  ·  VEKTRAL SpA como plataforma de IA</text>
 </svg>

@@ -165,11 +165,13 @@ except Exception as e:
 # ── 2. arclim_comunas (riesgo por comuna) ────────────────────────────────────
 print("\n→ Procesando riesgo climático por comunas...")
 try:
-    data = leer_json("riesgo_comunas.json")
+    payload = leer_json("riesgo_comunas.json")
+    # La API de ARClim anida la respuesta bajo "data"; el resto de endpoints no.
+    contenido = payload.get("data", payload)
 
-    index = data.get("index", [])
-    columns = data.get("columns", [])
-    values = data.get("values", [])
+    index = contenido.get("index", [])
+    columns = contenido.get("columns", [])
+    values = contenido.get("values", [])
 
     rows = []
     for cod_comuna, row_vals in zip(index, values):

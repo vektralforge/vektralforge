@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .ci/scripts/setup.sh — Instala dependencias locales de lakeforge
+# .ci/scripts/setup.sh — Instala dependencias locales de vektralforge
 # Compatible con macOS Homebrew (PEP 668) y Linux
 set -euo pipefail
 

@@ -6,7 +6,7 @@
   </defs>
 
   <rect width="900" height="360" fill="#FAFAFA" rx="8"/>
-  <text x="450" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">Lakeforge — Estrategia de Ambientes y CI/CD</text>
+  <text x="450" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">VektralForge — Estrategia de Ambientes y CI/CD</text>
 
   <!-- feature/* -->
   <rect x="20" y="55" width="200" height="220" rx="8" fill="#F0FDF4" stroke="#22C55E" stroke-width="2"/>
@@ -96,5 +96,5 @@
   <rect x="685" y="322" width="160" height="16" rx="3" fill="#FFE4E6"/>
   <text x="765" y="334" text-anchor="middle" font-size="9" fill="#9F1239">Mes 6+: Escenario 3 · madurez</text>
 
-  <text x="450" y="352" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — lakeforge v2.0 — 2026</text>
+  <text x="450" y="352" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — vektralforge v2.0 — 2026</text>
 </svg>

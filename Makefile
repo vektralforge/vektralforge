@@ -4,7 +4,7 @@
 # Variables de entorno: infra/docker-compose/.env (ver .env.example)
 
 .PHONY: help check-env check-python \
-        setup \
+        setup init-env\
         dev-up dev-down dev-logs dev-ps dev-reset dev-reset-hard dev-load-example \
         lint-dags test-dags lint-spark test-spark lint-sql \
         lint-all test-all detect-secrets \
@@ -71,6 +71,10 @@ check-env:
 setup: check-python check-env
 	@echo "→ Ejecutando setup..."
 	@PYTHON_BIN=$(PYTHON) bash .ci/scripts/setup.sh
+
+# ── Crea $(ENV_FILE) con claves generadas ─────────────────────────────────────────────────────────────────────
+init-env:
+	@bash .ci/scripts/init_env.sh
 
 # ── Stack local ───────────────────────────────────────────────────────────────
 
@@ -175,6 +179,7 @@ help:
 	@echo ""
 	@echo "  Setup y stack local:"
 	@echo "    make setup                Crea .venv (Python 3.12) e instala dependencias"
+	@echo "    make init-env             Crea $(ENV_FILE) con claves generadas"
 	@echo "    make dev-up               Levanta el stack"
 	@echo "    make dev-down             Detiene el stack"
 	@echo "    make dev-ps               Estado de los contenedores"

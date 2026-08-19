@@ -33,7 +33,7 @@ SCHEMA = StructType(
 
 def get_spark() -> SparkSession:
     builder = (
-        SparkSession.builder.appName("lakeforge-kafka-stream")
+        SparkSession.builder.appName("vektralforge-kafka-stream")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config(
             "spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog"

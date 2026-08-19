@@ -3,7 +3,7 @@
   <rect width="900" height="560" fill="#FAFAFA" rx="8"/>
 
   <!-- Title -->
-  <text x="450" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">Lakeforge — Flujo de datos end-to-end</text>
+  <text x="450" y="32" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">VektralForge — Flujo de datos end-to-end</text>
 
   <!-- FUENTES -->
   <rect x="20" y="55" width="160" height="110" rx="8" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
@@ -109,7 +109,7 @@
   <text x="530" y="539" font-size="9" fill="#374151">Delta Lake + SQL Server en un solo SELECT</text>
 
   <!-- Footer -->
-  <text x="450" y="555" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — lakeforge v2.0 — 2026</text>
+  <text x="450" y="555" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — vektralforge v2.0 — 2026</text>
 
   <!-- Arrow markers -->
   <defs>

@@ -207,11 +207,19 @@ if load_dag "arclim_riesgo_climatico_chile" "dev-load-arclim" \
     "extract_arclim" "transform_bronze" "validar_bronze"; then
 
     log "Registrando tablas ARClim en Trino..."
-    for tabla in arclim_indicadores arclim_series; do
-        docker exec docker-compose-trino-1 trino --execute \
-            "CALL delta.system.register_table(schema_name => 'bronze', table_name => '${tabla}', table_location => 's3://bronze/${tabla}');" \
-            2>/dev/null | grep -v "WARNING\|INFO\|jline" || true
-        ok "Trino: $tabla"
+    ok=0
+    for tabla in arclim_indicadores arclim_comunas arclim_series; do
+        salida=$(docker exec docker-compose-trino-1 trino --execute \
+            "CALL delta.system.register_table(schema_name => 'bronze', table_name => '${tabla}', table_location => 's3://bronze/${tabla}');" 2>&1)
+
+        if echo "$salida" | grep -q "already exists"; then
+            ok "Trino: $tabla (ya registrada)"
+        elif echo "$salida" | grep -qi "failed\|error"; then
+            echo "  ✗ Trino: $tabla — $(echo "$salida" | tail -1)"
+            ok=$((ok + 1))
+        else
+            ok "Trino: $tabla"
+        fi
     done
 
     log "Conteo ARClim en Trino:"

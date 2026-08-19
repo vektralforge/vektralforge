@@ -15,7 +15,7 @@
   </defs>
 
   <rect width="900" height="440" fill="#FAFAFA" rx="8"/>
-  <text x="450" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">Lakeforge — Capas del Lakehouse</text>
+  <text x="450" y="28" text-anchor="middle" font-size="16" font-weight="bold" fill="#1F4E79">VektralForge — Capas del Lakehouse</text>
 
   <!-- CAPA 0: FUENTES -->
   <rect x="20" y="45" width="860" height="55" rx="6" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1.5"/>
@@ -75,5 +75,5 @@
   <text x="515" y="413" text-anchor="middle" font-size="9" fill="#6B21A8">Spark escribe ACID</text>
 
   <!-- Footer nota -->
-  <text x="450" y="432" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — lakeforge v2.0 — 2026  ·  gold/ = Agregaciones y métricas · Consumo vía Trino → Superset / Power BI</text>
+  <text x="450" y="432" text-anchor="middle" font-size="8" fill="#94A3B8">ALEPH SERVER LTDA. — vektralforge v2.0 — 2026  ·  gold/ = Agregaciones y métricas · Consumo vía Trino → Superset / Power BI</text>
 </svg>
