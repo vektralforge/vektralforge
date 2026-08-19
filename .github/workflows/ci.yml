@@ -121,13 +121,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Verificar que todo pasó
+        env:
+          RESULTADOS: ${{ join(needs.*.result, ',') }}
         run: |
-          resultados='${{ join(needs.*.result, " ") }}'
-          echo "Resultados: $resultados"
-          for r in $resultados; do
-            if [ "$r" != "success" ]; then
-              echo "✗ Algún job no terminó correctamente"
-              exit 1
-            fi
-          done
+          echo "Resultados: $RESULTADOS"
+          if echo "$RESULTADOS" | tr ',' '\n' | grep -qv '^success$'; then
+            echo "✗ Algún job no terminó correctamente"
+            exit 1
+          fi
           echo "✓ CI OK"
