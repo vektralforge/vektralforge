@@ -8,4 +8,4 @@
 # Las herramientas de desarrollo están en requirements-dev.txt.
 
 pyspark==4.0.0
-delta-spark==4.0.0
+delta-spark==4.3.1
