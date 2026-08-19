@@ -34,10 +34,11 @@ INDICADORES_MENSUALES = ["ipc"]
 
 DEFAULT_ARGS = {
     "owner": "vektralforge",
-    "depends_on_past": False,
-    "retries": 0,
+    "retries": 1,
     "retry_delay": timedelta(minutes=5),
-    "email_on_failure": False,
+    # Sin timeout, una tarea colgada contra una API externa retiene su slot
+    # del executor indefinidamente.
+    "execution_timeout": timedelta(minutes=20),
 }
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

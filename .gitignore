@@ -31,6 +31,7 @@ htmlcov/
 *.log
 logs/
 infra/docker-compose/minio-data/
+.ruff_cache/
 
 # Airflow (generados en runtime)
 airflow/plugins/__pycache__/
@@ -70,4 +71,7 @@ spark/jars/*.jar
 data/
 *.parquet
 *.avro
+
+# Configuración generada en el arranque del contenedor (contiene credenciales)
 infra/docker-compose/marquez/marquez.yml
+infra/docker-compose/hive/core-site.xml
