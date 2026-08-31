@@ -10,7 +10,9 @@ pytest==9.0.3
 pytest-cov==5.0.0
 ruff==0.4.4
 
-# Comparación de DataFrames en tests. Sin uso actualmente: se conserva para los
-# tests pendientes de bronze_indicadores.py y bronze_arclim.py.
-# chispa soporta PySpark 3.5.x / 4.0.x / 4.1.x y Python 3.10–3.12.
+# Comparación de DataFrames en tests. Sin uso todavía: los tests actuales cubren
+# spark/jobs/transformaciones.py, que es Python puro y no necesita una sesión de
+# Spark. chispa espera a los tests de la escritura en Delta, que sí la necesitan.
+# No arrastra pyspark —solo prettytable—, así que el job del CI sigue ligero.
+# Soporta PySpark 3.5.x / 4.0.x / 4.1.x y Python 3.10–3.12.
 chispa==0.12.0

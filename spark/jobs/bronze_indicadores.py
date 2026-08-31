@@ -34,6 +34,8 @@ from datetime import UTC, datetime
 import boto3
 from pyspark.sql import SparkSession
 
+from transformaciones import filas_indicadores
+
 # ─── Argumentos ───────────────────────────────────────────────────────────────
 fecha = sys.argv[1] if len(sys.argv) > 1 else datetime.now(UTC).strftime("%Y-%m-%d")
 anio = fecha[:4]
@@ -120,46 +122,6 @@ def _leer_json(bucket, key):
     return json.loads(obj["Body"].read().decode("utf-8"))
 
 
-def _valor_a_float(valor):
-    """Convierte un valor string o numérico a float.
-
-    mindicador.cl entrega los números en formato chileno: '36.345,67'.
-    """
-    if valor is None:
-        return None
-    if isinstance(valor, int | float):
-        return float(valor)
-    try:
-        return float(str(valor).replace(".", "").replace(",", "."))
-    except (ValueError, AttributeError):
-        return None
-
-
-def _construir_filas(data, nombre):
-    """Transforma la serie de mindicador.cl en filas planas."""
-    filas = []
-    for item in data.get("serie", []):
-        fecha_item = item.get("fecha", "")
-        # mindicador entrega ISO con hora: '2026-05-01T00:00:00.000Z'
-        if "T" in fecha_item:
-            fecha_item = fecha_item[:10]
-
-        filas.append(
-            {
-                "fecha": fecha_item,
-                "valor": _valor_a_float(item.get("valor")),
-                "indicador": nombre.upper(),
-                "nombre": data.get("nombre", nombre),
-                "unidad_medida": data.get("unidad_medida", ""),
-                "fuente": "mindicador.cl",
-                "fecha_proceso": fecha,
-                "anio": int(anio),
-                "mes": int(mes),
-            }
-        )
-    return filas
-
-
 def _escribir_delta(filas, tabla, nombre):
     """Escribe las filas en Delta Lake. Retorna cuántas se escribieron.
 
@@ -195,7 +157,7 @@ for nombre in INDICADORES:
 
     try:
         data = _leer_json(RAW_BUCKET, key)
-        filas = _construir_filas(data, nombre)
+        filas = filas_indicadores(data, nombre, fecha, anio, mes)
 
         if not filas:
             print(f"  ⚠ {nombre.upper()}: serie vacía")

@@ -22,7 +22,6 @@ executors no comparten exactamente la misma versión del intérprete.
 """
 
 import json
-import math
 import os
 import sys
 from datetime import UTC, datetime
@@ -35,6 +34,8 @@ from pyspark.sql.types import (
     StructField,
     StructType,
 )
+
+from transformaciones import filas_series, limpiar_columna
 
 # ── Argumentos ────────────────────────────────────────────────────────────────
 fecha = sys.argv[1] if len(sys.argv) > 1 else datetime.now(UTC).strftime("%Y-%m-%d")
@@ -118,65 +119,6 @@ def leer_json(key):
     """Lee un JSON desde MinIO. No usa Spark a propósito."""
     obj = _s3.get_object(Bucket=RAW_BUCKET, Key=f"{RAW_PREFIX}/{key}")
     return json.loads(obj["Body"].read().decode("utf-8"))
-
-
-def percentil(valores, p):
-    """Percentil por interpolación lineal, igual que numpy.percentile.
-
-    Se calcula a mano para no meter numpy en el job: son 20 valores por año.
-    """
-    limpios = [float(v) for v in valores if v is not None]
-    if not limpios:
-        return None
-    limpios.sort()
-    if len(limpios) == 1:
-        return limpios[0]
-    pos = (len(limpios) - 1) * (p / 100.0)
-    bajo, alto = math.floor(pos), math.ceil(pos)
-    if bajo == alto:
-        return limpios[int(pos)]
-    return limpios[bajo] + (limpios[alto] - limpios[bajo]) * (pos - bajo)
-
-
-def filas_series(data, fecha, anio, mes):
-    """Aplana las series de ARClim a filas, una por comuna/indicador/año.
-
-    La banda de incertidumbre se calcula sobre los 20 modelos climáticos que
-    devuelve la API, que es la presentación estándar de una proyección: para
-    cada año, el p10 y el p90 del conjunto de modelos.
-
-    NO se usa el campo `pseries` de la API. Tiene forma 20×11 —un modelo por
-    fila, once percentiles por columna—, no 11 series anuales, y leerlo por
-    posición metía los once percentiles del primer modelo en los primeros once
-    años y dejaba los otros 89 en nulo. Función pura: no toca Spark.
-    """
-    filas = []
-    for cod_comuna, info in data.items():
-        nombre = info.get("nombre", "")
-        for indicador, serie in info.get("indicadores", {}).items():
-            years = serie.get("years", [])
-            means = serie.get("mean", [])
-            modelos = serie.get("series", [])
-
-            for idx_y, year in enumerate(years):
-                del_anio = [m[idx_y] for m in modelos if idx_y < len(m)]
-                filas.append(
-                    {
-                        "cod_comuna": str(cod_comuna),
-                        "nombre": nombre,
-                        "indicador": indicador,
-                        "anio_serie": int(year),
-                        "valor_medio": float(means[idx_y]) if idx_y < len(means) else None,
-                        "valor_p10": percentil(del_anio, 10),
-                        "valor_p90": percentil(del_anio, 90),
-                        "modelos": len([v for v in del_anio if v is not None]),
-                        "escenario": "ssp585",
-                        "fecha_carga": fecha,
-                        "anio": int(anio),
-                        "mes": int(mes),
-                    }
-                )
-    return filas
 
 
 def escribir_delta(df, tabla, nombre):
@@ -276,15 +218,7 @@ try:
             "mes": int(mes),
         }
         for j, col in enumerate(columns):
-            # Delta Lake no admite $ ni otros caracteres especiales en los
-            # nombres de columna; ARClim los usa en sus atributos climáticos.
-            col_clean = (
-                col.replace("$CLIMA$", "clima_")
-                .replace("$annual$", "_anual_")
-                .replace("$", "_")
-                .lower()
-            )
-            row[col_clean] = row_vals[j] if j < len(row_vals) else None
+            row[limpiar_columna(col)] = row_vals[j] if j < len(row_vals) else None
         rows.append(row)
 
     if rows:
