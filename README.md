@@ -207,6 +207,7 @@ make dev-up             # Levanta el stack
 make dev-down           # Lo detiene
 make dev-ps             # Estado de los contenedores
 make dev-logs           # Logs (SERVICE=airflow-scheduler para uno solo)
+make dev-build          # Reconstruye las imágenes (tras cambiar un Dockerfile)
 make dev-reset          # Borra volúmenes y recrea usuarios
 make dev-reset-hard     # Además reconstruye las imágenes locales
 make dev-load-example   # Ejecuta los pipelines y configura los dashboards
@@ -220,7 +221,8 @@ make deploy-prod        # Deploy K3s producción (pide confirmación)
 `dev-reset` tarda alrededor de un minuto y sirve cuando los datos quedaron
 inconsistentes, o tras cambiar `POSTGRES_USER` o `POSTGRES_PASSWORD` — el
 usuario se fija al crear el volumen. `dev-reset-hard` tarda unos tres minutos y
-hace falta cuando cambiaste algún Dockerfile.
+hace falta cuando cambiaste algún Dockerfile; si solo necesitas la imagen nueva
+sin perder los datos, `dev-build` reconstruye y `dev-up` recrea los contenedores.
 
 ---
 

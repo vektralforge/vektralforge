@@ -72,6 +72,10 @@ INDICADORES = INDICADORES_DIARIOS + INDICADORES_MENSUALES
 # /opt/spark/jars del cluster como en el pyspark del contenedor de Airflow.
 spark = (
     SparkSession.builder.appName(f"vektralforge-bronze-indicadores-{fecha}")
+    # El nombre de la app lleva la fecha para distinguir ejecuciones en la UI de
+    # Spark, pero OpenLineage toma de ahí el nombre del job: con la fecha dentro,
+    # Marquez crearía un job nuevo cada día y el historial quedaría fragmentado.
+    .config("spark.openlineage.appName", "vektralforge_bronze_indicadores")
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
     .config(
         "spark.sql.catalog.spark_catalog",

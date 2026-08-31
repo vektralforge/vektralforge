@@ -284,6 +284,9 @@ with DAG(
     transform = SparkSubmitOperator(
         task_id="transform_bronze",
         conn_id="spark_default",
+        # Sin esto el submit va con el nombre por defecto del operador,
+        # "arrow-spark", que no dice nada en la UI de Spark.
+        name="vektralforge-bronze-arclim",
         application="/opt/spark/jobs/bronze_arclim.py",
         application_args=[FECHA],
         # Sin --packages: delta-spark y delta-storage ya están en
