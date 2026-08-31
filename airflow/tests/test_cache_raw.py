@@ -136,12 +136,13 @@ def test_un_diario_que_no_se_puede_descargar_tumba_la_tarea(modulos_dag, monkeyp
 # ── ARClim: indicadores que /series/ no sirve ─────────────────────────────────
 
 
-def test_los_indicadores_sin_serie_no_se_piden(modulos_dag):
-    """total_precipitation devuelve 500 en /series/ de forma determinista: 13
-    comunas pedidas, 13 fallos, y cada uno con sus tres reintentos."""
+def test_no_se_piden_los_indicadores_que_arclim_no_sirve(modulos_dag):
+    """total_precipitation y dry_days devuelven 500 en /datos/ y en /series/, en
+    las tres variantes. Pedirlos no solo pierde el dato: un solo atributo de
+    total_precipitation hace fallar entera la petición de /datos/, que es lo que
+    obligaba a recortar la lista de atributos."""
     m = modulos_dag["dag_arclim_riesgo_climatico"]
-    assert "total_precipitation" in m.INDICADORES, "sigue existiendo en /datos/"
-    assert "total_precipitation" not in m.INDICADORES_SERIES
-    assert "dry_days" not in m.INDICADORES_SERIES
-    assert m.INDICADORES_SERIES, "no pueden quedarse fuera todos"
-    assert set(m.INDICADORES_SERIES).issubset(set(m.INDICADORES))
+    for ind in ("total_precipitation", "dry_days"):
+        assert ind in m.INDICADORES_NO_DISPONIBLES
+        assert ind not in m.INDICADORES
+    assert m.INDICADORES, "no pueden quedarse fuera todos"

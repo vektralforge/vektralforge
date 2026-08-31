@@ -192,8 +192,15 @@ no cuesta ni una llamada. Para refrescar de verdad, disparar con
 **Indicadores financieros**: UF, dólar, euro, UTM y TPM se publican cada día
 hábil; el IPC es mensual, así que una serie vacía no se trata como error.
 
-**Riesgo climático**: indicadores por las 346 comunas de Chile y series de
-tiempo 1970–2070 bajo escenario SSP5-8.5 para las capitales regionales.
+**Riesgo climático**: cuatro indicadores por las 345 comunas de Chile —presente,
+futuro y delta— y series de tiempo 1970–2070 bajo escenario SSP5-8.5 para las
+capitales regionales. `valor_p10` y `valor_p90` son la envolvente de los 20
+modelos climáticos que devuelve la API para cada año, no percentiles de la serie.
+
+ARClim no sirve `total_precipitation` ni `dry_days`: devuelven 500 en `/datos/` y
+en `/series/`, en las tres variantes. Están declarados en
+`INDICADORES_NO_DISPONIBLES` con la comprobación fechada; basta un atributo de
+`total_precipitation` para que falle entera la petición de `/datos/`.
 
 Las escrituras son **idempotentes por fecha de carga**: los jobs usan
 `replaceWhere` sobre `fecha_carga` (`fecha_proceso` en indicadores), así que

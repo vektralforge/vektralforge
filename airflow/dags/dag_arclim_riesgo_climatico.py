@@ -46,25 +46,28 @@ for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
         raise RuntimeError(f"Falta la variable de entorno {_var!r}")
 TIMEOUT = 60  # segundos por request
 
-# Indicadores climáticos a extraer
+
+# Indicadores climáticos que ARClim sirve hoy. Se piden a /datos/ (atributos por
+# comuna) y a /series/ (series de tiempo por comuna capital).
 INDICADORES = [
     "hot_days",  # Días con temperatura > 30°C
     "consecutive_days_over_25C",  # Olas de calor > 25°C
     "frost_days",  # Días con helada (temperatura < 0°C)
     "mean_temperature",  # Temperatura media anual
-    "total_precipitation",  # Precipitación total anual
 ]
 
-# El endpoint /series/ no sirve todos los indicadores: para algunos devuelve 500
-# de forma determinista. Pedirlos igual cuesta una llamada condenada por comuna,
-# cada una con sus tres reintentos y su backoff, y el único efecto es alargar la
-# extracción.
+# ARClim NO sirve estos: devuelven 500 en /datos/ y en /series/, en las tres
+# variantes (present, future, delta) y para cualquier comuna. Comprobado el
+# 2026-08-31 atributo por atributo contra la API.
 #
-# Comprobado el 2026-08-31: total_precipitation falla con "500 Server Error" en
-# las 13 comunas capitales. dry_days ya estaba documentado como exclusivo de
-# /datos/, pero la lista que lo decía nunca se llegó a usar.
-INDICADORES_SIN_SERIE = {"dry_days", "total_precipitation"}
-INDICADORES_SERIES = [i for i in INDICADORES if i not in INDICADORES_SIN_SERIE]
+# Merece quedar escrito porque explica dos rarezas del código anterior.
+# `total_precipitation` estaba en la lista y su único efecto era envenenar la
+# petición de /datos/ —basta un atributo suyo para que falle entera— y gastar 13
+# llamadas condenadas en /series/. Que la extracción funcionara se debía a que el
+# recorte a los 10 primeros atributos lo dejaba fuera por casualidad, no por
+# diseño. Y `dry_days` estaba documentado como "solo disponible en /datos/", que
+# tampoco es cierto: no está disponible en ninguno.
+INDICADORES_NO_DISPONIBLES = ("dry_days", "total_precipitation")
 
 # Comunas capitales regionales por código ARClim
 COMUNAS_CAPITALES = {
@@ -99,6 +102,20 @@ def _fecha_ejecucion(context) -> str:
     if logical := context.get("logical_date"):
         return logical.strftime("%Y-%m-%d")
     return datetime.now(UTC).strftime("%Y-%m-%d")
+
+
+def _series_traen_modelos(payload) -> bool:
+    """¿El archivo de series guarda las series de los modelos?
+
+    El formato anterior guardaba p10/p90 ya digeridos —y mal— sin las series por
+    modelo. Un archivo así en el cache haría que la tabla se escribiera sin banda
+    de incertidumbre, así que se trata como cache miss y se vuelve a descargar.
+    """
+    for info in payload.values():
+        for serie in info.get("indicadores", {}).values():
+            if "series" not in serie:
+                return False
+    return True
 
 
 def _existe_en_raw(s3, key: str) -> bool:
@@ -136,13 +153,20 @@ def extract_arclim(**context):
     sesion = crear_sesion()
     llamadas = 0
 
-    def cacheado(nombre):
-        if forzar:
+    def cacheado(nombre, forma_valida=None):
+        if forzar or not _existe_en_raw(s3, f"{prefix}/{nombre}"):
             return False
-        if _existe_en_raw(s3, f"{prefix}/{nombre}"):
-            print(f"  · {nombre} ya está en raw/{prefix}/ — no se vuelve a pedir")
-            return True
-        return False
+        if forma_valida is not None:
+            try:
+                obj = s3.get_object(Bucket="raw", Key=f"{prefix}/{nombre}")
+                if not forma_valida(json.loads(obj["Body"].read().decode("utf-8"))):
+                    print(f"  · {nombre} está en raw/ con un formato antiguo — se vuelve a pedir")
+                    return False
+            except Exception as e:
+                print(f"  · no se pudo leer {nombre} del cache ({e}) — se vuelve a pedir")
+                return False
+        print(f"  · {nombre} ya está en raw/{prefix}/ — no se vuelve a pedir")
+        return True
 
     def upload(data, key):
         body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
@@ -162,24 +186,25 @@ def extract_arclim(**context):
     # ── 2. Riesgo climático por comunas ───────────────────────────────────────
     if not cacheado("riesgo_comunas.json"):
         print("→ Descargando riesgo climático por comunas...")
-        attrs_base = ["NOM_COMUNA", "REGION", "PROVINCIA"]
-        attrs_clima = []
+        atributos = ["NOM_COMUNA", "REGION", "PROVINCIA"]
         for ind in INDICADORES:
-            attrs_clima.append(f"$CLIMA${ind}$annual$present")
-            attrs_clima.append(f"$CLIMA${ind}$annual$future")
-            attrs_clima.append(f"$CLIMA${ind}$annual$delta")
+            atributos += [
+                f"$CLIMA${ind}$annual$present",
+                f"$CLIMA${ind}$annual$future",
+                f"$CLIMA${ind}$annual$delta",
+            ]
 
-        # PENDIENTE (§3.1 de la revisión): el comentario original hablaba de
-        # dividir en dos requests para no pasarse del límite de URL, pero la
-        # segunda nunca se escribió. Con el `[:10]` se pierden 3 atributos
-        # present/future y los 5 delta completos, y la tabla arclim_comunas nace
-        # incompleta sin que nada lo señale.
-        attrs_r1 = attrs_base + [a for a in attrs_clima if "present" in a or "future" in a]
+        # Los 15 atributos caben en una sola petición. El código anterior
+        # recortaba a los 10 primeros —el comentario hablaba de partir en dos
+        # requests y la segunda nunca se escribió—, y la tabla nacía con 7
+        # columnas climáticas de las 12 posibles: faltaban los 4 delta y un
+        # future. El 500 que motivó aquel recorte no venía del tamaño sino de
+        # total_precipitation; ver INDICADORES_NO_DISPONIBLES.
         try:
-            datos_comunas = get_json(
+            payload = get_json(
                 sesion,
                 f"{ARCLIM_BASE}/datos/comunas/json/",
-                params={"attributes": ",".join(attrs_r1[:10])},
+                params={"attributes": ",".join(atributos)},
                 timeout=TIMEOUT,
             )
             llamadas += 1
@@ -188,18 +213,22 @@ def extract_arclim(**context):
             # Spark escribe igual las otras dos tablas.
             print(f"  ⚠ riesgo_comunas no disponible: {e}")
         else:
-            upload(datos_comunas, "riesgo_comunas.json")
-            print(f"  ✓ {len(datos_comunas.get('index', []))} comunas")
+            upload(payload, "riesgo_comunas.json")
+            contenido = payload.get("data", payload)
+            print(
+                f"  ✓ {len(contenido.get('index', []))} comunas × "
+                f"{len(contenido.get('columns', []))} atributos"
+            )
 
     # ── 3. Series de tiempo para comunas capitales ────────────────────────────
-    if not cacheado("series_comunas_capitales.json"):
-        total = len(COMUNAS_CAPITALES) * len(INDICADORES_SERIES)
+    if not cacheado("series_comunas_capitales.json", _series_traen_modelos):
+        total = len(COMUNAS_CAPITALES) * len(INDICADORES)
         print(f"→ Descargando series de tiempo ({total} llamadas, espaciadas)...")
         series_all = {}
         fallos = []
         for cod, nombre in COMUNAS_CAPITALES.items():
             series_all[cod] = {"nombre": nombre, "indicadores": {}}
-            for ind in INDICADORES_SERIES:
+            for ind in INDICADORES:
                 url_s = f"{ARCLIM_BASE}/series/{ind}/comunas/{cod}/annual/ssp585"
                 try:
                     serie = get_json(sesion, url_s, timeout=TIMEOUT, pausa=PAUSA_ENTRE_LLAMADAS)
@@ -207,12 +236,14 @@ def extract_arclim(**context):
                 except ErrorAPI as e:
                     fallos.append(f"{nombre}/{ind}: {e}")
                     continue
-                pseries = serie.get("pseries", [])
+                # Se guardan las series por modelo, no percentiles digeridos:
+                # raw/ debe ser fiel a la API y la banda la calcula el job.
+                # `pseries` NO sirve para esto: tiene forma 20×11 —un modelo por
+                # fila, once percentiles por columna—, no once series anuales.
                 series_all[cod]["indicadores"][ind] = {
                     "years": serie.get("years", []),
                     "mean": serie.get("mean", []),
-                    "p10": pseries[1] if len(pseries) > 1 else [],
-                    "p90": pseries[-2] if len(pseries) > 1 else [],
+                    "series": serie.get("series", []),
                     "gcms": serie.get("gcms", []),
                 }
 
@@ -224,11 +255,11 @@ def extract_arclim(**context):
         # es que /series/ no lo sirve. Merece un mensaje accionable en vez de
         # quedar diluido entre los fallos sueltos, que es como total_precipitation
         # pasó inadvertido hasta ahora.
-        for ind in INDICADORES_SERIES:
+        for ind in INDICADORES:
             if not any(ind in v["indicadores"] for v in series_all.values()):
                 print(
                     f"  ⚠ '{ind}' falló en las {len(COMUNAS_CAPITALES)} comunas — "
-                    "si es permanente, añadirlo a INDICADORES_SIN_SERIE"
+                    "si es permanente, moverlo a INDICADORES_NO_DISPONIBLES"
                 )
 
         if fallos:

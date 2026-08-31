@@ -107,6 +107,15 @@ El mecanismo concreto: los jobs abren la sesión con `enableHiveSupport()` y
 materializa en `s3a://bronze/<tabla>/` —la misma ruta que antes se escribía a
 mano— pero además queda en el catálogo.
 
+**La banda de incertidumbre se calcula, no se copia.** La API de ARClim devuelve
+`series` (20 modelos × 100 años) y `pseries` (20 modelos × 11 percentiles). El
+job calcula `valor_p10` y `valor_p90` como percentiles sobre los 20 modelos de
+cada año, que es la presentación estándar de una proyección climática. `pseries`
+no sirve para eso y leerlo por posición —como se hacía— metía los once
+percentiles del primer modelo en los once primeros años y dejaba los otros 89 en
+nulo: el 89 % de la columna estaba vacío y el 11 % restante era una curva de
+percentiles disfrazada de serie temporal.
+
 **Extracción idempotente y cache en `raw/`.** La zona de aterrizaje guarda la
 respuesta cruda de la API particionada por fecha, así que ya es el cache natural:
 `extract` comprueba qué hay antes de pedir. ARClim lo hace archivo por archivo,
