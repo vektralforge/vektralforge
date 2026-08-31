@@ -23,6 +23,7 @@ forzar_descarga=true.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -31,6 +32,11 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 from airflow.providers.standard.operators.python import PythonOperator
 
 from http_publico import PAUSA_ENTRE_LLAMADAS, ErrorAPI, crear_sesion, get_json
+
+# Los `print` de una tarea acaban en el log igual, pero sin nivel: una
+# advertencia y una traza informativa llegan indistinguibles y no se pueden
+# filtrar ni alertar. Con logging, un ⚠ es WARNING y un ✗ es ERROR.
+log = logging.getLogger(__name__)
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 ARCLIM_BASE = "https://arclim.mma.gob.cl/api"
@@ -88,7 +94,9 @@ COMUNAS_CAPITALES = {
 
 default_args = {
     "owner": "vektralforge",
-    "retries": 0,
+    # Un reintento, igual que el DAG de indicadores: las dos APIs son
+    # públicas y se caen con la misma facilidad.
+    "retries": 1,
     "retry_delay": timedelta(minutes=5),
     "execution_timeout": timedelta(minutes=30),
 }
@@ -160,32 +168,34 @@ def extract_arclim(**context):
             try:
                 obj = s3.get_object(Bucket="raw", Key=f"{prefix}/{nombre}")
                 if not forma_valida(json.loads(obj["Body"].read().decode("utf-8"))):
-                    print(f"  · {nombre} está en raw/ con un formato antiguo — se vuelve a pedir")
+                    log.info(
+                        f"  · {nombre} está en raw/ con un formato antiguo — se vuelve a pedir"
+                    )
                     return False
             except Exception as e:
-                print(f"  · no se pudo leer {nombre} del cache ({e}) — se vuelve a pedir")
+                log.info(f"  · no se pudo leer {nombre} del cache ({e}) — se vuelve a pedir")
                 return False
-        print(f"  · {nombre} ya está en raw/{prefix}/ — no se vuelve a pedir")
+        log.info(f"  · {nombre} ya está en raw/{prefix}/ — no se vuelve a pedir")
         return True
 
     def upload(data, key):
         body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         s3.put_object(Bucket="raw", Key=f"{prefix}/{key}", Body=body)
-        print(f"  ✓ raw/{prefix}/{key} ({len(body):,} bytes)")
+        log.info(f"  ✓ raw/{prefix}/{key} ({len(body):,} bytes)")
 
     # ── 1. Catálogo de indicadores ────────────────────────────────────────────
     # Crítico: sin él no hay tabla arclim_indicadores, así que un fallo aquí
     # tumba la tarea en vez de dejar el pipeline a medias sin avisar.
     if not cacheado("indicadores_climaticos.json"):
-        print("→ Descargando catálogo de indicadores climáticos...")
+        log.info("→ Descargando catálogo de indicadores climáticos...")
         indicadores = get_json(sesion, f"{ARCLIM_BASE}/indicadores_climaticos", timeout=TIMEOUT)
         llamadas += 1
         upload(indicadores, "indicadores_climaticos.json")
-        print(f"  ✓ {len(indicadores.get('data', []))} indicadores disponibles")
+        log.info(f"  ✓ {len(indicadores.get('data', []))} indicadores disponibles")
 
     # ── 2. Riesgo climático por comunas ───────────────────────────────────────
     if not cacheado("riesgo_comunas.json"):
-        print("→ Descargando riesgo climático por comunas...")
+        log.info("→ Descargando riesgo climático por comunas...")
         atributos = ["NOM_COMUNA", "REGION", "PROVINCIA"]
         for ind in INDICADORES:
             atributos += [
@@ -211,11 +221,11 @@ def extract_arclim(**context):
         except ErrorAPI as e:
             # No es crítico: la validación lo trata como advertencia y el job de
             # Spark escribe igual las otras dos tablas.
-            print(f"  ⚠ riesgo_comunas no disponible: {e}")
+            log.warning(f"  ⚠ riesgo_comunas no disponible: {e}")
         else:
             upload(payload, "riesgo_comunas.json")
             contenido = payload.get("data", payload)
-            print(
+            log.info(
                 f"  ✓ {len(contenido.get('index', []))} comunas × "
                 f"{len(contenido.get('columns', []))} atributos"
             )
@@ -223,7 +233,7 @@ def extract_arclim(**context):
     # ── 3. Series de tiempo para comunas capitales ────────────────────────────
     if not cacheado("series_comunas_capitales.json", _series_traen_modelos):
         total = len(COMUNAS_CAPITALES) * len(INDICADORES)
-        print(f"→ Descargando series de tiempo ({total} llamadas, espaciadas)...")
+        log.info(f"→ Descargando series de tiempo ({total} llamadas, espaciadas)...")
         series_all = {}
         fallos = []
         for cod, nombre in COMUNAS_CAPITALES.items():
@@ -257,19 +267,19 @@ def extract_arclim(**context):
         # pasó inadvertido hasta ahora.
         for ind in INDICADORES:
             if not any(ind in v["indicadores"] for v in series_all.values()):
-                print(
+                log.warning(
                     f"  ⚠ '{ind}' falló en las {len(COMUNAS_CAPITALES)} comunas — "
                     "si es permanente, moverlo a INDICADORES_NO_DISPONIBLES"
                 )
 
         if fallos:
-            print(f"  ⚠ {len(fallos)} de {total} series fallaron:")
+            log.warning(f"  ⚠ {len(fallos)} de {total} series fallaron:")
             for f in fallos[:5]:
-                print(f"      {f}")
-        print(f"  ✓ {con_datos}/{total} series descargadas")
+                log.info(f"      {f}")
+        log.info(f"  ✓ {con_datos}/{total} series descargadas")
         upload(series_all, "series_comunas_capitales.json")
 
-    print(f"\n✓ Extracción ARClim completada → raw/{prefix}/  ({llamadas} llamadas a la API)")
+    log.info(f"\n✓ Extracción ARClim completada → raw/{prefix}/  ({llamadas} llamadas a la API)")
 
     # transform_bronze necesita la misma fecha con la que se escribió raw/.
     return {"fecha": ds, "prefix": prefix}
@@ -300,7 +310,7 @@ def validar_arclim(**context):
         try:
             obj = s3.get_object(Bucket="raw", Key=f"{prefix}/{archivo}")
             size = obj["ContentLength"]
-            print(f"  ✓ {archivo} ({size:,} bytes)")
+            log.info(f"  ✓ {archivo} ({size:,} bytes)")
         except Exception as e:
             errores.append(f"✗ {archivo}: {e}")
 
@@ -312,27 +322,27 @@ def validar_arclim(**context):
         if n < 300:
             advertencias.append(f"Solo {n} comunas (esperado ~346)")
         else:
-            print(f"  ✓ {n} comunas con datos de riesgo")
+            log.info(f"  ✓ {n} comunas con datos de riesgo")
     except Exception as e:
         advertencias.append(f"⚠ riesgo_comunas.json no disponible: {e}")
-        print("  ⚠ riesgo_comunas.json: no disponible (continuando)")
+        log.warning("  ⚠ riesgo_comunas.json: no disponible (continuando)")
 
     # Verificar series
     try:
         obj = s3.get_object(Bucket="raw", Key=f"{prefix}/series_comunas_capitales.json")
         data = json.loads(obj["Body"].read())
         comunas_con_series = len([v for v in data.values() if v.get("indicadores")])
-        print(f"  ✓ Series de tiempo: {comunas_con_series} comunas capitales")
+        log.info(f"  ✓ Series de tiempo: {comunas_con_series} comunas capitales")
     except Exception as e:
         errores.append(f"Error validando series: {e}")
 
     for adv in advertencias:
-        print(f"  ⚠ {adv}")
+        log.warning(f"  ⚠ {adv}")
 
     if errores:
         raise ValueError("Validación ARClim fallida:\n" + "\n".join(errores))
 
-    print(f"\n✓ Validación completada ({len(advertencias)} advertencias)")
+    log.info(f"\n✓ Validación completada ({len(advertencias)} advertencias)")
 
 
 # ── DAG ───────────────────────────────────────────────────────────────────────

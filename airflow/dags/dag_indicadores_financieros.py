@@ -14,6 +14,7 @@ Flujo:
 """
 
 import json
+import logging
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -22,6 +23,11 @@ from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOpe
 from airflow.providers.standard.operators.python import PythonOperator
 
 from http_publico import ErrorAPI, crear_sesion, get_json
+
+# Los `print` de una tarea acaban en el log igual, pero sin nivel: una
+# advertencia y una traza informativa llegan indistinguibles y no se pueden
+# filtrar ni alertar. Con logging, un ⚠ es WARNING y un ✗ es ERROR.
+log = logging.getLogger(__name__)
 
 # ─── Configuración ────────────────────────────────────────────────────────────
 MINDICADOR_BASE = "https://mindicador.cl/api"
@@ -61,6 +67,19 @@ def _get_mindicador(sesion, endpoint: str) -> dict:
     return get_json(sesion, f"{MINDICADOR_BASE}/{endpoint}", timeout=TIMEOUT)
 
 
+def _parquets(s3, prefijo: str) -> list:
+    """Lista los .parquet bajo un prefijo de bronze/, paginando.
+
+    list_objects_v2 devuelve como mucho 1000 claves por llamada y no avisa de que
+    truncó. Con escritura diaria una tabla pasa ese tope en unos meses, y a
+    partir de ahí el conteo de la validación miente por lo bajo.
+    """
+    objetos = []
+    for pagina in s3.get_paginator("list_objects_v2").paginate(Bucket="bronze", Prefix=prefijo):
+        objetos += [o for o in pagina.get("Contents", []) if o["Key"].endswith(".parquet")]
+    return objetos
+
+
 def _existe_en_raw(s3, key: str) -> bool:
     """¿Ese archivo ya está descargado para esta fecha?"""
     try:
@@ -79,7 +98,7 @@ def _s3_client():
 def _subir_json(s3, key: str, data: dict) -> None:
     body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
     s3.put_object(Bucket="raw", Key=key, Body=body, ContentType="application/json")
-    print(f"  ✓ s3://raw/{key} ({len(body)} bytes)")
+    log.info(f"  ✓ s3://raw/{key} ({len(body)} bytes)")
 
 
 # ─── Task 1: Extraer indicadores ──────────────────────────────────────────────
@@ -115,8 +134,8 @@ def extract_indicadores(**context):
     forzar = bool(context.get("params", {}).get("forzar_descarga", False))
 
     if not forzar and _existe_en_raw(s3, f"{prefix}/resumen.json"):
-        print(f"→ raw/{prefix}/ ya está completo — se omite la descarga")
-        print("  (para refrescar: disparar el DAG con forzar_descarga=true)")
+        log.info(f"→ raw/{prefix}/ ya está completo — se omite la descarga")
+        log.info("  (para refrescar: disparar el DAG con forzar_descarga=true)")
         obj = s3.get_object(Bucket="raw", Key=f"{prefix}/resumen.json")
         return json.loads(obj["Body"].read().decode("utf-8"))
 
@@ -126,25 +145,25 @@ def extract_indicadores(**context):
 
     # ── Snapshot diario ───────────────────────────────────────────────────────
     # No es crítico: es una foto de conveniencia, las series vienen aparte.
-    print("→ Descargando snapshot diario...")
+    log.info("→ Descargando snapshot diario...")
     try:
         snapshot = _get_mindicador(sesion, "")
     except ErrorAPI as e:
-        print(f"  ⚠ snapshot diario no disponible: {e}")
+        log.warning(f"  ⚠ snapshot diario no disponible: {e}")
     else:
         _subir_json(s3, f"{prefix}/snapshot_diario.json", snapshot)
-        print("  ✓ Snapshot diario OK")
+        log.info("  ✓ Snapshot diario OK")
 
     # ── Series anuales por indicador ──────────────────────────────────────────
     todos = INDICADORES_DIARIOS + INDICADORES_MENSUALES
     for nombre in todos:
-        print(f"→ Descargando {nombre.upper()} {anio}...")
+        log.info(f"→ Descargando {nombre.upper()} {anio}...")
         try:
             data = _get_mindicador(sesion, f"{nombre}/{anio}")
         except ErrorAPI as e:
             # Un fallo de la API no se disfraza de "sin datos": se registra como
             # error y más abajo decide si tumba la tarea.
-            print(f"  ✗ {nombre.upper()}: {e}")
+            log.error(f"  ✗ {nombre.upper()}: {e}")
             errores.append(nombre)
             resumen["indicadores"][nombre] = {"registros": 0, "error": str(e)}
             continue
@@ -153,9 +172,11 @@ def extract_indicadores(**context):
         _subir_json(s3, f"{prefix}/{nombre}_{anio}.json", data)
         resumen["indicadores"][nombre] = {"registros": len(serie)}
         if len(serie) == 0 and nombre in INDICADORES_MENSUALES:
-            print(f"  ⚠ {nombre.upper()}: serie vacía (publicación mensual, aún no disponible)")
+            log.warning(
+                f"  ⚠ {nombre.upper()}: serie vacía (publicación mensual, aún no disponible)"
+            )
         else:
-            print(f"  ✓ {nombre.upper()}: {len(serie)} registros")
+            log.info(f"  ✓ {nombre.upper()}: {len(serie)} registros")
 
     # Un diario que no se pudo descargar es un fallo real. La validación aguas
     # abajo lo detectaría, pero mucho después y con un error menos claro.
@@ -169,7 +190,7 @@ def extract_indicadores(**context):
     # resumen.json va al final a propósito: es la marca de que esta fecha quedó
     # completa, y es lo que consulta el cache en la siguiente ejecución.
     _subir_json(s3, f"{prefix}/resumen.json", resumen)
-    print("\n✓ Extracción completa")
+    log.info("\n✓ Extracción completa")
     return resumen
 
 
@@ -188,18 +209,16 @@ def validar_bronze(**context):
 
     # Validar indicadores diarios — deben tener datos siempre
     for nombre in INDICADORES_DIARIOS:
-        response = s3.list_objects_v2(Bucket="bronze", Prefix=f"indicadores_{nombre}/")
-        parquet = [o for o in response.get("Contents", []) if o["Key"].endswith(".parquet")]
+        parquet = _parquets(s3, f"indicadores_{nombre}/")
         if not parquet:
             errores.append(f"✗ Sin Parquet en bronze/indicadores_{nombre}/")
         else:
             total_mb = sum(o["Size"] for o in parquet) / 1024 / 1024
-            print(f"✓ bronze/indicadores_{nombre}/: {len(parquet)} archivos ({total_mb:.2f} MB)")
+            log.info(f"✓ bronze/indicadores_{nombre}/: {len(parquet)} archivos ({total_mb:.2f} MB)")
 
     # Validar indicadores mensuales — solo WARNING si no tienen datos
     for nombre in INDICADORES_MENSUALES:
-        response = s3.list_objects_v2(Bucket="bronze", Prefix=f"indicadores_{nombre}/")
-        parquet = [o for o in response.get("Contents", []) if o["Key"].endswith(".parquet")]
+        parquet = _parquets(s3, f"indicadores_{nombre}/")
         if not parquet:
             warnings.append(
                 f"⚠ Sin Parquet en bronze/indicadores_{nombre}/ "
@@ -207,21 +226,21 @@ def validar_bronze(**context):
             )
         else:
             total_mb = sum(o["Size"] for o in parquet) / 1024 / 1024
-            print(f"✓ bronze/indicadores_{nombre}/: {len(parquet)} archivos ({total_mb:.2f} MB)")
+            log.info(f"✓ bronze/indicadores_{nombre}/: {len(parquet)} archivos ({total_mb:.2f} MB)")
 
     # Mostrar warnings (no fallan el DAG)
     for w in warnings:
-        print(w)
+        log.info(w)
 
     # Solo fallar si hay errores en indicadores diarios
     if errores:
         for e in errores:
-            print(e)
+            log.info(e)
         raise ValueError(f"Validación fallida: {len(errores)} indicadores diarios sin datos")
 
-    print("\n✓ Validación completada")
+    log.info("\n✓ Validación completada")
     if warnings:
-        print(f"  {len(warnings)} advertencia(s) en indicadores mensuales (no crítico)")
+        log.info(f"  {len(warnings)} advertencia(s) en indicadores mensuales (no crítico)")
 
 
 # ─── DAG ──────────────────────────────────────────────────────────────────────

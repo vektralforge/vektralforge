@@ -19,11 +19,11 @@ Código de salida:
   0 — al menos un indicador diario procesado
   1 — ningún indicador diario procesado, o falta configuración
 
-Nota sobre versiones de Python: el driver corre en el contenedor de Airflow
-(Python 3.12) y los executors en el de Spark (Python 3.8). PySpark rechaza esa
-diferencia cuando hay serialización de código Python, así que este job evita
-RDDs y UDFs: la lectura del JSON se hace con boto3 en el driver —son archivos
-de pocos KB— y el resto son operaciones de DataFrame que se resuelven en la JVM.
+Nota sobre versiones de Python: driver y executors corren 3.12 —el Dockerfile de
+Spark lo instala desde deadsnakes para que coincidan—, y PySpark rechaza la
+ejecución si difieren en versión menor. Aun así el job evita RDDs y UDFs: la
+lectura del JSON se hace con boto3 en el driver —son archivos de pocos KB— y el
+resto son operaciones de DataFrame que se resuelven en la JVM.
 """
 
 import json
@@ -127,8 +127,7 @@ def _valor_a_float(valor):
     """
     if valor is None:
         return None
-    # Los executors corren Python 3.8: la sintaxis int | float no existe ahí.
-    if isinstance(valor, (int, float)):  # noqa: UP038
+    if isinstance(valor, int | float):
         return float(valor)
     try:
         return float(str(valor).replace(".", "").replace(",", "."))
