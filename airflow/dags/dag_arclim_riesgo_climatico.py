@@ -55,10 +55,16 @@ INDICADORES = [
     "total_precipitation",  # Precipitación total anual
 ]
 
-# Indicadores que solo funcionan en /datos/ pero no en /series/ (dan 500)
-INDICADORES_SOLO_DATOS = [
-    "dry_days",  # Días secos — solo disponible en /datos/
-]
+# El endpoint /series/ no sirve todos los indicadores: para algunos devuelve 500
+# de forma determinista. Pedirlos igual cuesta una llamada condenada por comuna,
+# cada una con sus tres reintentos y su backoff, y el único efecto es alargar la
+# extracción.
+#
+# Comprobado el 2026-08-31: total_precipitation falla con "500 Server Error" en
+# las 13 comunas capitales. dry_days ya estaba documentado como exclusivo de
+# /datos/, pero la lista que lo decía nunca se llegó a usar.
+INDICADORES_SIN_SERIE = {"dry_days", "total_precipitation"}
+INDICADORES_SERIES = [i for i in INDICADORES if i not in INDICADORES_SIN_SERIE]
 
 # Comunas capitales regionales por código ARClim
 COMUNAS_CAPITALES = {
@@ -187,13 +193,13 @@ def extract_arclim(**context):
 
     # ── 3. Series de tiempo para comunas capitales ────────────────────────────
     if not cacheado("series_comunas_capitales.json"):
-        total = len(COMUNAS_CAPITALES) * len(INDICADORES)
+        total = len(COMUNAS_CAPITALES) * len(INDICADORES_SERIES)
         print(f"→ Descargando series de tiempo ({total} llamadas, espaciadas)...")
         series_all = {}
         fallos = []
         for cod, nombre in COMUNAS_CAPITALES.items():
             series_all[cod] = {"nombre": nombre, "indicadores": {}}
-            for ind in INDICADORES:
+            for ind in INDICADORES_SERIES:
                 url_s = f"{ARCLIM_BASE}/series/{ind}/comunas/{cod}/annual/ssp585"
                 try:
                     serie = get_json(sesion, url_s, timeout=TIMEOUT, pausa=PAUSA_ENTRE_LLAMADAS)
@@ -213,6 +219,18 @@ def extract_arclim(**context):
         con_datos = sum(len(v["indicadores"]) for v in series_all.values())
         if con_datos == 0:
             raise ErrorAPI(f"Ninguna de las {total} series se pudo descargar")
+
+        # Un indicador que falla en TODAS las comunas no es un fallo pasajero:
+        # es que /series/ no lo sirve. Merece un mensaje accionable en vez de
+        # quedar diluido entre los fallos sueltos, que es como total_precipitation
+        # pasó inadvertido hasta ahora.
+        for ind in INDICADORES_SERIES:
+            if not any(ind in v["indicadores"] for v in series_all.values()):
+                print(
+                    f"  ⚠ '{ind}' falló en las {len(COMUNAS_CAPITALES)} comunas — "
+                    "si es permanente, añadirlo a INDICADORES_SIN_SERIE"
+                )
+
         if fallos:
             print(f"  ⚠ {len(fallos)} de {total} series fallaron:")
             for f in fallos[:5]:
