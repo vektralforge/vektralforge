@@ -237,6 +237,14 @@ Ningún archivo del repositorio contiene credenciales. Los que las necesitan
 contenedor a partir del `.env`, y los catálogos de Trino usan interpolación
 `${ENV:...}` en tiempo de ejecución.
 
+Las credenciales de MinIO viajan **solo como variables de entorno**
+(`AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY`, que el Compose deriva de
+`MINIO_ROOT_USER` y `MINIO_ROOT_PASSWORD`). Nunca se pasan como propiedades de
+Spark: un `--conf` acaba en la línea de comandos de `spark-submit` y en el `ps`
+del contenedor, aunque el hook lo enmascare en el log. S3A las resuelve con
+`EnvironmentVariableCredentialsProvider` y boto3 con su cadena por defecto; un
+test del CI verifica que ninguna tarea las reintroduzca en la configuración.
+
 Detalle en [docs/secretos.md](docs/secretos.md).
 
 ---

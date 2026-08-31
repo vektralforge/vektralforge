@@ -24,8 +24,13 @@ from airflow.providers.standard.operators.python import PythonOperator
 # ─── Configuración ────────────────────────────────────────────────────────────
 MINDICADOR_BASE = "https://mindicador.cl/api"
 MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
-MINIO_ACCESS = os.environ["MINIO_ROOT_USER"]
-MINIO_SECRET = os.environ["MINIO_ROOT_PASSWORD"]
+# Las credenciales se quedan en el entorno: boto3 y el provider de S3A las
+# resuelven desde AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY. No se pasan por
+# `conf` al SparkSubmitOperator: ahí acabarían en la línea de comandos del
+# proceso y en la UI del driver.
+for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+    if _var not in os.environ:
+        raise RuntimeError(f"Falta la variable de entorno {_var!r}")
 # Indicadores diarios (se actualizan cada día hábil)
 INDICADORES_DIARIOS = ["uf", "dolar", "euro", "utm", "tpm"]
 
@@ -57,12 +62,7 @@ def _get_mindicador(endpoint: str) -> dict:
 def _s3_client():
     import boto3
 
-    return boto3.client(
-        "s3",
-        endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=MINIO_ACCESS,
-        aws_secret_access_key=MINIO_SECRET,
-    )
+    return boto3.client("s3", endpoint_url=MINIO_ENDPOINT)
 
 
 def _subir_json(s3, key: str, data: dict) -> None:
@@ -221,8 +221,8 @@ with DAG(
             "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
             "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
             "spark.hadoop.fs.s3a.endpoint": MINIO_ENDPOINT,
-            "spark.hadoop.fs.s3a.access.key": MINIO_ACCESS,
-            "spark.hadoop.fs.s3a.secret.key": MINIO_SECRET,
+            # Las credenciales no van aquí: el job las resuelve desde el
+            # entorno con EnvironmentVariableCredentialsProvider.
             "spark.hadoop.fs.s3a.path.style.access": "true",
             "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
             "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",

@@ -32,8 +32,13 @@ ARCLIM_BASE = "https://arclim.mma.gob.cl/api"
 # Sin valores por defecto: unas credenciales silenciosamente incorrectas
 # fallan mucho después y con un error de S3 que no señala la causa.
 MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
-MINIO_ACCESS = os.environ["MINIO_ROOT_USER"]
-MINIO_SECRET = os.environ["MINIO_ROOT_PASSWORD"]
+# Las credenciales se quedan en el entorno: boto3 y el provider de S3A las
+# resuelven desde AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY. No se pasan por
+# `conf` al SparkSubmitOperator: ahí acabarían en la línea de comandos del
+# proceso y en la UI del driver.
+for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+    if _var not in os.environ:
+        raise RuntimeError(f"Falta la variable de entorno {_var!r}")
 TIMEOUT = 60  # segundos por request
 
 # Indicadores climáticos a extraer
@@ -102,8 +107,6 @@ def extract_arclim(**context):
     s3 = boto3.client(
         "s3",
         endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=MINIO_ACCESS,
-        aws_secret_access_key=MINIO_SECRET,
         config=Config(signature_version="s3v4"),
     )
 
@@ -204,8 +207,6 @@ def validar_arclim(**context):
     s3 = boto3.client(
         "s3",
         endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=MINIO_ACCESS,
-        aws_secret_access_key=MINIO_SECRET,
         config=Config(signature_version="s3v4"),
     )
 
@@ -293,8 +294,8 @@ with DAG(
             "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
             "spark.sql.catalog.spark_catalog": ("org.apache.spark.sql.delta.catalog.DeltaCatalog"),
             "spark.hadoop.fs.s3a.endpoint": MINIO_ENDPOINT,
-            "spark.hadoop.fs.s3a.access.key": MINIO_ACCESS,
-            "spark.hadoop.fs.s3a.secret.key": MINIO_SECRET,
+            # Las credenciales no van aquí: el job las resuelve desde el
+            # entorno con EnvironmentVariableCredentialsProvider.
             "spark.hadoop.fs.s3a.path.style.access": "true",
             "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
             "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",

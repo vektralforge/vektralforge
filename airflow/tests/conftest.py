@@ -1,10 +1,13 @@
 """
 Configuración compartida de los tests de DAGs.
 
-Los DAGs leen las credenciales de MinIO a nivel de módulo y sin valores por
-defecto: si falta una variable, el import falla. Es deliberado —evita que un
-despliegue arranque con credenciales silenciosamente incorrectas— pero implica
-que los tests deben proveerlas.
+Los DAGs comprueban a nivel de módulo que el endpoint y las credenciales estén
+en el entorno, sin valores por defecto: si falta una variable, el import falla.
+Es deliberado —evita que un despliegue arranque con credenciales silenciosamente
+incorrectas— pero implica que los tests deben proveerlas.
+
+Las credenciales van en AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY porque es de
+ahí de donde las leen boto3 y el EnvironmentVariableCredentialsProvider de S3A.
 """
 
 import os
@@ -19,8 +22,8 @@ DAGS_DIR = Path(__file__).parent.parent / "dags"
 # que las variables existan para que los módulos se importen.
 ENTORNO_PRUEBA = {
     "MINIO_ENDPOINT": "http://minio-test:9000",
-    "MINIO_ROOT_USER": "test-user",
-    "MINIO_ROOT_PASSWORD": "test-password",  # pragma: allowlist secret
+    "AWS_ACCESS_KEY_ID": "test-user",
+    "AWS_SECRET_ACCESS_KEY": "test-password",  # pragma: allowlist secret
     "AIRFLOW__CORE__LOAD_EXAMPLES": "False",
     "AIRFLOW__CORE__UNIT_TEST_MODE": "True",
 }

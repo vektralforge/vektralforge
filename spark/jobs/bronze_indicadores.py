@@ -44,11 +44,18 @@ mes = fecha[5:7]
 # error de S3 confuso mucho después. Es preferible fallar aquí.
 try:
     MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
-    MINIO_ACCESS = os.environ["MINIO_ROOT_USER"]
-    MINIO_SECRET = os.environ["MINIO_ROOT_PASSWORD"]
 except KeyError as e:
     print(f"✗ Falta la variable de entorno {e}")
     sys.exit(1)
+
+# Las credenciales NO se leen para pasarlas a Spark: se comprueba que estén y
+# se dejan en el entorno, donde las resuelven el provider de S3A y boto3. Una
+# credencial en un `--conf` viaja en la línea de comandos del proceso y aparece
+# en la UI del driver; en el entorno, no.
+for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+    if _var not in os.environ:
+        print(f"✗ Falta la variable de entorno '{_var}'")
+        sys.exit(1)
 
 RAW_BUCKET = "raw"
 RAW_PREFIX = f"indicadores/fecha={fecha}"
@@ -71,8 +78,10 @@ spark = (
         "org.apache.spark.sql.delta.catalog.DeltaCatalog",
     )
     .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
-    .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS)
-    .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET)
+    .config(
+        "spark.hadoop.fs.s3a.aws.credentials.provider",
+        "software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider",
+    )
     .config("spark.hadoop.fs.s3a.path.style.access", "true")
     .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
@@ -82,12 +91,9 @@ spark = (
 spark.sparkContext.setLogLevel("WARN")
 print(f"→ Spark {spark.version} — procesando indicadores para {fecha}")
 
-_s3 = boto3.client(
-    "s3",
-    endpoint_url=MINIO_ENDPOINT,
-    aws_access_key_id=MINIO_ACCESS,
-    aws_secret_access_key=MINIO_SECRET,
-)
+# Sin claves explícitas: boto3 las toma de AWS_ACCESS_KEY_ID y
+# AWS_SECRET_ACCESS_KEY, las mismas que usa el provider de S3A.
+_s3 = boto3.client("s3", endpoint_url=MINIO_ENDPOINT)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────

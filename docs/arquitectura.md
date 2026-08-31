@@ -218,6 +218,16 @@ Ningún archivo del repositorio contiene credenciales. Los que las necesitan
 contenedor a partir del `.env`, y los catálogos de Trino usan interpolación
 `${ENV:...}` en tiempo de ejecución.
 
+Las credenciales de MinIO se propagan **solo por variables de entorno**
+(`AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY`, derivadas en el Compose de
+`MINIO_ROOT_USER` y `MINIO_ROOT_PASSWORD`), nunca como propiedades de Spark.
+Una propiedad pasada con `--conf` viaja en la línea de comandos del proceso:
+queda en el `ps` del contenedor de Airflow y en `/proc/<pid>/cmdline`, aunque
+`SparkSubmitHook` la enmascare en el log y Spark la redacte en la UI del driver.
+S3A las resuelve con
+`software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider`
+y boto3 con su cadena por defecto.
+
 En local, OpenBao corre en modo `-dev`: almacenamiento en memoria y sellado
 automático. No es una configuración de producción.
 
