@@ -195,6 +195,10 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     schedule="0 10 * * MON-FRI",
     catchup=False,
+    # Dos runs concurrentes escriben la misma fecha y duplican las filas. Pasó:
+    # `airflow dags unpause` disparó el run programado del lunes mientras
+    # load_example.sh disparaba el manual.
+    max_active_runs=1,
     tags=["indicadores", "uf", "ipc", "dolar", "euro", "mindicador", "bronze"],
 ) as dag:
     t1 = PythonOperator(

@@ -268,6 +268,10 @@ with DAG(
     schedule="0 6 * * MON",
     start_date=datetime(2026, 7, 1),
     catchup=False,
+    # Dos runs concurrentes escriben la misma fecha y duplican las filas. Pasó:
+    # `airflow dags unpause` disparó el run programado del lunes mientras
+    # load_example.sh disparaba el manual.
+    max_active_runs=1,
     default_args=default_args,
     tags=["arclim", "clima", "mma", "chile", "bronze"],
 ) as dag:

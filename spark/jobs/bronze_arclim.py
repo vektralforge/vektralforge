@@ -133,8 +133,15 @@ def escribir_delta(df, tabla, nombre):
     if n == 0:
         print(f"  ⚠ {nombre}: DataFrame vacío, omitiendo")
         return 0
-    df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(
-        f"{BRONZE_DB}.{tabla}"
+    # replaceWhere y no append: reejecutar la misma fecha reemplaza esa carga en
+    # vez de duplicarla. Delta valida que todas las filas escritas cumplan el
+    # predicado, así que un error en fecha_carga falla en vez de colarse.
+    (
+        df.write.format("delta")
+        .mode("overwrite")
+        .option("replaceWhere", f"fecha_carga = '{fecha}'")
+        .option("mergeSchema", "true")
+        .saveAsTable(f"{BRONZE_DB}.{tabla}")
     )
     print(f"  ✓ {nombre}: {n} filas → {BRONZE_DB}.{tabla}")
     return n

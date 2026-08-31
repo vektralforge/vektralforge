@@ -124,11 +124,20 @@ load_dag() {
         airflow dags unpause "$dag_id" 2>/dev/null \
         | grep -v "^$\|INFO\|WARNING\|DagBag" || true
 
-    # Verificar si ya hay un run activo (queued o running)
+    # Verificar si ya hay un run activo (queued o running).
+    #
+    # En Airflow 3 el dag_id es posicional: `-d` y `--output` son de Airflow 2 y
+    # hacían fallar el comando en silencio, así que esta comprobación nunca
+    # detectó nada y el script disparaba siempre un run nuevo. Con el DAG recién
+    # despausado eso significa dos runs en paralelo sobre la misma fecha.
+    #
+    # El CLI escribe líneas de log en stdout junto a la tabla, de ahí el filtro
+    # por dag_id en lugar de saltar solo la cabecera.
     local existing_run
     existing_run=$(docker exec docker-compose-airflow-scheduler-1 \
-        airflow dags list-runs -d "$dag_id" --output table 2>/dev/null \
-        | grep -E "queued|running" | awk "{print \$3}" | head -1)
+        airflow dags list-runs "$dag_id" -o plain 2>/dev/null \
+        | awk -v d="$dag_id" '$1 == d && ($3 == "queued" || $3 == "running") {print $2}' \
+        | head -1)
 
     local run_id
     if [ -n "$existing_run" ]; then

@@ -109,6 +109,20 @@ def test_dag_no_usa_api_de_airflow_2(dagbag, dag_id):
 
 
 @pytest.mark.parametrize("dag_id", sorted(DAGS_ESPERADOS))
+def test_dag_no_permite_runs_solapados(dagbag, dag_id):
+    """Dos runs concurrentes sobre la misma fecha duplican las filas.
+
+    Ocurrió de verdad: `airflow dags unpause` en load_example.sh disparó el run
+    programado del lunes tres segundos antes de que el script disparara el
+    manual. Los dos escribieron y las tablas bronze quedaron con cada fila dos
+    veces. La escritura es idempotente por fecha, pero eso no salva de dos
+    escritores a la vez.
+    """
+    dag = dagbag.dags[dag_id]
+    assert dag.max_active_runs == 1, f"{dag_id}: max_active_runs = {dag.max_active_runs}"
+
+
+@pytest.mark.parametrize("dag_id", sorted(DAGS_ESPERADOS))
 def test_dag_tiene_timeout(dagbag, dag_id):
     """Sin execution_timeout, una tarea colgada bloquea el slot indefinidamente."""
     dag = dagbag.dags[dag_id]

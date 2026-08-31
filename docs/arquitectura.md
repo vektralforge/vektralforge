@@ -102,6 +102,18 @@ El mecanismo concreto: los jobs abren la sesión con `enableHiveSupport()` y
 materializa en `s3a://bronze/<tabla>/` —la misma ruta que antes se escribía a
 mano— pero además queda en el catálogo.
 
+**Escrituras idempotentes.** Los jobs no hacen `append` ciego: escriben con
+`mode("overwrite")` y `replaceWhere` sobre la columna de fecha de carga, de modo
+que reejecutar un DAG reemplaza esa carga en vez de añadir una copia. Delta
+valida que todas las filas escritas cumplan el predicado, así que una fila con
+la fecha equivocada hace fallar la escritura en lugar de colarse.
+
+Eso resuelve la reejecución, no la concurrencia: dos runs escribiendo la misma
+fecha a la vez seguirían pisándose, así que los DAGs declaran
+`max_active_runs=1`. El caso no es hipotético — `airflow dags unpause` en
+`load_example.sh` disparaba el run programado del día en paralelo con el manual,
+y las tablas bronze acababan con cada fila dos veces.
+
 **Spark es el único escritor del catálogo.** El schema no se crea desde Trino: si
 se creara allí quedaría fijado con `location = 's3://bronze/'` y Spark ya no
 podría declarar la suya. Trino conserva `register_table` habilitado, pero los

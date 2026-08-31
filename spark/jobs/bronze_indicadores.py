@@ -168,8 +168,15 @@ def _escribir_delta(filas, tabla, nombre):
     que Trino la vea sin registrarla a mano. La ruta física no cambia.
     """
     df = spark.createDataFrame(filas)
-    df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(
-        f"{BRONZE_DB}.{tabla}"
+    # replaceWhere y no append: reejecutar la misma fecha reemplaza esa carga en
+    # vez de duplicarla. Delta valida que todas las filas escritas cumplan el
+    # predicado, así que un error en fecha_proceso falla en vez de colarse.
+    (
+        df.write.format("delta")
+        .mode("overwrite")
+        .option("replaceWhere", f"fecha_proceso = '{fecha}'")
+        .option("mergeSchema", "true")
+        .saveAsTable(f"{BRONZE_DB}.{tabla}")
     )
     n = len(filas)
     print(f"  ✓ {nombre}: {n} filas → {BRONZE_DB}.{tabla}")

@@ -185,6 +185,12 @@ hábil; el IPC es mensual, así que una serie vacía no se trata como error.
 **Riesgo climático**: indicadores por las 346 comunas de Chile y series de
 tiempo 1970–2070 bajo escenario SSP5-8.5 para las capitales regionales.
 
+Las escrituras son **idempotentes por fecha de carga**: los jobs usan
+`replaceWhere` sobre `fecha_carga` (`fecha_proceso` en indicadores), así que
+reejecutar un DAG reemplaza esa carga en lugar de duplicar filas. Los DAGs
+declaran `max_active_runs=1` porque la idempotencia no protege de dos
+escritores simultáneos sobre la misma fecha.
+
 ### Consultas de referencia
 
 ```sql
