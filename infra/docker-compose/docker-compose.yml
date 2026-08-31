@@ -20,6 +20,12 @@ x-airflow-common: &airflow-common
     AIRFLOW__OPENLINEAGE__TRANSPORT: '{"type": "http", "url": "http://marquez-api:9000", "endpoint": "api/v1/lineage"}'
     AIRFLOW__OPENLINEAGE__NAMESPACE: "vektralforge"
     AIRFLOW__OPENLINEAGE__DISABLED: "false"
+    # El provider de OpenLineage inyecta en cada spark-submit el parent job
+    # (para que el run de Spark cuelgue de su tarea en Marquez) y la URL de
+    # transporte. Sin esto el listener de Spark no sabría a dónde emitir y los
+    # dos runs aparecerían como grafos separados.
+    AIRFLOW__OPENLINEAGE__SPARK_INJECT_PARENT_JOB_INFO: "true"
+    AIRFLOW__OPENLINEAGE__SPARK_INJECT_TRANSPORT_INFO: "true"
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: "true"
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/

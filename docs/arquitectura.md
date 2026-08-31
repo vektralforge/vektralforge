@@ -41,7 +41,8 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Trino | 448 | `Operativo` | Consulta SQL |
 | MinIO | 2024-04 | `Operativo` | Almacenamiento de objetos S3 |
 | Apache Superset | 3.1.3 | `Operativo` | Visualización |
-| OpenLineage + Marquez | — | `Operativo` | Linaje de datos |
+| OpenLineage | 1.52.0 | `Operativo` | Linaje en Airflow y Spark |
+| Marquez | — | `Operativo` | Almacén y UI de linaje |
 | PostgreSQL | 15 | `Operativo` | Metadatos de Airflow, Hive, Marquez y Superset |
 | Redis | 7.2 | `Operativo` | Caché de Superset |
 | OpenBao | 2.1.0 | `Parcial` | Secretos; en local corre en modo dev |
@@ -52,6 +53,16 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Great Expectations | — | `Planificado` | Calidad de datos |
 | Prometheus + Grafana | — | `Planificado` | Métricas |
 | Graylog | — | `En evaluación` | Logs; su licencia SSPL es un factor en la decisión |
+
+El linaje se emite en dos niveles: el provider de OpenLineage de Airflow publica
+el run de cada tarea, y el `OpenLineageSparkListener` publica los datasets que
+lee y escribe cada job de Spark. El listener se declara en el
+`spark-defaults.conf` compartido por las imágenes de Airflow y Spark —con
+`SparkSubmitOperator` el driver corre en el contenedor de Airflow, así que tiene
+que estar en ambas—, y Airflow inyecta el parent job y el transporte en cada
+submit con `AIRFLOW__OPENLINEAGE__SPARK_INJECT_PARENT_JOB_INFO` y
+`AIRFLOW__OPENLINEAGE__SPARK_INJECT_TRANSPORT_INFO`. Sin esa inyección los dos
+runs llegarían a Marquez como grafos inconexos.
 
 Sobre el linaje: se usa **OpenLineage con Marquez**, no Apache Atlas. Atlas
 cubre catalogación además de linaje, pero OpenLineage tiene integración nativa

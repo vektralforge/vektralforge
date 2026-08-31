@@ -46,7 +46,8 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Trino | 448 | Consulta SQL |
 | MinIO | 2024-04 | Almacenamiento de objetos S3 |
 | Apache Superset | 3.1.3 | Visualización |
-| OpenLineage / Marquez | — | Linaje de datos |
+| OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
+| Marquez | — | Almacén y UI de linaje |
 | PostgreSQL | 15 | Metadatos |
 | Redis | 7.2 | Caché de Superset |
 | OpenBao | 2.1.0 | Secretos (modo dev en local) |
@@ -126,6 +127,16 @@ API pública → Airflow → Spark → Delta Lake → MinIO
 
         OpenLineage captura el linaje en cada paso → Marquez
 ```
+
+El linaje se captura en dos niveles. El provider de OpenLineage de Airflow emite
+el run de cada tarea; el `OpenLineageSparkListener` —declarado en el
+`spark-defaults.conf` que comparten las imágenes de Airflow y Spark— emite los
+datasets de entrada y salida de cada job. Airflow inyecta en cada `spark-submit`
+el parent job y la URL de transporte, así que el run de Spark cuelga de su tarea
+en Marquez en vez de aparecer como un grafo suelto.
+
+El soporte de Spark 4 llegó en OpenLineage 1.37.0: versiones anteriores no
+sirven con este stack.
 
 Las capas siguen el patrón medallón: `raw/` guarda la respuesta cruda de la API,
 `bronze/` las tablas Delta tipadas, `silver/` y `gold/` los modelos derivados.
