@@ -19,6 +19,13 @@ import pytest
 DAGS_DIR = Path(__file__).parent.parent / "dags"
 PLUGINS_DIR = Path(__file__).parent.parent / "plugins"
 
+# Airflow 3 añade la carpeta de plugins al sys.path, pero NO la de DAGs. Se
+# replica aquí y no en una fixture porque los tests del código compartido lo
+# importan en tiempo de colección. Añadir dags/ haría pasar tests con imports
+# que en el contenedor fallan — pasó con http_publico.
+if str(PLUGINS_DIR) not in sys.path:
+    sys.path.insert(0, str(PLUGINS_DIR))
+
 # Valores de prueba: los tests no se conectan a ningún servicio, solo necesitan
 # que las variables existan para que los módulos se importen.
 ENTORNO_PRUEBA = {
@@ -62,12 +69,6 @@ def dagbag(entorno):
 def modulos_dag(entorno):
     """Importa cada archivo de dags/ como módulo para poder probar sus funciones."""
     import importlib.util
-
-    # Se añade plugins/, no dags/. Airflow 3 pone la carpeta de plugins en el
-    # sys.path pero no la de DAGs, así que meter dags/ aquí haría pasar tests
-    # con imports que en el contenedor fallan — pasó con http_publico.
-    if str(PLUGINS_DIR) not in sys.path:
-        sys.path.insert(0, str(PLUGINS_DIR))
 
     modulos = {}
     for ruta in sorted(DAGS_DIR.glob("*.py")):
