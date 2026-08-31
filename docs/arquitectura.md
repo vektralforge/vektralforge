@@ -116,6 +116,15 @@ percentiles del primer modelo en los once primeros años y dejaba los otros 89 e
 nulo: el 89 % de la columna estaba vacío y el 11 % restante era una curva de
 percentiles disfrazada de serie temporal.
 
+**El cierre de la sesión espera al emisor de linaje.** OpenLineage emite de
+forma asíncrona y no ofrece ninguna forma de forzar el vaciado de la cola. Cerrar
+la sesión justo después de la última escritura pierde los eventos de ese último
+segundo: los jobs llegan a Marquez pero los datasets de las últimas tablas no.
+Se midió con `arclim_series`, `indicadores_utm` e `indicadores_tpm`, y empeoró al
+pasar a `replaceWhere`, que emite dos eventos por escritura en vez de uno. Los
+jobs esperan unos segundos antes de `spark.stop()`; se ajusta con
+`OPENLINEAGE_PAUSA_CIERRE`.
+
 **Extracción idempotente y cache en `raw/`.** La zona de aterrizaje guarda la
 respuesta cruda de la API particionada por fecha, así que ya es el cache natural:
 `extract` comprueba qué hay antes de pedir. ARClim lo hace archivo por archivo,

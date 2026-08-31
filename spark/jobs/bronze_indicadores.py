@@ -29,6 +29,7 @@ resto son operaciones de DataFrame que se resuelven en la JVM.
 import json
 import os
 import sys
+import time
 from datetime import UTC, datetime
 
 import boto3
@@ -194,6 +195,20 @@ if fallidos:
         print(f"    {nombre.upper()}: {err}")
 
 print("\n" + "=" * 60)
+
+# OpenLineage emite sus eventos de forma asíncrona y no expone ninguna forma de
+# forzar el vaciado de la cola: no hay flush, ni drain, ni espera al cerrar.
+# Cerrar la sesión justo después de la última escritura pierde los eventos de ese
+# último segundo. Medido: en una ejecución quedaron sin registrar los datasets de
+# arclim_series, indicadores_utm e indicadores_tpm —las últimas tablas de cada
+# job—, mientras que los jobs correspondientes sí aparecían en Marquez. Empeoró
+# al pasar a replaceWhere, que emite dos eventos por escritura en vez de uno.
+#
+# Ajustable con OPENLINEAGE_PAUSA_CIERRE; 0 la desactiva.
+_pausa_cierre = float(os.environ.get("OPENLINEAGE_PAUSA_CIERRE", "5"))
+if _pausa_cierre > 0:
+    print(f"\n→ Esperando {_pausa_cierre:g}s a que OpenLineage vacíe su cola de eventos...")
+    time.sleep(_pausa_cierre)
 
 spark.stop()
 
