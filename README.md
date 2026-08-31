@@ -115,8 +115,12 @@ Las credenciales salen de `infra/docker-compose/.env` y se muestran al terminar
 
 **Spark escribe, Trino lee.** Las operaciones ACID sobre Delta Lake —`MERGE`,
 `UPDATE`, `DELETE`, `VACUUM`— solo las hace Spark; Trino aporta consulta SQL
-interactiva sobre las mismas tablas. Ambos comparten el Hive Metastore, así que
-una tabla escrita por Spark es consultable desde Trino sin registrarla dos veces.
+interactiva sobre las mismas tablas.
+
+Ambos comparten el Hive Metastore. Los jobs escriben con `saveAsTable`, no con
+`save(ruta)`, así que la tabla queda registrada en el catálogo en el mismo acto
+en que se escribe y Trino la ve sin registrarla dos veces. Añadir un pipeline no
+exige tocar ningún script de registro: basta con escribir en `bronze`.
 
 ```
 API pública → Airflow → Spark → Delta Lake → MinIO

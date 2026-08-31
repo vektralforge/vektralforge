@@ -31,6 +31,9 @@ x-airflow-common: &airflow-common
     # línea de comandos de spark-submit y aparece en la UI del driver.
     AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
     AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    # Catálogo compartido con Trino. El driver de Spark corre en este
+    # contenedor, así que es aquí donde se resuelve.
+    HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: "true"
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
@@ -137,6 +140,7 @@ services:
       OPENLINEAGE_NAMESPACE: vektralforge
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     ports:
       - "7077:7077"
       - "8082:8082"
@@ -159,6 +163,7 @@ services:
       # Los executors resuelven las credenciales de S3A desde el entorno.
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     ports:
       - "8083:8083"
     depends_on:

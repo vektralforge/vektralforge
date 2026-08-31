@@ -100,10 +100,11 @@ docker cp spark/jobs/bronze_arclim.py \
     docker-compose-spark-master-1:/opt/spark/jobs/bronze_arclim.py 2>/dev/null || true
 ok "Jobs Spark actualizados"
 
-# ── 5. Crear schema Trino ─────────────────────────────────────────────────────
-docker exec docker-compose-trino-1 trino --execute \
-    "CREATE SCHEMA IF NOT EXISTS delta.bronze WITH (location = 's3://bronze/');" \
-    2>/dev/null | grep -v "WARNING\|INFO\|jline" || true
+# ── 5. El catálogo lo crea Spark ─────────────────────────────────────────────
+# Aquí había un CREATE SCHEMA desde Trino. Ya no hace falta: los jobs usan
+# saveAsTable contra el Hive Metastore compartido, así que crean la base y
+# registran las tablas ellos mismos. Crearla desde Trino además la fijaría con
+# location s3:// antes de que Spark pudiera declarar la suya.
 
 # ════════════════════════════════════════════════════════════════════════════════
 # Función genérica para cargar un DAG
@@ -160,14 +161,13 @@ load_dag() {
 if load_dag "indicadores_financieros_chile" "dev-load-ind" \
     "extract_indicadores" "transform_bronze" "validar_bronze"; then
 
-    # Post-proceso: registrar tablas en Trino + Superset
-    log "Registrando tablas indicadores en Trino..."
-    for tabla in indicadores_uf indicadores_dolar indicadores_euro indicadores_utm indicadores_tpm; do
-        docker exec docker-compose-trino-1 trino --execute \
-            "CALL delta.system.register_table(schema_name => 'bronze', table_name => '${tabla}', table_location => 's3://bronze/${tabla}');" \
-            2>/dev/null | grep -v "WARNING\|INFO\|jline" || true
-        ok "Trino: $tabla"
-    done
+    # Spark ya registró las tablas en el metastore; aquí solo se comprueba que
+    # Trino las ve. Si esta lista sale vacía, el problema está en el catálogo,
+    # no en el pipeline.
+    log "Tablas de indicadores visibles en Trino:"
+    docker exec docker-compose-trino-1 trino --execute \
+        "SHOW TABLES FROM delta.bronze LIKE 'indicadores_%';" \
+        2>/dev/null | grep -v "WARNING\|INFO\|jline\|^$" | sed 's/^/    /' || true
 
     docker exec docker-compose-trino-1 trino --execute "
     CREATE OR REPLACE VIEW delta.bronze.indicadores_todos AS
@@ -206,21 +206,10 @@ fi
 if load_dag "arclim_riesgo_climatico_chile" "dev-load-arclim" \
     "extract_arclim" "transform_bronze" "validar_bronze"; then
 
-    log "Registrando tablas ARClim en Trino..."
-    ok=0
-    for tabla in arclim_indicadores arclim_comunas arclim_series; do
-        salida=$(docker exec docker-compose-trino-1 trino --execute \
-            "CALL delta.system.register_table(schema_name => 'bronze', table_name => '${tabla}', table_location => 's3://bronze/${tabla}');" 2>&1)
-
-        if echo "$salida" | grep -q "already exists"; then
-            ok "Trino: $tabla (ya registrada)"
-        elif echo "$salida" | grep -qi "failed\|error"; then
-            echo "  ✗ Trino: $tabla — $(echo "$salida" | tail -1)"
-            ok=$((ok + 1))
-        else
-            ok "Trino: $tabla"
-        fi
-    done
+    log "Tablas ARClim visibles en Trino:"
+    docker exec docker-compose-trino-1 trino --execute \
+        "SHOW TABLES FROM delta.bronze LIKE 'arclim_%';" \
+        2>/dev/null | grep -v "WARNING\|INFO\|jline\|^$" | sed 's/^/    /' || true
 
     log "Conteo ARClim en Trino:"
     docker exec docker-compose-trino-1 trino --execute \

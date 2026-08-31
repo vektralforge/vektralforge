@@ -58,9 +58,12 @@ for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
         print(f"✗ Falta la variable de entorno '{_var}'")
         sys.exit(1)
 
+HIVE_METASTORE_URIS = os.environ.get("HIVE_METASTORE_URIS", "thrift://hive-metastore:9083")
+
 RAW_BUCKET = "raw"
 RAW_PREFIX = f"arclim/fecha={fecha}"
 BRONZE_BASE = "s3a://bronze"
+BRONZE_DB = "bronze"
 
 # ── SparkSession ──────────────────────────────────────────────────────────────
 # Sin configure_spark_with_delta_pip: los JAR de Delta están tanto en
@@ -85,9 +88,17 @@ spark = (
     .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .config("spark.sql.shuffle.partitions", "2")
+    # El catálogo compartido con Trino: sin esto las tablas quedan como rutas
+    # sueltas en MinIO y hay que registrarlas a mano en Trino.
+    .config("spark.hadoop.hive.metastore.uris", HIVE_METASTORE_URIS)
+    .enableHiveSupport()
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("WARN")
+
+# La base apunta a la raíz del bucket, así que cada tabla se materializa en
+# s3a://bronze/<tabla>/ — la misma ruta que antes se escribía a mano.
+spark.sql(f"CREATE DATABASE IF NOT EXISTS {BRONZE_DB} LOCATION '{BRONZE_BASE}/'")
 print(f"→ Spark {spark.version} — procesando ARClim para fecha: {fecha}")
 
 # Sin claves explícitas: boto3 las toma de AWS_ACCESS_KEY_ID y
@@ -108,8 +119,12 @@ def leer_json(key):
     return json.loads(obj["Body"].read().decode("utf-8"))
 
 
-def escribir_delta(df, path, nombre):
+def escribir_delta(df, tabla, nombre):
     """Escribe el DataFrame en Delta Lake y devuelve el número de filas.
+
+    Usa saveAsTable en lugar de save(ruta): registra la tabla en el Hive
+    Metastore, que es lo que hace que Trino la vea sin registrarla a mano. La
+    ruta física no cambia — la base apunta a la raíz del bucket.
 
     Devuelve 0 sin escribir si el DataFrame está vacío, para que quien llama
     pueda distinguir 'sin datos' de 'escrito'.
@@ -118,8 +133,10 @@ def escribir_delta(df, path, nombre):
     if n == 0:
         print(f"  ⚠ {nombre}: DataFrame vacío, omitiendo")
         return 0
-    df.write.format("delta").mode("append").option("mergeSchema", "true").save(path)
-    print(f"  ✓ {nombre}: {n} filas → {path}")
+    df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(
+        f"{BRONZE_DB}.{tabla}"
+    )
+    print(f"  ✓ {nombre}: {n} filas → {BRONZE_DB}.{tabla}")
     return n
 
 
@@ -164,7 +181,7 @@ try:
     df_ind = spark.createDataFrame(rows, schema)
     registrar(
         "arclim_indicadores",
-        escribir_delta(df_ind, f"{BRONZE_BASE}/arclim_indicadores", "arclim_indicadores"),
+        escribir_delta(df_ind, "arclim_indicadores", "arclim_indicadores"),
     )
 
 except Exception as e:
@@ -208,7 +225,7 @@ try:
             "arclim_comunas",
             escribir_delta(
                 spark.createDataFrame(rows),
-                f"{BRONZE_BASE}/arclim_comunas",
+                "arclim_comunas",
                 "arclim_comunas",
             ),
         )
@@ -257,7 +274,7 @@ try:
             "arclim_series",
             escribir_delta(
                 spark.createDataFrame(rows),
-                f"{BRONZE_BASE}/arclim_series",
+                "arclim_series",
                 "arclim_series",
             ),
         )
@@ -279,7 +296,7 @@ if escritos:
     total = sum(escritos.values())
     print(f"\n✓ Escritas {len(escritos)}/3 tablas ({total} filas)")
     for nombre, n in escritos.items():
-        print(f"    s3a://bronze/{nombre}/  ({n} filas)")
+        print(f"    {BRONZE_DB}.{nombre}  ({n} filas)")
 
 if vacios:
     print(f"\n⚠ Sin datos: {', '.join(vacios)}")

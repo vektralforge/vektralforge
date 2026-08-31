@@ -57,9 +57,12 @@ for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
         print(f"✗ Falta la variable de entorno '{_var}'")
         sys.exit(1)
 
+HIVE_METASTORE_URIS = os.environ.get("HIVE_METASTORE_URIS", "thrift://hive-metastore:9083")
+
 RAW_BUCKET = "raw"
 RAW_PREFIX = f"indicadores/fecha={fecha}"
 BRONZE_BASE = "s3a://bronze"
+BRONZE_DB = "bronze"
 
 # Diarios: deben tener datos todos los días hábiles.
 INDICADORES_DIARIOS = ["uf", "dolar", "euro", "utm", "tpm"]
@@ -90,9 +93,17 @@ spark = (
     .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .config("spark.sql.shuffle.partitions", "2")
+    # El catálogo compartido con Trino: sin esto las tablas quedan como rutas
+    # sueltas en MinIO y hay que registrarlas a mano en Trino.
+    .config("spark.hadoop.hive.metastore.uris", HIVE_METASTORE_URIS)
+    .enableHiveSupport()
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("WARN")
+
+# La base apunta a la raíz del bucket, así que cada tabla se materializa en
+# s3a://bronze/<tabla>/ — la misma ruta que antes se escribía a mano.
+spark.sql(f"CREATE DATABASE IF NOT EXISTS {BRONZE_DB} LOCATION '{BRONZE_BASE}/'")
 print(f"→ Spark {spark.version} — procesando indicadores para {fecha}")
 
 # Sin claves explícitas: boto3 las toma de AWS_ACCESS_KEY_ID y
@@ -150,12 +161,18 @@ def _construir_filas(data, nombre):
     return filas
 
 
-def _escribir_delta(filas, path, nombre):
-    """Escribe las filas en Delta Lake. Retorna cuántas se escribieron."""
+def _escribir_delta(filas, tabla, nombre):
+    """Escribe las filas en Delta Lake. Retorna cuántas se escribieron.
+
+    saveAsTable y no save(ruta): registra la tabla en el Hive Metastore para
+    que Trino la vea sin registrarla a mano. La ruta física no cambia.
+    """
     df = spark.createDataFrame(filas)
-    df.write.format("delta").mode("append").option("mergeSchema", "true").save(path)
+    df.write.format("delta").mode("append").option("mergeSchema", "true").saveAsTable(
+        f"{BRONZE_DB}.{tabla}"
+    )
     n = len(filas)
-    print(f"  ✓ {nombre}: {n} filas → {path}")
+    print(f"  ✓ {nombre}: {n} filas → {BRONZE_DB}.{tabla}")
     return n
 
 
@@ -168,7 +185,7 @@ fallidos = []
 for nombre in INDICADORES:
     print(f"\n→ Procesando {nombre.upper()}...")
     key = f"{RAW_PREFIX}/{nombre}_{anio}.json"
-    path_delta = f"{BRONZE_BASE}/indicadores_{nombre}"
+    tabla = f"indicadores_{nombre}"
 
     try:
         data = _leer_json(RAW_BUCKET, key)
@@ -179,7 +196,7 @@ for nombre in INDICADORES:
             vacios.append(nombre)
             continue
 
-        escritos[nombre] = _escribir_delta(filas, path_delta, nombre.upper())
+        escritos[nombre] = _escribir_delta(filas, tabla, nombre.upper())
 
     except Exception as e:
         print(f"  ✗ {nombre.upper()}: {type(e).__name__}: {e}")
@@ -195,7 +212,7 @@ if escritos:
     total = sum(escritos.values())
     print(f"\n✓ Escritos: {len(escritos)}/{len(INDICADORES)} ({total} filas)")
     for nombre, n in escritos.items():
-        print(f"    s3a://bronze/indicadores_{nombre}/  ({n} filas)")
+        print(f"    {BRONZE_DB}.indicadores_{nombre}  ({n} filas)")
 
 if vacios:
     print(f"\n⚠ Sin datos: {', '.join(v.upper() for v in vacios)}")

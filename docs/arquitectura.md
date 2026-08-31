@@ -95,6 +95,22 @@ consultable desde Trino sin registrarla dos veces. Esa decisión tiene un costo:
 el metastore necesita el conector S3A y su propia configuración de credenciales,
 porque valida rutas en el object store al gestionar esquemas externos.
 
+El mecanismo concreto: los jobs abren la sesión con `enableHiveSupport()` y
+`spark.hadoop.hive.metastore.uris`, crean la base con
+`CREATE DATABASE IF NOT EXISTS bronze LOCATION 's3a://bronze/'` y escriben con
+`saveAsTable`. Como la base apunta a la raíz del bucket, cada tabla se
+materializa en `s3a://bronze/<tabla>/` —la misma ruta que antes se escribía a
+mano— pero además queda en el catálogo.
+
+**Spark es el único escritor del catálogo.** El schema no se crea desde Trino: si
+se creara allí quedaría fijado con `location = 's3://bronze/'` y Spark ya no
+podría declarar la suya. Trino conserva `register_table` habilitado, pero los
+pipelines del repo no lo usan; sirve para adoptar tablas Delta preexistentes.
+
+Trino cachea los metadatos de cada tabla `delta.metadata.cache-ttl` (10 min en
+esta configuración), así que un cambio de esquema puede tardar en verse aunque
+la tabla aparezca de inmediato en `SHOW TABLES`.
+
 ---
 
 ## 4. Arquitectura de servicios
