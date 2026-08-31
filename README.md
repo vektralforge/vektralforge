@@ -300,6 +300,15 @@ stack completo no está automatizada**, así que verifica con `make dev-up` y
   Hadoop 3.3 (imagen de Hive) sigue con el v1. Son artefactos distintos, no
   versiones del mismo. Los Dockerfiles los resuelven con Maven en vez de fijarlos
   a mano.
+- **Cliente de metastore 2.3.10 contra servidor Hive 4.0.0.** Spark 4 lleva
+  embebido el cliente de Hive 2.3.10 y el metastore del stack es 4.0.0. El
+  desajuste es intencional y no hace falta alinearlo: el Thrift del metastore es
+  estable hacia atrás, y aquí Hive solo actúa como registro nombre→ubicación
+  —las transacciones las gestiona Delta—. Alinearlo exigiría
+  `spark.sql.hive.metastore.jars`, o sea descargar jars en caliente o meter un
+  segundo juego de Hive en la imagen, con conflictos de classpath a cambio de
+  nada. Si algún día aparece un error de API del metastore, ese es el primer
+  sitio donde mirar.
 - **ANSI mode activo por defecto en Spark 4.** Los casts inválidos lanzan
   excepción en lugar de devolver `null`.
 - **Airflow 3 exige `execution_api_server_url` y un JWT compartido** entre
