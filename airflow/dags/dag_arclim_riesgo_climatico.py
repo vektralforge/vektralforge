@@ -14,6 +14,10 @@ Tablas Delta Lake generadas:
   - bronze/arclim_series/          ← series de tiempo por indicador/comuna
 
 Schedule: semanal (lunes 06:00 AM) — los datos no cambian diariamente
+
+raw/ es la zona de aterrizaje y también el cache: lo ya descargado para una
+fecha no se vuelve a pedir. Para refrescar de verdad, disparar el DAG con
+forzar_descarga=true.
 """
 
 from __future__ import annotations
@@ -22,10 +26,11 @@ import json
 import os
 from datetime import UTC, datetime, timedelta
 
-import requests
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.providers.standard.operators.python import PythonOperator
+
+from http_publico import PAUSA_ENTRE_LLAMADAS, ErrorAPI, crear_sesion, get_json
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 ARCLIM_BASE = "https://arclim.mma.gob.cl/api"
@@ -90,107 +95,132 @@ def _fecha_ejecucion(context) -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
+def _existe_en_raw(s3, key: str) -> bool:
+    """¿Ese archivo ya está descargado para esta fecha?"""
+    try:
+        s3.head_object(Bucket="raw", Key=key)
+        return True
+    except Exception:
+        return False
+
+
 def extract_arclim(**context):
     """
     Extrae datos de ARClim API y los guarda en raw/arclim/fecha={ds}/:
-    1. indicadores_climaticos.json  — catálogo completo de indicadores
-    2. capas.json                   — capas geográficas disponibles
-    3. riesgo_comunas.json          — riesgo por las 346 comunas de Chile
-    4. series_comunas_capitales.json — series temporales 1970-2070
+    1. indicadores_climaticos.json   — catálogo completo de indicadores
+    2. riesgo_comunas.json           — riesgo por las 346 comunas de Chile
+    3. series_comunas_capitales.json — series temporales 1970-2070
+
+    Cada archivo se salta si ya existe para esa fecha, así que reejecutar el DAG
+    mientras se itera sobre el transform no cuesta ni una llamada a la API. El
+    parámetro forzar_descarga ignora el cache.
     """
     import boto3
     from botocore.client import Config
 
     ds = _fecha_ejecucion(context)
     prefix = f"arclim/fecha={ds}"
+    forzar = bool(context.get("params", {}).get("forzar_descarga", False))
 
     s3 = boto3.client(
         "s3",
         endpoint_url=MINIO_ENDPOINT,
         config=Config(signature_version="s3v4"),
     )
+    sesion = crear_sesion()
+    llamadas = 0
 
-    def get_json(url, desc=""):
-        try:
-            r = requests.get(url, timeout=TIMEOUT)
-            r.raise_for_status()
-            return r.json()
-        except Exception as e:
-            print(f"  ⚠ Error en {desc}: {e}")
-            return None
+    def cacheado(nombre):
+        if forzar:
+            return False
+        if _existe_en_raw(s3, f"{prefix}/{nombre}"):
+            print(f"  · {nombre} ya está en raw/{prefix}/ — no se vuelve a pedir")
+            return True
+        return False
 
     def upload(data, key):
         body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
         s3.put_object(Bucket="raw", Key=f"{prefix}/{key}", Body=body)
         print(f"  ✓ raw/{prefix}/{key} ({len(body):,} bytes)")
 
-    # 1. Catálogo de indicadores
-    print("→ Descargando catálogo de indicadores climáticos...")
-    indicadores = get_json(f"{ARCLIM_BASE}/indicadores_climaticos", "indicadores")
-    if indicadores:
+    # ── 1. Catálogo de indicadores ────────────────────────────────────────────
+    # Crítico: sin él no hay tabla arclim_indicadores, así que un fallo aquí
+    # tumba la tarea en vez de dejar el pipeline a medias sin avisar.
+    if not cacheado("indicadores_climaticos.json"):
+        print("→ Descargando catálogo de indicadores climáticos...")
+        indicadores = get_json(sesion, f"{ARCLIM_BASE}/indicadores_climaticos", timeout=TIMEOUT)
+        llamadas += 1
         upload(indicadores, "indicadores_climaticos.json")
         print(f"  ✓ {len(indicadores.get('data', []))} indicadores disponibles")
 
-    # 2. Capas geográficas
-    print("→ Descargando capas geográficas...")
-    capas = get_json(f"{ARCLIM_BASE}/capas", "capas")
-    if capas:
-        upload(capas, "capas.json")
+    # ── 2. Riesgo climático por comunas ───────────────────────────────────────
+    if not cacheado("riesgo_comunas.json"):
+        print("→ Descargando riesgo climático por comunas...")
+        attrs_base = ["NOM_COMUNA", "REGION", "PROVINCIA"]
+        attrs_clima = []
+        for ind in INDICADORES:
+            attrs_clima.append(f"$CLIMA${ind}$annual$present")
+            attrs_clima.append(f"$CLIMA${ind}$annual$future")
+            attrs_clima.append(f"$CLIMA${ind}$annual$delta")
 
-    # 3. Riesgo climático por comunas (presente + futuro + delta)
-    print("→ Descargando riesgo climático por comunas...")
-    attrs_base = ["NOM_COMUNA", "REGION", "PROVINCIA"]
-    attrs_clima = []
-    for ind in INDICADORES:
-        attrs_clima.append(f"$CLIMA${ind}$annual$present")
-        attrs_clima.append(f"$CLIMA${ind}$annual$future")
-        attrs_clima.append(f"$CLIMA${ind}$annual$delta")
-
-    # Dividir en 2 requests para no superar límite de URL del servidor
-    # Request 1: atributos base + indicadores presentes
-    try:
+        # PENDIENTE (§3.1 de la revisión): el comentario original hablaba de
+        # dividir en dos requests para no pasarse del límite de URL, pero la
+        # segunda nunca se escribió. Con el `[:10]` se pierden 3 atributos
+        # present/future y los 5 delta completos, y la tabla arclim_comunas nace
+        # incompleta sin que nada lo señale.
         attrs_r1 = attrs_base + [a for a in attrs_clima if "present" in a or "future" in a]
-        r1 = requests.get(
-            f"{ARCLIM_BASE}/datos/comunas/json/",
-            params={"attributes": ",".join(attrs_r1[:10])},
-            timeout=TIMEOUT,
-        )
-        r1.raise_for_status()
-        datos_comunas = r1.json()
-        print(f"  ✓ {len(datos_comunas.get('index', []))} comunas (request parcial)")
-    except Exception as e:
-        print(f"  ⚠ Error en riesgo comunas: {e}")
-        datos_comunas = None
-    if datos_comunas:
-        upload(datos_comunas, "riesgo_comunas.json")
-        print(f"  ✓ {len(datos_comunas.get('index', []))} comunas")
+        try:
+            datos_comunas = get_json(
+                sesion,
+                f"{ARCLIM_BASE}/datos/comunas/json/",
+                params={"attributes": ",".join(attrs_r1[:10])},
+                timeout=TIMEOUT,
+            )
+            llamadas += 1
+        except ErrorAPI as e:
+            # No es crítico: la validación lo trata como advertencia y el job de
+            # Spark escribe igual las otras dos tablas.
+            print(f"  ⚠ riesgo_comunas no disponible: {e}")
+        else:
+            upload(datos_comunas, "riesgo_comunas.json")
+            print(f"  ✓ {len(datos_comunas.get('index', []))} comunas")
 
-    # 4. Series de tiempo para comunas capitales
-    print("→ Descargando series de tiempo históricas y proyectadas...")
-    series_all = {}
-    for cod, nombre in COMUNAS_CAPITALES.items():
-        series_all[cod] = {"nombre": nombre, "indicadores": {}}
-        for ind in INDICADORES[:3]:  # top 3 para no saturar
-            url_s = f"{ARCLIM_BASE}/series/{ind}/comunas/{cod}/annual/ssp585"
-            serie = get_json(url_s, f"{nombre}/{ind}")
-            if serie:
+    # ── 3. Series de tiempo para comunas capitales ────────────────────────────
+    if not cacheado("series_comunas_capitales.json"):
+        total = len(COMUNAS_CAPITALES) * len(INDICADORES)
+        print(f"→ Descargando series de tiempo ({total} llamadas, espaciadas)...")
+        series_all = {}
+        fallos = []
+        for cod, nombre in COMUNAS_CAPITALES.items():
+            series_all[cod] = {"nombre": nombre, "indicadores": {}}
+            for ind in INDICADORES:
+                url_s = f"{ARCLIM_BASE}/series/{ind}/comunas/{cod}/annual/ssp585"
+                try:
+                    serie = get_json(sesion, url_s, timeout=TIMEOUT, pausa=PAUSA_ENTRE_LLAMADAS)
+                    llamadas += 1
+                except ErrorAPI as e:
+                    fallos.append(f"{nombre}/{ind}: {e}")
+                    continue
+                pseries = serie.get("pseries", [])
                 series_all[cod]["indicadores"][ind] = {
                     "years": serie.get("years", []),
                     "mean": serie.get("mean", []),
-                    "p10": serie.get("pseries", [[]])[1]
-                    if len(serie.get("pseries", [])) > 1
-                    else [],
-                    "p90": serie.get("pseries", [[]])[-2]
-                    if len(serie.get("pseries", [])) > 1
-                    else [],
+                    "p10": pseries[1] if len(pseries) > 1 else [],
+                    "p90": pseries[-2] if len(pseries) > 1 else [],
                     "gcms": serie.get("gcms", []),
                 }
-                print(f"    ✓ {nombre} / {ind}: {len(serie.get('years', []))} años")
 
-    if series_all:
+        con_datos = sum(len(v["indicadores"]) for v in series_all.values())
+        if con_datos == 0:
+            raise ErrorAPI(f"Ninguna de las {total} series se pudo descargar")
+        if fallos:
+            print(f"  ⚠ {len(fallos)} de {total} series fallaron:")
+            for f in fallos[:5]:
+                print(f"      {f}")
+        print(f"  ✓ {con_datos}/{total} series descargadas")
         upload(series_all, "series_comunas_capitales.json")
 
-    print(f"\n✓ Extracción ARClim completada → raw/{prefix}/")
+    print(f"\n✓ Extracción ARClim completada → raw/{prefix}/  ({llamadas} llamadas a la API)")
 
     # transform_bronze necesita la misma fecha con la que se escribió raw/.
     return {"fecha": ds, "prefix": prefix}
@@ -216,7 +246,6 @@ def validar_arclim(**context):
     # Archivos críticos (ERROR si faltan)
     for archivo in [
         "indicadores_climaticos.json",
-        "capas.json",
         "series_comunas_capitales.json",
     ]:
         try:
@@ -272,6 +301,8 @@ with DAG(
     # `airflow dags unpause` disparó el run programado del lunes mientras
     # load_example.sh disparaba el manual.
     max_active_runs=1,
+    # raw/ hace de cache: por defecto no se vuelve a pedir lo ya descargado.
+    params={"forzar_descarga": False},
     default_args=default_args,
     tags=["arclim", "clima", "mma", "chile", "bronze"],
 ) as dag:

@@ -21,8 +21,11 @@ from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
 from airflow.providers.standard.operators.python import PythonOperator
 
+from http_publico import ErrorAPI, crear_sesion, get_json
+
 # ─── Configuración ────────────────────────────────────────────────────────────
 MINDICADOR_BASE = "https://mindicador.cl/api"
+TIMEOUT = 30  # segundos por request
 MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
 # Las credenciales se quedan en el entorno: boto3 y el provider de S3A las
 # resuelven desde AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY. No se pasan por
@@ -49,14 +52,22 @@ DEFAULT_ARGS = {
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _get_mindicador(endpoint: str) -> dict:
-    """Llama a mindicador.cl y retorna JSON. Sin API Key requerida."""
-    import urllib.request
+def _get_mindicador(sesion, endpoint: str) -> dict:
+    """Llama a mindicador.cl y retorna JSON. Sin API Key requerida.
 
-    url = f"{MINDICADOR_BASE}/{endpoint}"
-    req = urllib.request.Request(url, headers={"User-Agent": "vektralforge/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    Antes iba por urllib directo; ahora comparte cliente con el DAG de ARClim,
+    así que hereda User-Agent, reintentos con backoff y reuso de conexión.
+    """
+    return get_json(sesion, f"{MINDICADOR_BASE}/{endpoint}", timeout=TIMEOUT)
+
+
+def _existe_en_raw(s3, key: str) -> bool:
+    """¿Ese archivo ya está descargado para esta fecha?"""
+    try:
+        s3.head_object(Bucket="raw", Key=key)
+        return True
+    except Exception:
+        return False
 
 
 def _s3_client():
@@ -89,6 +100,10 @@ def extract_indicadores(**context):
     Descarga todos los indicadores desde mindicador.cl
     y los guarda en MinIO raw/indicadores/fecha={ds}/*.json
 
+    raw/ hace de cache: resumen.json se escribe al final, así que su presencia
+    significa que la extracción de esa fecha ya terminó y no hay nada que pedir.
+    El parámetro forzar_descarga lo ignora.
+
     Notas de frecuencia:
       - Diarios:   UF, Dólar, Euro, UTM, TPM → disponibles cada día hábil
       - Mensuales: IPC → se publica ~día 8 de cada mes (puede estar vacío)
@@ -97,36 +112,62 @@ def extract_indicadores(**context):
     fecha = _fecha_ejecucion(context)
     anio = fecha[:4]
     prefix = f"indicadores/fecha={fecha}"
+    forzar = bool(context.get("params", {}).get("forzar_descarga", False))
+
+    if not forzar and _existe_en_raw(s3, f"{prefix}/resumen.json"):
+        print(f"→ raw/{prefix}/ ya está completo — se omite la descarga")
+        print("  (para refrescar: disparar el DAG con forzar_descarga=true)")
+        obj = s3.get_object(Bucket="raw", Key=f"{prefix}/resumen.json")
+        return json.loads(obj["Body"].read().decode("utf-8"))
+
+    sesion = crear_sesion()
     resumen = {"fecha": fecha, "fuente": "mindicador.cl", "indicadores": {}}
+    errores = []
 
     # ── Snapshot diario ───────────────────────────────────────────────────────
+    # No es crítico: es una foto de conveniencia, las series vienen aparte.
     print("→ Descargando snapshot diario...")
     try:
-        snapshot = _get_mindicador("")
+        snapshot = _get_mindicador(sesion, "")
+    except ErrorAPI as e:
+        print(f"  ⚠ snapshot diario no disponible: {e}")
+    else:
         _subir_json(s3, f"{prefix}/snapshot_diario.json", snapshot)
         print("  ✓ Snapshot diario OK")
-    except Exception as e:
-        print(f"  ⚠ Error en snapshot diario: {e}")
 
-    # ── Indicadores diarios — serie anual ─────────────────────────────────────
+    # ── Series anuales por indicador ──────────────────────────────────────────
     todos = INDICADORES_DIARIOS + INDICADORES_MENSUALES
     for nombre in todos:
         print(f"→ Descargando {nombre.upper()} {anio}...")
         try:
-            data = _get_mindicador(f"{nombre}/{anio}")
-            serie = data.get("serie", [])
-            _subir_json(s3, f"{prefix}/{nombre}_{anio}.json", data)
-            resumen["indicadores"][nombre] = {"registros": len(serie)}
-            if len(serie) == 0 and nombre in INDICADORES_MENSUALES:
-                print(
-                    f"  ⚠ {nombre.upper()}: serie vacía (publicación mensual, puede no estar disponible aún)"
-                )
-            else:
-                print(f"  ✓ {nombre.upper()}: {len(serie)} registros")
-        except Exception as e:
-            print(f"  ⚠ {nombre.upper()}: error — {e}")
+            data = _get_mindicador(sesion, f"{nombre}/{anio}")
+        except ErrorAPI as e:
+            # Un fallo de la API no se disfraza de "sin datos": se registra como
+            # error y más abajo decide si tumba la tarea.
+            print(f"  ✗ {nombre.upper()}: {e}")
+            errores.append(nombre)
             resumen["indicadores"][nombre] = {"registros": 0, "error": str(e)}
+            continue
 
+        serie = data.get("serie", [])
+        _subir_json(s3, f"{prefix}/{nombre}_{anio}.json", data)
+        resumen["indicadores"][nombre] = {"registros": len(serie)}
+        if len(serie) == 0 and nombre in INDICADORES_MENSUALES:
+            print(f"  ⚠ {nombre.upper()}: serie vacía (publicación mensual, aún no disponible)")
+        else:
+            print(f"  ✓ {nombre.upper()}: {len(serie)} registros")
+
+    # Un diario que no se pudo descargar es un fallo real. La validación aguas
+    # abajo lo detectaría, pero mucho después y con un error menos claro.
+    diarios_fallidos = [n for n in errores if n in INDICADORES_DIARIOS]
+    if diarios_fallidos:
+        raise ErrorAPI(
+            "Indicadores diarios que no se pudieron descargar: "
+            + ", ".join(n.upper() for n in diarios_fallidos)
+        )
+
+    # resumen.json va al final a propósito: es la marca de que esta fecha quedó
+    # completa, y es lo que consulta el cache en la siguiente ejecución.
     _subir_json(s3, f"{prefix}/resumen.json", resumen)
     print("\n✓ Extracción completa")
     return resumen
@@ -199,6 +240,8 @@ with DAG(
     # `airflow dags unpause` disparó el run programado del lunes mientras
     # load_example.sh disparaba el manual.
     max_active_runs=1,
+    # raw/ hace de cache: por defecto no se vuelve a pedir lo ya descargado.
+    params={"forzar_descarga": False},
     tags=["indicadores", "uf", "ipc", "dolar", "euro", "mindicador", "bronze"],
 ) as dag:
     t1 = PythonOperator(

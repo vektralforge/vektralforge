@@ -179,6 +179,16 @@ el repositorio puede ejecutar los pipelines completos sin registrarse en ningún
 sitio. Fue un criterio de selección: un ejemplo que necesita credenciales no es
 un ejemplo.
 
+Son servicios públicos que nadie nos debe, así que el cliente HTTP compartido
+(`airflow/plugins/http_publico.py`) se identifica con un User-Agent con URL de
+contacto, reintenta 429 y 5xx con backoff respetando `Retry-After`, y espacia
+las llamadas de series.
+
+`raw/` es zona de aterrizaje **y cache**: lo ya descargado para una fecha no se
+vuelve a pedir, así que reejecutar un DAG mientras se itera sobre el transform
+no cuesta ni una llamada. Para refrescar de verdad, disparar con
+`forzar_descarga=true`.
+
 **Indicadores financieros**: UF, dólar, euro, UTM y TPM se publican cada día
 hábil; el IPC es mensual, así que una serie vacía no se trata como error.
 

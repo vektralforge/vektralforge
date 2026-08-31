@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 DAGS_DIR = Path(__file__).parent.parent / "dags"
+PLUGINS_DIR = Path(__file__).parent.parent / "plugins"
 
 # Valores de prueba: los tests no se conectan a ningún servicio, solo necesitan
 # que las variables existan para que los módulos se importen.
@@ -26,6 +27,9 @@ ENTORNO_PRUEBA = {
     "AWS_SECRET_ACCESS_KEY": "test-password",  # pragma: allowlist secret
     "AIRFLOW__CORE__LOAD_EXAMPLES": "False",
     "AIRFLOW__CORE__UNIT_TEST_MODE": "True",
+    # Airflow resuelve el código compartido desde aquí; los tests tienen que
+    # apuntar al mismo sitio o dejan de parecerse a producción.
+    "AIRFLOW__CORE__PLUGINS_FOLDER": str(PLUGINS_DIR),
 }
 
 
@@ -59,8 +63,11 @@ def modulos_dag(entorno):
     """Importa cada archivo de dags/ como módulo para poder probar sus funciones."""
     import importlib.util
 
-    if str(DAGS_DIR) not in sys.path:
-        sys.path.insert(0, str(DAGS_DIR))
+    # Se añade plugins/, no dags/. Airflow 3 pone la carpeta de plugins en el
+    # sys.path pero no la de DAGs, así que meter dags/ aquí haría pasar tests
+    # con imports que en el contenedor fallan — pasó con http_publico.
+    if str(PLUGINS_DIR) not in sys.path:
+        sys.path.insert(0, str(PLUGINS_DIR))
 
     modulos = {}
     for ruta in sorted(DAGS_DIR.glob("*.py")):

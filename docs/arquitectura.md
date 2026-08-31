@@ -102,6 +102,24 @@ El mecanismo concreto: los jobs abren la sesión con `enableHiveSupport()` y
 materializa en `s3a://bronze/<tabla>/` —la misma ruta que antes se escribía a
 mano— pero además queda en el catálogo.
 
+**Extracción idempotente y cache en `raw/`.** La zona de aterrizaje guarda la
+respuesta cruda de la API particionada por fecha, así que ya es el cache natural:
+`extract` comprueba qué hay antes de pedir. ARClim lo hace archivo por archivo,
+de modo que una descarga interrumpida se reanuda por donde iba; indicadores usa
+`resumen.json`, que se escribe al final, como marca de fecha completa. El
+parámetro `forzar_descarga` ignora el cache.
+
+El cliente HTTP vive en `airflow/plugins/`, no en `airflow/dags/`: Airflow 3 pone
+la carpeta de plugins en el `sys.path` de quien parsea los DAGs, pero no la de
+DAGs. Un módulo compartido en `dags/` falla con `ModuleNotFoundError` dentro del
+contenedor aunque los tests pasen —el `conftest` lo añadía a mano y tapaba el
+problema—, así que ahora los tests apuntan a `plugins/` y no a `dags/`.
+
+Los errores de red no se confunden con ausencia de datos: `get_json` lanza
+`ErrorAPI` en vez de devolver `None`. Antes un 429 y una serie vacía llegaban
+iguales a quien llamaba, y el resultado era un pipeline que perdía datos en
+silencio.
+
 **Escrituras idempotentes.** Los jobs no hacen `append` ciego: escriben con
 `mode("overwrite")` y `replaceWhere` sobre la columna de fecha de carga, de modo
 que reejecutar un DAG reemplaza esa carga en vez de añadir una copia. Delta
