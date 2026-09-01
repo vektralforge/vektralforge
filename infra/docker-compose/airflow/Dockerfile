@@ -1,6 +1,6 @@
 # VektralForge — imagen de Airflow
 #
-# Airflow 3.3.0 · Python 3.12 · pyspark 4.0.0 · Delta 4.0.0 · OpenLineage 1.52.0
+# Airflow 3.3.0 · Python 3.12 · pyspark 4.1.3 · Delta 4.1.0 · OpenLineage 1.52.0
 #
 # SparkSubmitOperator ejecuta spark-submit desde este contenedor, así que el
 # driver corre aquí y necesita los MISMOS JAR que el cluster. Se resuelven con
@@ -11,9 +11,13 @@
 FROM maven:3.9-eclipse-temurin-17 AS jars
 
 # Deben coincidir con infra/docker-compose/spark/Dockerfile.
-ARG DELTA_VERSION=4.0.0
+ARG DELTA_VERSION=4.1.0
+# Desde Delta 4.1 el artefacto lleva la versión de Spark en el nombre
+# (delta-spark_4.0, _4.1, _4.2). Se usa la explícita en vez de la genérica
+# para que un desajuste falle al resolver el POM y no en tiempo de ejecución.
+ARG SPARK_MINOR=4.1
 ARG SCALA_BINARY=2.13
-ARG HADOOP_VERSION=3.4.1
+ARG HADOOP_VERSION=3.4.2
 ARG OPENLINEAGE_VERSION=1.52.0
 
 WORKDIR /build
@@ -25,7 +29,7 @@ RUN printf '%s\n' \
   '  <artifactId>driver-jars</artifactId>' \
   '  <version>1.0</version>' \
   '  <dependencies>' \
-  "    <dependency><groupId>io.delta</groupId><artifactId>delta-spark_${SCALA_BINARY}</artifactId><version>${DELTA_VERSION}</version></dependency>" \
+  "    <dependency><groupId>io.delta</groupId><artifactId>delta-spark_${SPARK_MINOR}_${SCALA_BINARY}</artifactId><version>${DELTA_VERSION}</version></dependency>" \
   "    <dependency><groupId>org.apache.hadoop</groupId><artifactId>hadoop-aws</artifactId><version>${HADOOP_VERSION}</version></dependency>" \
   "    <dependency><groupId>io.openlineage</groupId><artifactId>openlineage-spark_${SCALA_BINARY}</artifactId><version>${OPENLINEAGE_VERSION}</version></dependency>" \
   '  </dependencies>' \
@@ -61,7 +65,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt --constraint "${CONSTRAI
 # pyspark-client (Spark Connect) llega vía constraints y sobrescribe el paquete
 # pyspark, que necesitamos completo para spark-submit y delta-spark.
 RUN pip uninstall -y pyspark-client pyspark && \
-    pip install --no-cache-dir pyspark==4.0.0 delta-spark==4.0.0
+    pip install --no-cache-dir pyspark==4.1.3 delta-spark==4.1.0
 
 # pip instala pyspark desde el tarball fuente y sus scripts quedan sin permiso
 # de ejecución.
@@ -83,10 +87,10 @@ ENV SPARK_CONF_DIR=/opt/vektralforge/spark-conf
 
 RUN airflow version && \
     java -version && \
-    python -c "import pyspark, delta; assert pyspark.__version__.startswith('4.0'), pyspark.__version__; print('pyspark', pyspark.__version__, 'delta OK')" && \
+    python -c "import pyspark, delta; assert pyspark.__version__.startswith('4.1'), pyspark.__version__; print('pyspark', pyspark.__version__, 'delta OK')" && \
     PYSPARK_JARS=$(python -c "import pyspark, os; print(os.path.join(os.path.dirname(pyspark.__file__), 'jars'))") && \
     ls "$PYSPARK_JARS" | grep -q "^hadoop-aws-" && \
-    ls "$PYSPARK_JARS" | grep -q "delta-spark_2.13" && \
+    ls "$PYSPARK_JARS" | grep -q "delta-spark_4.1_2.13" && \
     ls "$PYSPARK_JARS" | grep -q "^bundle-" && \
     ls "$PYSPARK_JARS" | grep -q "^openlineage-spark_2.13-" && \
     test -f "$SPARK_CONF_DIR/spark-defaults.conf" && \

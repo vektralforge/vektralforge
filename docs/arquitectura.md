@@ -35,8 +35,8 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Componente | Versión | Estado | Rol |
 |---|---|---|---|
 | Apache Airflow | 3.3.0 | `Operativo` | Orquestación |
-| Apache Spark | 4.0.0 | `Operativo` | Procesamiento y escritura ACID |
-| Delta Lake | 4.0.0 | `Operativo` | Formato de tabla transaccional |
+| Apache Spark | 4.1.3 | `Operativo` | Procesamiento y escritura ACID |
+| Delta Lake | 4.1.0 | `Operativo` | Formato de tabla transaccional |
 | Hive Metastore | 4.0.0 | `Operativo` | Catálogo compartido Spark ↔ Trino |
 | Trino | 448 | `Operativo` | Consulta SQL |
 | MinIO | 2024-04 | `Operativo` | Almacenamiento de objetos S3 |

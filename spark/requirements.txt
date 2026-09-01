@@ -1,11 +1,11 @@
 # Dependencias de ejecución de los jobs Spark — se instalan en la imagen.
 #
-# Alineadas con Spark 4.0.0 (Scala 2.13, Java 17) y Delta 4.0.0.
+# Alineadas con Spark 4.1.3 (Scala 2.13, Java 17) y Delta 4.1.0.
 # Deben coincidir con airflow/requirements.txt: el driver corre en el
 # contenedor de Airflow y PySpark rechaza versiones distintas entre driver
 # y executors.
 #
 # Las herramientas de desarrollo están en requirements-dev.txt.
 
-pyspark==4.0.0
-delta-spark==4.0.0
+pyspark==4.1.3
+delta-spark==4.1.0
