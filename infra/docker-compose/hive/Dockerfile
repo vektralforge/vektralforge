@@ -7,13 +7,15 @@
 # ── Etapa 1: resolver el conector S3A con Maven ──────────────────────────────
 FROM maven:3.9-eclipse-temurin-17 AS jars
 
-# DEBE coincidir con el Hadoop que trae apache/hive:4.0.0, que es 3.3.6 —
-# distinto del 3.4.1 de Spark 4. Verificar con:
-#   docker exec <contenedor> find / -name "hadoop-common-*.jar"
+# DEBE coincidir con el Hadoop que trae apache/hive:4.2.1, que es 3.4.1
+# (pom.xml de esa etiqueta). No se comprueba a ojo: la etapa final falla si el
+# JAR de hadoop-common de la imagen no lleva esta misma versión.
 #
-# Hadoop 3.3.x usa el AWS SDK v1 (com.amazonaws), no el v2 de Spark. Maven
-# resuelve la versión correcta a partir de hadoop-aws.
-ARG HADOOP_VERSION=3.3.6
+# Con Hive 4.0.0 esto era 3.3.6, que usaba el AWS SDK v1 (com.amazonaws). Desde
+# Hadoop 3.4 el conector S3A usa el v2 (software.amazon.awssdk), igual que Spark,
+# así que el metastore deja de ser la excepción del stack. Maven resuelve el
+# artefacto correcto a partir de hadoop-aws.
+ARG HADOOP_VERSION=3.4.1
 
 WORKDIR /build
 RUN printf '%s\n' \
@@ -33,7 +35,10 @@ RUN mvn -q -B dependency:copy-dependencies \
     && ls -1 /jars
 
 # ── Etapa 2 ──────────────────────────────────────────────────────────────────
-FROM apache/hive:4.0.0
+FROM apache/hive:4.2.1
+
+# El ARG de la etapa anterior no cruza sola la frontera de la etapa.
+ARG HADOOP_VERSION=3.4.1
 
 USER root
 
@@ -56,6 +61,16 @@ RUN chmod +x /opt/hive/docker-entrypoint.sh && \
 # El bundle del AWS SDK carga muchas clases; 256 MB se queda corto.
 ENV HADOOP_HEAPSIZE=512
 ENV HADOOP_OPTS="-Xmx512m -Xms256m"
+
+# Verificación en tiempo de build: el comentario del ARG decía «DEBE coincidir»
+# y nadie lo comprobaba. Si la imagen de Hive cambia de Hadoop, el fallo ocurre
+# aquí y no al primer CREATE TABLE contra S3.
+RUN jar=$(find /opt -name "hadoop-common-*.jar" -print -quit) && \
+    echo "hadoop-common de la imagen: $(basename "$jar")" && \
+    basename "$jar" | grep -q "^hadoop-common-${HADOOP_VERSION}" || { \
+      echo "ERROR: la imagen trae $(basename "$jar") y ARG HADOOP_VERSION=${HADOOP_VERSION}." >&2; \
+      echo "       hadoop-aws y hadoop-common desalineados rompen S3A." >&2; \
+      exit 1; }
 
 USER hive
 

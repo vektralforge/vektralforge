@@ -42,7 +42,7 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Apache Airflow | 3.3.0 | Orquestación |
 | Apache Spark | 4.1.3 | Procesamiento y escritura ACID |
 | Delta Lake | 4.1.0 | Formato de tabla transaccional |
-| Apache Hive Metastore | 4.0.0 | Catálogo compartido Spark ↔ Trino |
+| Apache Hive Metastore | 4.2.1 | Catálogo compartido Spark ↔ Trino |
 | Trino | 448 | Consulta SQL |
 | MinIO | 2024-04 | Almacenamiento de objetos S3 |
 | Apache Superset | 3.1.3 | Visualización |
@@ -311,12 +311,14 @@ stack completo no está automatizada**, así que verifica con `make dev-up` y
   deben coincidir en versión menor.
 - **Spark 4 usa Scala 2.13.** El soporte de 2.12 se eliminó, así que todas las
   coordenadas de JAR cambian respecto a Spark 3.5.
-- **AWS SDK v2 en Spark, v1 en el metastore.** Hadoop 3.4 (Spark 4) migró al v2;
-  Hadoop 3.3 (imagen de Hive) sigue con el v1. Son artefactos distintos, no
-  versiones del mismo. Los Dockerfiles los resuelven con Maven en vez de fijarlos
-  a mano.
-- **Cliente de metastore 2.3.10 contra servidor Hive 4.0.0.** Spark 4 lleva
-  embebido el cliente de Hive 2.3.10 y el metastore del stack es 4.0.0. El
+- **AWS SDK v2 en todo el stack, desde Hive 4.2.1.** El conector S3A migró al
+  v2 (`software.amazon.awssdk`) en Hadoop 3.4. Spark 4.1.3 trae Hadoop 3.4.2 y
+  la imagen de Hive 4.2.1 trae 3.4.1: versiones distintas de la misma serie, cada
+  una fijada para coincidir con **su** imagen, no entre sí. Los Dockerfiles
+  resuelven los artefactos con Maven en vez de fijarlos a mano, y verifican en
+  tiempo de build que el `hadoop-common` de la imagen coincida con el ARG.
+- **Cliente de metastore 2.3.10 contra servidor Hive 4.2.1.** Spark 4 lleva
+  embebido el cliente de Hive 2.3.10 y el metastore del stack es 4.2.1. El
   desajuste es intencional y no hace falta alinearlo: el Thrift del metastore es
   estable hacia atrás, y aquí Hive solo actúa como registro nombre→ubicación
   —las transacciones las gestiona Delta—. Alinearlo exigiría

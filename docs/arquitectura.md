@@ -37,7 +37,7 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Apache Airflow | 3.3.0 | `Operativo` | Orquestación |
 | Apache Spark | 4.1.3 | `Operativo` | Procesamiento y escritura ACID |
 | Delta Lake | 4.1.0 | `Operativo` | Formato de tabla transaccional |
-| Hive Metastore | 4.0.0 | `Operativo` | Catálogo compartido Spark ↔ Trino |
+| Hive Metastore | 4.2.1 | `Operativo` | Catálogo compartido Spark ↔ Trino |
 | Trino | 448 | `Operativo` | Consulta SQL |
 | MinIO | 2024-04 | `Operativo` | Almacenamiento de objetos S3 |
 | Apache Superset | 3.1.3 | `Operativo` | Visualización |
@@ -97,7 +97,7 @@ el metastore necesita el conector S3A y su propia configuración de credenciales
 porque valida rutas en el object store al gestionar esquemas externos.
 
 El cliente de metastore que Spark 4 lleva embebido es Hive 2.3.10 y el servidor
-es 4.0.0. Es la combinación habitual del ecosistema y está validada en ejecución
+es 4.2.1. Es la combinación habitual del ecosistema y está validada en ejecución
 en este stack; alinearla exigiría gestionar un segundo juego de jars de Hive sin
 ganancia funcional. Ver las notas de compatibilidad del README.
 

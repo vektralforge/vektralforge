@@ -103,7 +103,7 @@ services:
 
   # ── Hive Metastore ────────────────────────────────────────────────────────
   hive-metastore:
-    image: vektralforge/hive-metastore:4.0.0
+    image: vektralforge/hive-metastore:4.2.1
     build:
       context: ../..
       dockerfile: infra/docker-compose/hive/Dockerfile
