@@ -77,22 +77,16 @@ for b in raw bronze silver gold checkpoints; do
 done
 ok "Buckets MinIO disponibles"
 
-# ── 3. Verificar antlr4 JAR en Spark ─────────────────────────────────────────
-log "Verificando JAR antlr4-runtime en Spark..."
-if ! docker exec docker-compose-spark-master-1 \
-    test -f /opt/spark/jars/antlr4-runtime-4.9.3.jar 2>/dev/null; then
-    log "Instalando antlr4-runtime-4.9.3.jar..."
-    docker exec -u root docker-compose-spark-master-1 \
-        curl -sL -o /opt/spark/jars/antlr4-runtime-4.9.3.jar \
-        https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar
-    docker exec -u root docker-compose-spark-worker-1 \
-        curl -sL -o /opt/spark/jars/antlr4-runtime-4.9.3.jar \
-        https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.9.3/antlr4-runtime-4.9.3.jar \
-        2>/dev/null || true
-fi
-ok "antlr4-runtime-4.9.3.jar presente"
+# Aquí había un bloque que descargaba antlr4-runtime-4.9.3.jar desde
+# repo1.maven.org, sin hash ni firma, y lo metía como root en /opt/spark/jars de
+# master y worker. No hacía falta y hacía daño: la imagen de Spark ya trae
+# antlr4-runtime-4.13.1.jar (spark 4.0.x, 4.1.x y 4.2.x fijan antlr4.version en
+# 4.13.1 en su pom). Como el `test -f` buscaba la 4.9.3, nunca acertaba, así que
+# la bajaba en cada ejecución y dejaba dos runtimes de antlr en el classpath.
+# Si algún día vuelve a fallar el parser de SQL, la respuesta no es descargar un
+# JAR a mano: es mirar qué versión trae la imagen.
 
-# ── 4. Copiar jobs Spark ──────────────────────────────────────────────────────
+# ── 3. Copiar jobs Spark ──────────────────────────────────────────────────────
 log "Sincronizando jobs Spark..."
 docker cp spark/jobs/bronze_indicadores.py \
     docker-compose-spark-master-1:/opt/spark/jobs/bronze_indicadores.py 2>/dev/null || true
@@ -100,7 +94,7 @@ docker cp spark/jobs/bronze_arclim.py \
     docker-compose-spark-master-1:/opt/spark/jobs/bronze_arclim.py 2>/dev/null || true
 ok "Jobs Spark actualizados"
 
-# ── 5. El catálogo lo crea Spark ─────────────────────────────────────────────
+# ── 4. El catálogo lo crea Spark ─────────────────────────────────────────────
 # Aquí había un CREATE SCHEMA desde Trino. Ya no hace falta: los jobs usan
 # saveAsTable contra el Hive Metastore compartido, así que crean la base y
 # registran las tablas ellos mismos. Crearla desde Trino además la fijaría con
