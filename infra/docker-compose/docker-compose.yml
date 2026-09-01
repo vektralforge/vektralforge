@@ -171,7 +171,7 @@ services:
 
   # ── Trino ─────────────────────────────────────────────────────────────────
   trino:
-    image: trinodb/trino:448
+    image: trinodb/trino:483
     restart: unless-stopped
     mem_limit: 768m
     environment:
