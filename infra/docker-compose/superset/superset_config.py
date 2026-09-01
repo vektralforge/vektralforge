@@ -2,10 +2,10 @@
 
 Este archivo no existía, y su ausencia tenía dos consecuencias que nadie veía.
 
-La imagen `apache/superset` no lee `DATABASE_URL`: su `config.py` fija
-`SQLALCHEMY_DATABASE_URI` a un SQLite bajo `SUPERSET_HOME` y solo lo cambia
+La imagen `apache/superset` no lee ninguna variable de conexión: su `config.py`
+fija `SQLALCHEMY_DATABASE_URI` a un SQLite bajo `SUPERSET_HOME` y solo lo cambia
 un `superset_config.py` en el `PYTHONPATH` (`/app/pythonpath`). El compose
-pasaba `DATABASE_URL` apuntando a Postgres desde el principio y no lo leía
+pasaba un `DATABASE_URL` apuntando a Postgres desde el principio y no lo leía
 nadie, así que Superset guardaba sus dashboards en un SQLite dentro del
 contenedor, sin volumen: cada `make dev-reset` los borraba.
 
@@ -18,8 +18,49 @@ worker de Celery, o sea otro contenedor. Cuando lo haya, va aquí.
 """
 
 import os
+from pathlib import Path
+from urllib.parse import quote
 
-SQLALCHEMY_DATABASE_URI = os.environ["DATABASE_URL"]
+
+def _password() -> str:
+    """La contraseña de Postgres, leída del secreto montado por compose.
+
+    Antes llegaba dentro de `DATABASE_URL`, es decir, como variable de entorno:
+    visible en `docker inspect` y en /proc/<pid>/environ de cualquier proceso
+    del contenedor. Ahora viaja como archivo y la cadena se arma aquí.
+
+    Se acepta todavía DATABASE_PASSWORD para no romper a quien tenga un compose
+    antiguo, pero el archivo manda.
+    """
+    ruta = os.environ.get("DATABASE_PASSWORD_FILE")
+    if ruta:
+        try:
+            return Path(ruta).read_text(encoding="utf-8").strip("\n")
+        except OSError as e:
+            raise RuntimeError(
+                f"No se puede leer el secreto en {ruta}: {e}. "
+                "Lo monta docker-compose.yml desde el bloque secrets:; "
+                "requiere Compose 2.20 o superior para el origen environment:."
+            ) from e
+    try:
+        return os.environ["DATABASE_PASSWORD"]
+    except KeyError:
+        raise RuntimeError(
+            "Faltan DATABASE_PASSWORD_FILE y DATABASE_PASSWORD. El compose "
+            "monta el secreto en /run/secrets/postgres_password."
+        ) from None
+
+
+# quote() sobre usuario y contraseña: la cadena es una URL, y un '@', ':' o '/'
+# dentro de la contraseña partiría el netloc en el sitio equivocado.
+SQLALCHEMY_DATABASE_URI = (
+    "postgresql+psycopg2://"
+    f"{quote(os.environ.get('DATABASE_USER', 'vektralforge'), safe='')}"
+    f":{quote(_password(), safe='')}"
+    f"@{os.environ.get('DATABASE_HOST', 'postgres')}"
+    f":{os.environ.get('DATABASE_PORT', '5432')}"
+    f"/{os.environ.get('DATABASE_DB', 'superset')}"
+)
 
 REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))

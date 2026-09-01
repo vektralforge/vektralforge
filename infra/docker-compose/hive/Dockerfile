@@ -60,6 +60,22 @@ COPY infra/docker-compose/hive/docker-entrypoint.sh /opt/hive/docker-entrypoint.
 RUN chmod +x /opt/hive/docker-entrypoint.sh && \
     chown hive:hive /opt/hadoop/etc/hadoop
 
+# La imagen trae su propio hive-site.xml con once propiedades — entre ellas
+# hive.metastore.warehouse.dir. El entrypoint INSERTA en él las propiedades JDO;
+# no lo reemplaza. Se guarda una copia intacta como base para que el arranque
+# sea idempotente: sin ella, un reinicio insertaría el bloque una segunda vez.
+#
+# El hive-site.xml de la imagen es de root:root 644 y el entrypoint corre como
+# hive: sobrescribirlo con `>` trunca el archivo, y truncar exige permiso sobre
+# el ARCHIVO, no sobre el directorio. Sin este chown el metastore muere en el
+# arranque con «Permission denied» y el resto del stack falla después con un
+# UnknownHostException que no apunta a la causa.
+RUN cp /opt/hive/conf/hive-site.xml /opt/hive/conf/hive-site.xml.base && \
+    chown hive:hive /opt/hive/conf \
+                    /opt/hive/conf/hive-site.xml \
+                    /opt/hive/conf/hive-site.xml.base && \
+    chmod 644 /opt/hive/conf/hive-site.xml.base
+
 # El bundle del AWS SDK carga muchas clases; 256 MB se queda corto.
 ENV HADOOP_HEAPSIZE=512
 ENV HADOOP_OPTS="-Xmx512m -Xms256m"
