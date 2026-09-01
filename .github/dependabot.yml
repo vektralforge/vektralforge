@@ -45,6 +45,12 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # apache/hive se queda en 4.0.0: la 4.0.1 elimina el método Thrift
+    # `get_table` que necesita el cliente Hive 2.3.10 embebido en Spark 4.
+    # Probado con 4.2.1 — el metastore arranca y toda escritura de tabla falla.
+    # Ver la nota de compatibilidad del README antes de reactivar esto.
+    ignore:
+      - dependency-name: "apache/hive"
 
   # Imágenes referenciadas directamente en el Compose (postgres, trino, kafka,
   # minio, redis, openbao).

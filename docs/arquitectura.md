@@ -97,9 +97,10 @@ el metastore necesita el conector S3A y su propia configuración de credenciales
 porque valida rutas en el object store al gestionar esquemas externos.
 
 El cliente de metastore que Spark 4 lleva embebido es Hive 2.3.10 y el servidor
-es 4.0.0. Es la combinación habitual del ecosistema y está validada en ejecución
-en este stack; alinearla exigiría gestionar un segundo juego de jars de Hive sin
-ganancia funcional. Ver las notas de compatibilidad del README.
+es 4.0.0. Esa pareja es un techo, no una preferencia: el método Thrift
+`get_table` que usa ese cliente se eliminó en Hive 4.0.1, así que subir el
+metastore aunque sea un parche rompe todas las escrituras de tabla. Comprobado
+en ejecución con 4.2.1. Ver las notas de compatibilidad del README.
 
 El mecanismo concreto: los jobs abren la sesión con `enableHiveSupport()` y
 `spark.hadoop.hive.metastore.uris`, crean la base con
