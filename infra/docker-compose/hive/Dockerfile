@@ -33,7 +33,7 @@ RUN mvn -q -B dependency:copy-dependencies \
     && ls -1 /jars
 
 # ── Etapa 2 ──────────────────────────────────────────────────────────────────
-FROM apache/hive:4.0.0
+FROM apache/hive:4.2.1
 
 USER root
 
