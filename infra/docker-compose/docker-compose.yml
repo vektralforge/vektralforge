@@ -195,7 +195,7 @@ services:
   # Confluent Platform 7.9.x es la última que incluye ZooKeeper, y la imagen 8.x
   # ya no habla con él. Por eso este par se queda en 7.6.1 y no se actualiza.
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.6.1
+    image: confluentinc/cp-zookeeper:7.9.1
     profiles: ["streaming"]
     restart: unless-stopped
     environment:
