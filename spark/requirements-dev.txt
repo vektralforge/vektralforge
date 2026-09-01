@@ -6,7 +6,7 @@
 # Mantenerlas fuera del entorno de ejecución evita que un CVE de una
 # herramienta de test aparezca como vulnerabilidad de producción.
 
-pytest==9.0.3
+pytest==9.1.1
 pytest-cov==5.0.0
 ruff==0.4.4
 
