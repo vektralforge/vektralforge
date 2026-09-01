@@ -8,8 +8,8 @@
 FROM maven:3.9-eclipse-temurin-17 AS jars
 
 # DEBE coincidir con el Hadoop que trae apache/hive:4.0.0, que es 3.3.6 —
-# distinto del 3.4.1 de Spark 4. Verificar con:
-#   docker exec <contenedor> find / -name "hadoop-common-*.jar"
+# distinto del 3.4.2 de Spark 4.1. Ya no se comprueba a ojo: la etapa final
+# falla si el JAR de hadoop-common de la imagen no lleva esta misma versión.
 #
 # Hadoop 3.3.x usa el AWS SDK v1 (com.amazonaws), no el v2 de Spark. Maven
 # resuelve la versión correcta a partir de hadoop-aws.
@@ -33,7 +33,14 @@ RUN mvn -q -B dependency:copy-dependencies \
     && ls -1 /jars
 
 # ── Etapa 2 ──────────────────────────────────────────────────────────────────
+# 4.0.0 no es comodidad, es un techo: la 4.0.1 elimina el método Thrift
+# `get_table` y el cliente Hive 2.3.10 que Spark lleva embebido lo necesita.
+# Comprobado subiendo a 4.2.1 y viendo fallar todas las escrituras con
+# «Invalid method name: 'get_table'». Ver la nota del README.
 FROM apache/hive:4.0.0
+
+# El ARG de la etapa anterior no cruza sola la frontera de la etapa.
+ARG HADOOP_VERSION=3.3.6
 
 USER root
 
@@ -56,6 +63,16 @@ RUN chmod +x /opt/hive/docker-entrypoint.sh && \
 # El bundle del AWS SDK carga muchas clases; 256 MB se queda corto.
 ENV HADOOP_HEAPSIZE=512
 ENV HADOOP_OPTS="-Xmx512m -Xms256m"
+
+# Verificación en tiempo de build: el comentario del ARG decía «DEBE coincidir»
+# y nadie lo comprobaba. Si la imagen de Hive cambia de Hadoop, el fallo ocurre
+# aquí y no al primer CREATE TABLE contra S3.
+RUN jar=$(find /opt -name "hadoop-common-*.jar" -print -quit) && \
+    echo "hadoop-common de la imagen: $(basename "$jar")" && \
+    basename "$jar" | grep -q "^hadoop-common-${HADOOP_VERSION}" || { \
+      echo "ERROR: la imagen trae $(basename "$jar") y ARG HADOOP_VERSION=${HADOOP_VERSION}." >&2; \
+      echo "       hadoop-aws y hadoop-common desalineados rompen S3A." >&2; \
+      exit 1; }
 
 USER hive
 

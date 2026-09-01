@@ -312,18 +312,30 @@ stack completo no está automatizada**, así que verifica con `make dev-up` y
 - **Spark 4 usa Scala 2.13.** El soporte de 2.12 se eliminó, así que todas las
   coordenadas de JAR cambian respecto a Spark 3.5.
 - **AWS SDK v2 en Spark, v1 en el metastore.** Hadoop 3.4 (Spark 4) migró al v2;
-  Hadoop 3.3 (imagen de Hive) sigue con el v1. Son artefactos distintos, no
+  Hadoop 3.3 (imagen de Hive 4.0.0) sigue con el v1. Son artefactos distintos, no
   versiones del mismo. Los Dockerfiles los resuelven con Maven en vez de fijarlos
-  a mano.
-- **Cliente de metastore 2.3.10 contra servidor Hive 4.0.0.** Spark 4 lleva
-  embebido el cliente de Hive 2.3.10 y el metastore del stack es 4.0.0. El
-  desajuste es intencional y no hace falta alinearlo: el Thrift del metastore es
-  estable hacia atrás, y aquí Hive solo actúa como registro nombre→ubicación
-  —las transacciones las gestiona Delta—. Alinearlo exigiría
-  `spark.sql.hive.metastore.jars`, o sea descargar jars en caliente o meter un
-  segundo juego de Hive en la imagen, con conflictos de classpath a cambio de
-  nada. Si algún día aparece un error de API del metastore, ese es el primer
-  sitio donde mirar.
+  a mano, y verifican en tiempo de build que el `hadoop-common` de la imagen
+  coincida con el ARG.
+- **El metastore está clavado en Hive 4.0.0, y no es una preferencia.** Spark 4
+  lleva embebido el cliente de Hive 2.3.10, que llama al método Thrift
+  `get_table`. Ese método **se eliminó en Hive 4.0.1**; desde entonces solo
+  existe `get_table_req`. Comprobado en el IDL de cada etiqueta:
+
+  | Hive | `get_table` |
+  |---|---|
+  | 4.0.0 | sí |
+  | 4.0.1 · 4.1.0 · 4.2.x | **no** |
+
+  Se intentó subir a 4.2.1: el metastore arranca, `CREATE DATABASE` funciona
+  —`get_database` sigue existiendo— y **todas** las escrituras de tabla fallan
+  con `Invalid method name: 'get_table'`. Cualquier subida del metastore, aunque
+  sea de un parche, rompe el stack mientras Spark use su cliente embebido.
+
+  Salir de ahí exigiría `spark.sql.hive.metastore.jars` con un juego de Hive 4.x
+  en la imagen del driver, con los conflictos de classpath que eso trae. No se
+  ha hecho porque aquí Hive solo actúa como registro nombre→ubicación: las
+  transacciones las gestiona Delta. `dependabot.yml` ignora estas subidas para
+  que la propuesta no vuelva cada release.
 - **ANSI mode activo por defecto en Spark 4.** Los casts inválidos lanzan
   excepción en lugar de devolver `null`.
 - **Airflow 3 exige `execution_api_server_url` y un JWT compartido** entre
