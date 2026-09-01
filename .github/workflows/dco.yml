@@ -17,6 +17,9 @@ jobs:
           fetch-depth: 0
 
       - name: Verify every commit is signed off
+        env:
+          # El login de quien abrió el PR lo pone GitHub, no el commit.
+          PR_AUTOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           BASE="${{ github.event.pull_request.base.sha }}"
@@ -31,6 +34,40 @@ jobs:
 
             author_name=$(git log -1 --format='%an' "$sha")
             author_email=$(git log -1 --format='%ae' "$sha")
+
+            # Los bots de la plataforma sí firman, pero con su dirección
+            # canónica en vez del noreply que figura como autor del commit:
+            #
+            #   autor: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
+            #   firma: Signed-off-by: dependabot[bot] <support@github.com>
+            #
+            # Exigir que nombre y correo coincidieran los rechazaba a todos, y
+            # con ellos cualquier actualización de dependencias: 35 ejecuciones
+            # de este workflow en rojo y 25 PRs bloqueados.
+            #
+            # No se les exime de firmar. Se acepta que firmen con otro correo,
+            # exigiendo tres cosas a la vez: que el PR lo abriera un bot, que el
+            # autor del commit sea ese mismo bot, y que exista un Signed-off-by
+            # que lo nombre. El sufijo "[bot]" no lo puede falsificar una
+            # persona —los nombres de usuario de GitHub no admiten corchetes— y
+            # el login del autor del PR lo pone la plataforma.
+            #
+            # Un PR humano que incluya commits de bot no entra por aquí: se
+            # compara contra quien abrió el PR, no contra el commit.
+            case "${PR_AUTOR:-}" in
+              *"[bot]")
+                if [ "$author_name" = "$PR_AUTOR" ]; then
+                  if git log -1 --format='%B' "$sha" | grep -qiF "Signed-off-by: ${author_name} <"; then
+                    echo "ok   $sha ($author_name, firma con su propio correo)"
+                    continue
+                  fi
+                  echo "FAIL $sha - $author_name no firmó el commit"
+                  FAILED=1
+                  continue
+                fi
+                ;;
+            esac
+
             expected="Signed-off-by: ${author_name} <${author_email}>"
 
             if git log -1 --format='%B' "$sha" | grep -qiF "$expected"; then
