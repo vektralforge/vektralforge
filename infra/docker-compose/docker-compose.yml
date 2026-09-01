@@ -76,8 +76,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    # Todos los puertos publicados se atan a la interfaz de loopback. Compose,
+    # si no se le dice nada, escucha en 0.0.0.0: en una red compartida eso deja
+    # accesibles Postgres con su contraseña, Redis sin ninguna, MinIO con las
+    # credenciales root, OpenBao en modo dev y —lo más serio— el puerto 7077 de
+    # spark-master, que acepta el envío de jobs sin autenticación.
+    #
+    # No se pierde nada: los contenedores se hablan por la red interna del
+    # Compose, no por estos puertos. BIND_HOST=0.0.0.0 los reabre para quien
+    # necesite alcanzar el stack desde otra máquina.
     ports:
-      - "5432:5432"
+      - "${BIND_HOST:-127.0.0.1}:5432:5432"
 
   # ── MinIO ─────────────────────────────────────────────────────────────────
   minio:
@@ -90,8 +99,8 @@ services:
     volumes:
       - minio-data:/data
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${BIND_HOST:-127.0.0.1}:9000:9000"
+      - "${BIND_HOST:-127.0.0.1}:9001:9001"
     healthcheck:
       # `mc ready` en vez de curl: la imagen de MinIO no siempre incluye curl,
       # y sin él el healthcheck falla aunque el servicio esté sano.
@@ -117,7 +126,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9083:9083"
+      - "${BIND_HOST:-127.0.0.1}:9083:9083"
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,8 +151,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     ports:
-      - "7077:7077"
-      - "8082:8082"
+      - "${BIND_HOST:-127.0.0.1}:7077:7077"
+      - "${BIND_HOST:-127.0.0.1}:8082:8082"
 
   spark-worker:
     image: vektralforge/spark:4.1.3
@@ -165,7 +174,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
       HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     ports:
-      - "8083:8083"
+      - "${BIND_HOST:-127.0.0.1}:8083:8083"
     depends_on:
       - spark-master
 
@@ -181,7 +190,7 @@ services:
     volumes:
       - ../../trino/catalog:/etc/trino/catalog
     ports:
-      - "8081:8080"
+      - "${BIND_HOST:-127.0.0.1}:8081:8080"
     depends_on:
       - hive-metastore
       - minio
@@ -214,7 +223,7 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     ports:
-      - "9092:9092"
+      - "${BIND_HOST:-127.0.0.1}:9092:9092"
 
   # ── OpenBao ───────────────────────────────────────────────────────────────
   # Modo -dev: almacenamiento en memoria y sellado automático. Solo desarrollo.
@@ -228,7 +237,7 @@ services:
       BAO_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
     command: server -dev
     ports:
-      - "8200:8200"
+      - "${BIND_HOST:-127.0.0.1}:8200:8200"
 
   # ── Marquez API (backend de OpenLineage) ──────────────────────────────────
   # Configuración vía marquez.yml embebido en la imagen: Marquez no lee la
@@ -246,8 +255,8 @@ services:
       MARQUEZ_DB_PASSWORD: ${POSTGRES_PASSWORD}
       MARQUEZ_LOG_LEVEL: ${MARQUEZ_LOG_LEVEL:-INFO}
     ports:
-      - "9100:9000"
-      - "9101:9001"
+      - "${BIND_HOST:-127.0.0.1}:9100:9000"
+      - "${BIND_HOST:-127.0.0.1}:9101:9001"
     depends_on:
       postgres:
         condition: service_healthy
@@ -268,7 +277,7 @@ services:
       MARQUEZ_PORT: 9000
       WEB_PORT: 3000
     ports:
-      - "3000:3000"
+      - "${BIND_HOST:-127.0.0.1}:3000:3000"
     depends_on:
       marquez-api:
         condition: service_healthy
@@ -302,7 +311,7 @@ services:
     # Si esta imagen aún acepta `webserver`, cambiar aquí para volver atrás.
     command: api-server
     ports:
-      - "8090:8080"
+      - "${BIND_HOST:-127.0.0.1}:8090:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
       interval: 30s
@@ -337,7 +346,7 @@ services:
     image: redis:7.2
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "${BIND_HOST:-127.0.0.1}:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -356,7 +365,7 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
     ports:
-      - "8088:8088"
+      - "${BIND_HOST:-127.0.0.1}:8088:8088"
     depends_on:
       postgres:
         condition: service_healthy
