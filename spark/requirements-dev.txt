@@ -8,7 +8,7 @@
 
 pytest==9.1.1
 pytest-cov==7.1.0
-ruff==0.4.4
+ruff==0.16.5
 
 # Comparación de DataFrames en tests. Sin uso todavía: los tests actuales cubren
 # spark/jobs/transformaciones.py, que es Python puro y no necesita una sesión de

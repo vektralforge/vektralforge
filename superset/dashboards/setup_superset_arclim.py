@@ -26,11 +26,7 @@ else:
 # ── 2. Datasets ARClim ────────────────────────────────────────────────────────
 arclim_datasets = {}
 for nombre in ["arclim_indicadores", "arclim_series"]:
-    tbl = (
-        db.session.query(SqlaTable)
-        .filter_by(table_name=nombre, database_id=trino_db.id)
-        .first()
-    )
+    tbl = db.session.query(SqlaTable).filter_by(table_name=nombre, database_id=trino_db.id).first()
     if not tbl:
         tbl = SqlaTable(table_name=nombre, schema="bronze", database_id=trino_db.id)
         db.session.add(tbl)
@@ -294,9 +290,7 @@ position_json = {
 }
 
 dashboard_title = "ARClim — Riesgo Climático Chile 2026"
-dashboard = (
-    db.session.query(Dashboard).filter_by(dashboard_title=dashboard_title).first()
-)
+dashboard = db.session.query(Dashboard).filter_by(dashboard_title=dashboard_title).first()
 
 if not dashboard:
     dashboard = Dashboard(
