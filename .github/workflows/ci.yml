@@ -24,7 +24,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -47,7 +47,7 @@ jobs:
     name: Escaneo de secretos
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # detect-secrets compara contra el baseline; el historial completo
           # permite además revisar los commits del pull request.
@@ -67,7 +67,7 @@ jobs:
     name: Tests de DAGs
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
@@ -96,7 +96,7 @@ jobs:
     name: Tests de jobs Spark
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
