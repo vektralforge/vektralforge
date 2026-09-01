@@ -5,7 +5,7 @@
 # esquemas y tablas externas, así que necesita el conector S3A.
 
 # ── Etapa 1: resolver el conector S3A con Maven ──────────────────────────────
-FROM maven:3.9-eclipse-temurin-17 AS jars
+FROM maven:3-eclipse-temurin-26 AS jars
 
 # DEBE coincidir con el Hadoop que trae apache/hive:4.0.0, que es 3.3.6 —
 # distinto del 3.4.1 de Spark 4. Verificar con:
