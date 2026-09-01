@@ -11,7 +11,7 @@ cd "$(dirname "$0")/../.."
 cd airflow
 
 set +e
-pytest tests/ -v --cov=dags --cov-report=term-missing
+pytest tests/ -v --cov=dags --cov=plugins --cov-report=term-missing
 codigo=$?
 set -e
 

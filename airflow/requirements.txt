@@ -25,6 +25,13 @@ apache-airflow-providers-apache-kafka
 # ── Conectores de origen ─────────────────────────────────────────────────────
 apache-airflow-providers-microsoft-mssql
 
+# ── Cliente HTTP ─────────────────────────────────────────────────────────────
+# Los DAGs y airflow/plugins/http_publico.py importan requests y urllib3
+# directamente. Llegaban como transitivas de Airflow, que funciona hasta que una
+# versión deja de arrastrarlas. Sin fijar versión, por el mismo motivo que los
+# providers: la elige el archivo de constraints. urllib3 viene con requests.
+requests
+
 # ── Secretos ─────────────────────────────────────────────────────────────────
 hvac
 

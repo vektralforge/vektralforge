@@ -5,7 +5,7 @@
 
 .PHONY: help check-env check-python \
         setup init-env\
-        dev-up dev-down dev-logs dev-ps dev-reset dev-reset-hard dev-load-example \
+        dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
         lint-dags test-dags lint-spark test-spark lint-sql \
         lint-all test-all detect-secrets \
         deploy-staging deploy-prod
@@ -117,9 +117,18 @@ dev-reset: check-env
 	@echo "  Para cargar datos de ejemplo:"
 	@echo "    make dev-load-example"
 
+# `down --rmi local` NO sirve aquí: borra solo las imágenes sin tag propio en el
+# campo `image:`, y las tres del proyecto lo tienen (vektralforge/airflow,
+# vektralforge/spark, vektralforge/hive-metastore). Compose las saltaba, así que
+# un cambio en un Dockerfile nunca llegaba al contenedor. Se reconstruye explícito.
+dev-build: check-env
+	@echo "→ Reconstruyendo las imágenes del proyecto..."
+	$(COMPOSE) --env-file $(ENV_FILE) build
+
 dev-reset-hard: check-env
-	@echo "→ Reset extremo (borra volúmenes + imágenes locales)..."
-	$(COMPOSE) --env-file $(ENV_FILE) down -v --rmi local
+	@echo "→ Reset extremo (borra volúmenes y reconstruye las imágenes)..."
+	$(COMPOSE) --env-file $(ENV_FILE) down -v
+	@$(MAKE) dev-build
 	@$(MAKE) dev-reset
 
 # ── Cargar datos de ejemplo ───────────────────────────────────────────────────
@@ -184,8 +193,9 @@ help:
 	@echo "    make dev-down             Detiene el stack"
 	@echo "    make dev-ps               Estado de los contenedores"
 	@echo "    make dev-logs             Logs en tiempo real (SERVICE=airflow-scheduler para uno solo)"
+	@echo "    make dev-build            Reconstruye las imágenes tras cambiar un Dockerfile"
 	@echo "    make dev-reset            Reset completo (borra volúmenes, recrea usuarios)"
-	@echo "    make dev-reset-hard       Reset extremo (borra volúmenes + imágenes locales)"
+	@echo "    make dev-reset-hard       Reset extremo (borra volúmenes y reconstruye imágenes)"
 	@echo "    make dev-load-example     Carga los pipelines de ejemplo y los dashboards"
 	@echo ""
 	@echo "  Calidad de código:"

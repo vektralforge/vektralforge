@@ -46,7 +46,8 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Trino | 448 | Consulta SQL |
 | MinIO | 2024-04 | Almacenamiento de objetos S3 |
 | Apache Superset | 3.1.3 | Visualización |
-| OpenLineage / Marquez | — | Linaje de datos |
+| OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
+| Marquez | — | Almacén y UI de linaje |
 | PostgreSQL | 15 | Metadatos |
 | Redis | 7.2 | Caché de Superset |
 | OpenBao | 2.1.0 | Secretos (modo dev en local) |
@@ -114,8 +115,12 @@ Las credenciales salen de `infra/docker-compose/.env` y se muestran al terminar
 
 **Spark escribe, Trino lee.** Las operaciones ACID sobre Delta Lake —`MERGE`,
 `UPDATE`, `DELETE`, `VACUUM`— solo las hace Spark; Trino aporta consulta SQL
-interactiva sobre las mismas tablas. Ambos comparten el Hive Metastore, así que
-una tabla escrita por Spark es consultable desde Trino sin registrarla dos veces.
+interactiva sobre las mismas tablas.
+
+Ambos comparten el Hive Metastore. Los jobs escriben con `saveAsTable`, no con
+`save(ruta)`, así que la tabla queda registrada en el catálogo en el mismo acto
+en que se escribe y Trino la ve sin registrarla dos veces. Añadir un pipeline no
+exige tocar ningún script de registro: basta con escribir en `bronze`.
 
 ```
 API pública → Airflow → Spark → Delta Lake → MinIO
@@ -126,6 +131,16 @@ API pública → Airflow → Spark → Delta Lake → MinIO
 
         OpenLineage captura el linaje en cada paso → Marquez
 ```
+
+El linaje se captura en dos niveles. El provider de OpenLineage de Airflow emite
+el run de cada tarea; el `OpenLineageSparkListener` —declarado en el
+`spark-defaults.conf` que comparten las imágenes de Airflow y Spark— emite los
+datasets de entrada y salida de cada job. Airflow inyecta en cada `spark-submit`
+el parent job y la URL de transporte, así que el run de Spark cuelga de su tarea
+en Marquez en vez de aparecer como un grafo suelto.
+
+El soporte de Spark 4 llegó en OpenLineage 1.37.0: versiones anteriores no
+sirven con este stack.
 
 Las capas siguen el patrón medallón: `raw/` guarda la respuesta cruda de la API,
 `bronze/` las tablas Delta tipadas, `silver/` y `gold/` los modelos derivados.
@@ -164,11 +179,34 @@ el repositorio puede ejecutar los pipelines completos sin registrarse en ningún
 sitio. Fue un criterio de selección: un ejemplo que necesita credenciales no es
 un ejemplo.
 
+Son servicios públicos que nadie nos debe, así que el cliente HTTP compartido
+(`airflow/plugins/http_publico.py`) se identifica con un User-Agent con URL de
+contacto, reintenta 429 y 5xx con backoff respetando `Retry-After`, y espacia
+las llamadas de series.
+
+`raw/` es zona de aterrizaje **y cache**: lo ya descargado para una fecha no se
+vuelve a pedir, así que reejecutar un DAG mientras se itera sobre el transform
+no cuesta ni una llamada. Para refrescar de verdad, disparar con
+`forzar_descarga=true`.
+
 **Indicadores financieros**: UF, dólar, euro, UTM y TPM se publican cada día
 hábil; el IPC es mensual, así que una serie vacía no se trata como error.
 
-**Riesgo climático**: indicadores por las 346 comunas de Chile y series de
-tiempo 1970–2070 bajo escenario SSP5-8.5 para las capitales regionales.
+**Riesgo climático**: cuatro indicadores por las 345 comunas de Chile —presente,
+futuro y delta— y series de tiempo 1970–2070 bajo escenario SSP5-8.5 para las
+capitales regionales. `valor_p10` y `valor_p90` son la envolvente de los 20
+modelos climáticos que devuelve la API para cada año, no percentiles de la serie.
+
+ARClim no sirve `total_precipitation` ni `dry_days`: devuelven 500 en `/datos/` y
+en `/series/`, en las tres variantes. Están declarados en
+`INDICADORES_NO_DISPONIBLES` con la comprobación fechada; basta un atributo de
+`total_precipitation` para que falle entera la petición de `/datos/`.
+
+Las escrituras son **idempotentes por fecha de carga**: los jobs usan
+`replaceWhere` sobre `fecha_carga` (`fecha_proceso` en indicadores), así que
+reejecutar un DAG reemplaza esa carga en lugar de duplicar filas. Los DAGs
+declaran `max_active_runs=1` porque la idempotencia no protege de dos
+escritores simultáneos sobre la misma fecha.
 
 ### Consultas de referencia
 
@@ -196,6 +234,7 @@ make dev-up             # Levanta el stack
 make dev-down           # Lo detiene
 make dev-ps             # Estado de los contenedores
 make dev-logs           # Logs (SERVICE=airflow-scheduler para uno solo)
+make dev-build          # Reconstruye las imágenes (tras cambiar un Dockerfile)
 make dev-reset          # Borra volúmenes y recrea usuarios
 make dev-reset-hard     # Además reconstruye las imágenes locales
 make dev-load-example   # Ejecuta los pipelines y configura los dashboards
@@ -209,7 +248,8 @@ make deploy-prod        # Deploy K3s producción (pide confirmación)
 `dev-reset` tarda alrededor de un minuto y sirve cuando los datos quedaron
 inconsistentes, o tras cambiar `POSTGRES_USER` o `POSTGRES_PASSWORD` — el
 usuario se fija al crear el volumen. `dev-reset-hard` tarda unos tres minutos y
-hace falta cuando cambiaste algún Dockerfile.
+hace falta cuando cambiaste algún Dockerfile; si solo necesitas la imagen nueva
+sin perder los datos, `dev-build` reconstruye y `dev-up` recrea los contenedores.
 
 ---
 
@@ -225,6 +265,14 @@ Ningún archivo del repositorio contiene credenciales. Los que las necesitan
 —`marquez.yml`, el `core-site.xml` del metastore— se generan al arrancar el
 contenedor a partir del `.env`, y los catálogos de Trino usan interpolación
 `${ENV:...}` en tiempo de ejecución.
+
+Las credenciales de MinIO viajan **solo como variables de entorno**
+(`AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY`, que el Compose deriva de
+`MINIO_ROOT_USER` y `MINIO_ROOT_PASSWORD`). Nunca se pasan como propiedades de
+Spark: un `--conf` acaba en la línea de comandos de `spark-submit` y en el `ps`
+del contenedor, aunque el hook lo enmascare en el log. S3A las resuelve con
+`EnvironmentVariableCredentialsProvider` y boto3 con su cadena por defecto; un
+test del CI verifica que ninguna tarea las reintroduzca en la configuración.
 
 Detalle en [docs/secretos.md](docs/secretos.md).
 
@@ -259,6 +307,15 @@ stack completo no está automatizada**, así que verifica con `make dev-up` y
   Hadoop 3.3 (imagen de Hive) sigue con el v1. Son artefactos distintos, no
   versiones del mismo. Los Dockerfiles los resuelven con Maven en vez de fijarlos
   a mano.
+- **Cliente de metastore 2.3.10 contra servidor Hive 4.0.0.** Spark 4 lleva
+  embebido el cliente de Hive 2.3.10 y el metastore del stack es 4.0.0. El
+  desajuste es intencional y no hace falta alinearlo: el Thrift del metastore es
+  estable hacia atrás, y aquí Hive solo actúa como registro nombre→ubicación
+  —las transacciones las gestiona Delta—. Alinearlo exigiría
+  `spark.sql.hive.metastore.jars`, o sea descargar jars en caliente o meter un
+  segundo juego de Hive en la imagen, con conflictos de classpath a cambio de
+  nada. Si algún día aparece un error de API del metastore, ese es el primer
+  sitio donde mirar.
 - **ANSI mode activo por defecto en Spark 4.** Los casts inválidos lanzan
   excepción en lugar de devolver `null`.
 - **Airflow 3 exige `execution_api_server_url` y un JWT compartido** entre

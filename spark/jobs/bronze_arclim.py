@@ -24,6 +24,7 @@ executors no comparten exactamente la misma versión del intérprete.
 import json
 import os
 import sys
+import time
 from datetime import UTC, datetime
 
 import boto3
@@ -35,6 +36,8 @@ from pyspark.sql.types import (
     StructType,
 )
 
+from transformaciones import filas_series, limpiar_columna
+
 # ── Argumentos ────────────────────────────────────────────────────────────────
 fecha = sys.argv[1] if len(sys.argv) > 1 else datetime.now(UTC).strftime("%Y-%m-%d")
 anio = fecha[:4]
@@ -45,44 +48,65 @@ mes = fecha[5:7]
 # error de S3 confuso mucho después. Es preferible fallar aquí.
 try:
     MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
-    MINIO_ACCESS = os.environ["MINIO_ROOT_USER"]
-    MINIO_SECRET = os.environ["MINIO_ROOT_PASSWORD"]
 except KeyError as e:
     print(f"✗ Falta la variable de entorno {e}")
     sys.exit(1)
 
+# Las credenciales NO se leen para pasarlas a Spark: se comprueba que estén y
+# se dejan en el entorno, donde las resuelven el provider de S3A y boto3. Una
+# credencial en un `--conf` viaja en la línea de comandos del proceso y aparece
+# en la UI del driver; en el entorno, no.
+for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+    if _var not in os.environ:
+        print(f"✗ Falta la variable de entorno '{_var}'")
+        sys.exit(1)
+
+HIVE_METASTORE_URIS = os.environ.get("HIVE_METASTORE_URIS", "thrift://hive-metastore:9083")
+
 RAW_BUCKET = "raw"
 RAW_PREFIX = f"arclim/fecha={fecha}"
 BRONZE_BASE = "s3a://bronze"
+BRONZE_DB = "bronze"
 
 # ── SparkSession ──────────────────────────────────────────────────────────────
 # Sin configure_spark_with_delta_pip: los JAR de Delta están tanto en
 # /opt/spark/jars del cluster como en el pyspark del contenedor de Airflow.
 spark = (
     SparkSession.builder.appName(f"vektralforge-bronze-arclim-{fecha}")
+    # El nombre de la app lleva la fecha para distinguir ejecuciones en la UI de
+    # Spark, pero OpenLineage toma de ahí el nombre del job: con la fecha dentro,
+    # Marquez crearía un job nuevo cada día y el historial quedaría fragmentado.
+    .config("spark.openlineage.appName", "vektralforge_bronze_arclim")
     .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
     .config(
         "spark.sql.catalog.spark_catalog",
         "org.apache.spark.sql.delta.catalog.DeltaCatalog",
     )
     .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
-    .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS)
-    .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET)
+    .config(
+        "spark.hadoop.fs.s3a.aws.credentials.provider",
+        "software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider",
+    )
     .config("spark.hadoop.fs.s3a.path.style.access", "true")
     .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .config("spark.sql.shuffle.partitions", "2")
+    # El catálogo compartido con Trino: sin esto las tablas quedan como rutas
+    # sueltas en MinIO y hay que registrarlas a mano en Trino.
+    .config("spark.hadoop.hive.metastore.uris", HIVE_METASTORE_URIS)
+    .enableHiveSupport()
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("WARN")
+
+# La base apunta a la raíz del bucket, así que cada tabla se materializa en
+# s3a://bronze/<tabla>/ — la misma ruta que antes se escribía a mano.
+spark.sql(f"CREATE DATABASE IF NOT EXISTS {BRONZE_DB} LOCATION '{BRONZE_BASE}/'")
 print(f"→ Spark {spark.version} — procesando ARClim para fecha: {fecha}")
 
-_s3 = boto3.client(
-    "s3",
-    endpoint_url=MINIO_ENDPOINT,
-    aws_access_key_id=MINIO_ACCESS,
-    aws_secret_access_key=MINIO_SECRET,
-)
+# Sin claves explícitas: boto3 las toma de AWS_ACCESS_KEY_ID y
+# AWS_SECRET_ACCESS_KEY, las mismas que usa el provider de S3A.
+_s3 = boto3.client("s3", endpoint_url=MINIO_ENDPOINT)
 
 escritos = {}
 vacios = []
@@ -98,8 +122,12 @@ def leer_json(key):
     return json.loads(obj["Body"].read().decode("utf-8"))
 
 
-def escribir_delta(df, path, nombre):
+def escribir_delta(df, tabla, nombre):
     """Escribe el DataFrame en Delta Lake y devuelve el número de filas.
+
+    Usa saveAsTable en lugar de save(ruta): registra la tabla en el Hive
+    Metastore, que es lo que hace que Trino la vea sin registrarla a mano. La
+    ruta física no cambia — la base apunta a la raíz del bucket.
 
     Devuelve 0 sin escribir si el DataFrame está vacío, para que quien llama
     pueda distinguir 'sin datos' de 'escrito'.
@@ -108,8 +136,17 @@ def escribir_delta(df, path, nombre):
     if n == 0:
         print(f"  ⚠ {nombre}: DataFrame vacío, omitiendo")
         return 0
-    df.write.format("delta").mode("append").option("mergeSchema", "true").save(path)
-    print(f"  ✓ {nombre}: {n} filas → {path}")
+    # replaceWhere y no append: reejecutar la misma fecha reemplaza esa carga en
+    # vez de duplicarla. Delta valida que todas las filas escritas cumplan el
+    # predicado, así que un error en fecha_carga falla en vez de colarse.
+    (
+        df.write.format("delta")
+        .mode("overwrite")
+        .option("replaceWhere", f"fecha_carga = '{fecha}'")
+        .option("mergeSchema", "true")
+        .saveAsTable(f"{BRONZE_DB}.{tabla}")
+    )
+    print(f"  ✓ {nombre}: {n} filas → {BRONZE_DB}.{tabla}")
     return n
 
 
@@ -154,7 +191,7 @@ try:
     df_ind = spark.createDataFrame(rows, schema)
     registrar(
         "arclim_indicadores",
-        escribir_delta(df_ind, f"{BRONZE_BASE}/arclim_indicadores", "arclim_indicadores"),
+        escribir_delta(df_ind, "arclim_indicadores", "arclim_indicadores"),
     )
 
 except Exception as e:
@@ -182,15 +219,7 @@ try:
             "mes": int(mes),
         }
         for j, col in enumerate(columns):
-            # Delta Lake no admite $ ni otros caracteres especiales en los
-            # nombres de columna; ARClim los usa en sus atributos climáticos.
-            col_clean = (
-                col.replace("$CLIMA$", "clima_")
-                .replace("$annual$", "_anual_")
-                .replace("$", "_")
-                .lower()
-            )
-            row[col_clean] = row_vals[j] if j < len(row_vals) else None
+            row[limpiar_columna(col)] = row_vals[j] if j < len(row_vals) else None
         rows.append(row)
 
     if rows:
@@ -198,7 +227,7 @@ try:
             "arclim_comunas",
             escribir_delta(
                 spark.createDataFrame(rows),
-                f"{BRONZE_BASE}/arclim_comunas",
+                "arclim_comunas",
                 "arclim_comunas",
             ),
         )
@@ -215,39 +244,14 @@ except Exception as e:
 print("\n→ Procesando series de tiempo 1970-2070...")
 try:
     data = leer_json("series_comunas_capitales.json")
-
-    rows = []
-    for cod_comuna, info in data.items():
-        nombre = info.get("nombre", "")
-        for indicador, serie in info.get("indicadores", {}).items():
-            years = serie.get("years", [])
-            means = serie.get("mean", [])
-            p10s = serie.get("p10", [])
-            p90s = serie.get("p90", [])
-
-            for idx_y, year in enumerate(years):
-                rows.append(
-                    {
-                        "cod_comuna": str(cod_comuna),
-                        "nombre": nombre,
-                        "indicador": indicador,
-                        "anio_serie": int(year),
-                        "valor_medio": float(means[idx_y]) if idx_y < len(means) else None,
-                        "valor_p10": float(p10s[idx_y]) if idx_y < len(p10s) else None,
-                        "valor_p90": float(p90s[idx_y]) if idx_y < len(p90s) else None,
-                        "escenario": "ssp585",
-                        "fecha_carga": fecha,
-                        "anio": int(anio),
-                        "mes": int(mes),
-                    }
-                )
+    rows = filas_series(data, fecha, anio, mes)
 
     if rows:
         registrar(
             "arclim_series",
             escribir_delta(
                 spark.createDataFrame(rows),
-                f"{BRONZE_BASE}/arclim_series",
+                "arclim_series",
                 "arclim_series",
             ),
         )
@@ -269,7 +273,7 @@ if escritos:
     total = sum(escritos.values())
     print(f"\n✓ Escritas {len(escritos)}/3 tablas ({total} filas)")
     for nombre, n in escritos.items():
-        print(f"    s3a://bronze/{nombre}/  ({n} filas)")
+        print(f"    {BRONZE_DB}.{nombre}  ({n} filas)")
 
 if vacios:
     print(f"\n⚠ Sin datos: {', '.join(vacios)}")
@@ -280,6 +284,20 @@ if fallidos:
         print(f"    {nombre}: {err}")
 
 print("\n" + "=" * 60)
+
+# OpenLineage emite sus eventos de forma asíncrona y no expone ninguna forma de
+# forzar el vaciado de la cola: no hay flush, ni drain, ni espera al cerrar.
+# Cerrar la sesión justo después de la última escritura pierde los eventos de ese
+# último segundo. Medido: en una ejecución quedaron sin registrar los datasets de
+# arclim_series, indicadores_utm e indicadores_tpm —las últimas tablas de cada
+# job—, mientras que los jobs correspondientes sí aparecían en Marquez. Empeoró
+# al pasar a replaceWhere, que emite dos eventos por escritura en vez de uno.
+#
+# Ajustable con OPENLINEAGE_PAUSA_CIERRE; 0 la desactiva.
+_pausa_cierre = float(os.environ.get("OPENLINEAGE_PAUSA_CIERRE", "5"))
+if _pausa_cierre > 0:
+    print(f"\n→ Esperando {_pausa_cierre:g}s a que OpenLineage vacíe su cola de eventos...")
+    time.sleep(_pausa_cierre)
 
 spark.stop()
 

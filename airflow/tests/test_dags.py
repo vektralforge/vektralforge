@@ -109,6 +109,20 @@ def test_dag_no_usa_api_de_airflow_2(dagbag, dag_id):
 
 
 @pytest.mark.parametrize("dag_id", sorted(DAGS_ESPERADOS))
+def test_dag_no_permite_runs_solapados(dagbag, dag_id):
+    """Dos runs concurrentes sobre la misma fecha duplican las filas.
+
+    Ocurrió de verdad: `airflow dags unpause` en load_example.sh disparó el run
+    programado del lunes tres segundos antes de que el script disparara el
+    manual. Los dos escribieron y las tablas bronze quedaron con cada fila dos
+    veces. La escritura es idempotente por fecha, pero eso no salva de dos
+    escritores a la vez.
+    """
+    dag = dagbag.dags[dag_id]
+    assert dag.max_active_runs == 1, f"{dag_id}: max_active_runs = {dag.max_active_runs}"
+
+
+@pytest.mark.parametrize("dag_id", sorted(DAGS_ESPERADOS))
 def test_dag_tiene_timeout(dagbag, dag_id):
     """Sin execution_timeout, una tarea colgada bloquea el slot indefinidamente."""
     dag = dagbag.dags[dag_id]
@@ -154,14 +168,60 @@ def test_fecha_ejecucion_sin_ds(modulos_dag, modulo):
     "modulo",
     ["dag_indicadores_financieros", "dag_arclim_riesgo_climatico"],
 )
-def test_credenciales_desde_el_entorno(modulos_dag, modulo):
-    """Las credenciales no deben tener valores por defecto en el código.
+def test_configuracion_desde_el_entorno(modulos_dag, modulo):
+    """El endpoint viene del entorno y no hay defaults en el código.
 
     Un default como 'minioadmin' hace que el DAG se conecte con credenciales
     equivocadas y falle mucho después, con un error de S3 que no señala la
     causa.
     """
     m = modulos_dag[modulo]
-    assert m.MINIO_ACCESS == "test-user"
-    assert m.MINIO_SECRET == "test-password"  # pragma: allowlist secret
     assert m.MINIO_ENDPOINT == "http://minio-test:9000"
+
+
+@pytest.mark.parametrize(
+    "modulo",
+    ["dag_indicadores_financieros", "dag_arclim_riesgo_climatico"],
+)
+def test_credenciales_no_se_leen_a_variables_de_modulo(modulos_dag, modulo):
+    """Las credenciales se quedan en el entorno, no en variables del módulo.
+
+    Leerlas a una constante invita a pasarlas por `conf` al
+    SparkSubmitOperator, que es exactamente lo que hay que evitar.
+    """
+    m = modulos_dag[modulo]
+    leidas = [n for n in ("MINIO_ACCESS", "MINIO_SECRET") if hasattr(m, n)]
+    assert not leidas, f"{modulo} lee credenciales a nivel de módulo: {leidas}"
+
+
+# Nombres de propiedad que no pueden aparecer en la configuración de Spark.
+# `.provider` queda fuera: nombra una clase de Java, no un secreto.
+CONF_PROHIBIDA = re.compile(r"(access[._-]?key|secret|password|token|credential)", re.I)
+
+
+@pytest.mark.parametrize("dag_id", sorted(DAGS_ESPERADOS))
+def test_spark_conf_sin_credenciales(dagbag, dag_id):
+    """Ninguna propiedad de Spark transporta credenciales.
+
+    Un `--conf spark.hadoop.fs.s3a.secret.key=...` acaba en la línea de
+    comandos de spark-submit: queda en el `ps` del contenedor de Airflow y en
+    el /proc del proceso, aunque el hook lo enmascare en el log. Las
+    credenciales se resuelven desde el entorno.
+    """
+    dag = dagbag.dags[dag_id]
+    valores_secretos = {"test-user", "test-password"}  # pragma: allowlist secret
+
+    problemas = []
+    for tarea in dag.tasks:
+        conf = getattr(tarea, "conf", None) or {}
+        for clave, valor in conf.items():
+            if clave.endswith(".provider"):
+                continue
+            if CONF_PROHIBIDA.search(str(clave)):
+                problemas.append(f"{tarea.task_id}: conf['{clave}'] parece una credencial")
+            if str(valor) in valores_secretos:
+                problemas.append(f"{tarea.task_id}: conf['{clave}'] contiene una credencial")
+
+    assert not problemas, "Credenciales en la configuración de Spark:\n" + "\n".join(
+        f"  {p}" for p in problemas
+    )

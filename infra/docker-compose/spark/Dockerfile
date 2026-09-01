@@ -1,6 +1,6 @@
 # VektralForge — imagen de Spark
 #
-# Spark 4.0.0 · Scala 2.13 · Java 17 · Python 3.12 · Delta 4.0.0
+# Spark 4.0.0 · Scala 2.13 · Java 17 · Python 3.12 · Delta 4.0.0 · OpenLineage 1.52.0
 #
 # Las versiones de Hadoop y del AWS SDK v2 NO se fijan a mano: Hadoop 3.4 migró
 # del SDK v1 al v2 y el artefacto cambió de com.amazonaws:aws-java-sdk-bundle a
@@ -14,6 +14,9 @@ FROM maven:3.9-eclipse-temurin-17 AS jars
 ARG DELTA_VERSION=4.0.0
 ARG SCALA_BINARY=2.13
 ARG HADOOP_VERSION=3.4.1
+# El soporte de Spark 4 llegó en OpenLineage 1.37.0; versiones anteriores no
+# sirven aquí. Debe coincidir con infra/docker-compose/airflow/Dockerfile.
+ARG OPENLINEAGE_VERSION=1.52.0
 
 WORKDIR /build
 
@@ -27,6 +30,7 @@ RUN printf '%s\n' \
   '  <dependencies>' \
   "    <dependency><groupId>io.delta</groupId><artifactId>delta-spark_${SCALA_BINARY}</artifactId><version>${DELTA_VERSION}</version></dependency>" \
   "    <dependency><groupId>org.apache.hadoop</groupId><artifactId>hadoop-aws</artifactId><version>${HADOOP_VERSION}</version></dependency>" \
+  "    <dependency><groupId>io.openlineage</groupId><artifactId>openlineage-spark_${SCALA_BINARY}</artifactId><version>${OPENLINEAGE_VERSION}</version></dependency>" \
   '  </dependencies>' \
   '</project>' > pom.xml
 
@@ -74,6 +78,10 @@ RUN python3.12 -m pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY --from=jars /jars/ /opt/spark/jars/
 
+# Declara el listener de OpenLineage. La URL de Marquez no va aquí: la inyecta
+# el provider de OpenLineage de Airflow en cada spark-submit.
+COPY infra/docker-compose/spark/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
+
 # El contenedor corre como spark (UID 185) y su home pertenece a root en la
 # imagen base. Sin este chown, Ivy no puede escribir en ~/.ivy2.
 RUN mkdir -p /home/spark/.ivy2/cache /home/spark/.ivy2/jars && \
@@ -87,6 +95,7 @@ RUN python3.12 --version && \
     ls /opt/spark/jars | grep -q "^hadoop-aws-" && \
     ls /opt/spark/jars | grep -q "delta-spark_2.13" && \
     ls /opt/spark/jars | grep -q "^bundle-" && \
-    echo "JARs de Delta y AWS SDK v2 presentes"
+    ls /opt/spark/jars | grep -q "^openlineage-spark_2.13-" && \
+    echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
 
 USER spark

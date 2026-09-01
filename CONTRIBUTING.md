@@ -97,14 +97,14 @@ repository and will reject the push regardless.
 
 ## Coding conventions
 
-**Spark and Python versions.** Python 3.12 is required for the project
-environment, but Spark executors run Python 3.8. Code that runs inside Spark must
-use tuple syntax for `isinstance`, with a `ruff` exemption so it is not rewritten
-to the 3.10+ union form:
+**Spark and Python versions.** Python 3.12 everywhere: the project environment,
+the Airflow container that hosts the Spark driver, and the Spark image, which
+installs 3.12 from deadsnakes for that reason. PySpark refuses to run when driver
+and executors differ in minor version, so keep them aligned.
 
-```python
-isinstance(valor, (int, float))  # noqa: UP038
-```
+Earlier revisions said executors ran Python 3.8 and asked for tuple syntax in
+`isinstance` with a `ruff` exemption. That stopped being true with the migration
+to Spark 4; the 3.10+ union form is fine.
 
 **Project name spelling.** The name has exactly one form per context. Please
 respect it — mixed spellings are hard to fix once they spread.

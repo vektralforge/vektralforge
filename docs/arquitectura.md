@@ -41,7 +41,8 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Trino | 448 | `Operativo` | Consulta SQL |
 | MinIO | 2024-04 | `Operativo` | Almacenamiento de objetos S3 |
 | Apache Superset | 3.1.3 | `Operativo` | Visualización |
-| OpenLineage + Marquez | — | `Operativo` | Linaje de datos |
+| OpenLineage | 1.52.0 | `Operativo` | Linaje en Airflow y Spark |
+| Marquez | — | `Operativo` | Almacén y UI de linaje |
 | PostgreSQL | 15 | `Operativo` | Metadatos de Airflow, Hive, Marquez y Superset |
 | Redis | 7.2 | `Operativo` | Caché de Superset |
 | OpenBao | 2.1.0 | `Parcial` | Secretos; en local corre en modo dev |
@@ -52,6 +53,16 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Great Expectations | — | `Planificado` | Calidad de datos |
 | Prometheus + Grafana | — | `Planificado` | Métricas |
 | Graylog | — | `En evaluación` | Logs; su licencia SSPL es un factor en la decisión |
+
+El linaje se emite en dos niveles: el provider de OpenLineage de Airflow publica
+el run de cada tarea, y el `OpenLineageSparkListener` publica los datasets que
+lee y escribe cada job de Spark. El listener se declara en el
+`spark-defaults.conf` compartido por las imágenes de Airflow y Spark —con
+`SparkSubmitOperator` el driver corre en el contenedor de Airflow, así que tiene
+que estar en ambas—, y Airflow inyecta el parent job y el transporte en cada
+submit con `AIRFLOW__OPENLINEAGE__SPARK_INJECT_PARENT_JOB_INFO` y
+`AIRFLOW__OPENLINEAGE__SPARK_INJECT_TRANSPORT_INFO`. Sin esa inyección los dos
+runs llegarían a Marquez como grafos inconexos.
 
 Sobre el linaje: se usa **OpenLineage con Marquez**, no Apache Atlas. Atlas
 cubre catalogación además de linaje, pero OpenLineage tiene integración nativa
@@ -83,6 +94,75 @@ Ambos comparten el Hive Metastore, de modo que una tabla escrita por Spark es
 consultable desde Trino sin registrarla dos veces. Esa decisión tiene un costo:
 el metastore necesita el conector S3A y su propia configuración de credenciales,
 porque valida rutas en el object store al gestionar esquemas externos.
+
+El cliente de metastore que Spark 4 lleva embebido es Hive 2.3.10 y el servidor
+es 4.0.0. Es la combinación habitual del ecosistema y está validada en ejecución
+en este stack; alinearla exigiría gestionar un segundo juego de jars de Hive sin
+ganancia funcional. Ver las notas de compatibilidad del README.
+
+El mecanismo concreto: los jobs abren la sesión con `enableHiveSupport()` y
+`spark.hadoop.hive.metastore.uris`, crean la base con
+`CREATE DATABASE IF NOT EXISTS bronze LOCATION 's3a://bronze/'` y escriben con
+`saveAsTable`. Como la base apunta a la raíz del bucket, cada tabla se
+materializa en `s3a://bronze/<tabla>/` —la misma ruta que antes se escribía a
+mano— pero además queda en el catálogo.
+
+**La banda de incertidumbre se calcula, no se copia.** La API de ARClim devuelve
+`series` (20 modelos × 100 años) y `pseries` (20 modelos × 11 percentiles). El
+job calcula `valor_p10` y `valor_p90` como percentiles sobre los 20 modelos de
+cada año, que es la presentación estándar de una proyección climática. `pseries`
+no sirve para eso y leerlo por posición —como se hacía— metía los once
+percentiles del primer modelo en los once primeros años y dejaba los otros 89 en
+nulo: el 89 % de la columna estaba vacío y el 11 % restante era una curva de
+percentiles disfrazada de serie temporal.
+
+**El cierre de la sesión espera al emisor de linaje.** OpenLineage emite de
+forma asíncrona y no ofrece ninguna forma de forzar el vaciado de la cola. Cerrar
+la sesión justo después de la última escritura pierde los eventos de ese último
+segundo: los jobs llegan a Marquez pero los datasets de las últimas tablas no.
+Se midió con `arclim_series`, `indicadores_utm` e `indicadores_tpm`, y empeoró al
+pasar a `replaceWhere`, que emite dos eventos por escritura en vez de uno. Los
+jobs esperan unos segundos antes de `spark.stop()`; se ajusta con
+`OPENLINEAGE_PAUSA_CIERRE`.
+
+**Extracción idempotente y cache en `raw/`.** La zona de aterrizaje guarda la
+respuesta cruda de la API particionada por fecha, así que ya es el cache natural:
+`extract` comprueba qué hay antes de pedir. ARClim lo hace archivo por archivo,
+de modo que una descarga interrumpida se reanuda por donde iba; indicadores usa
+`resumen.json`, que se escribe al final, como marca de fecha completa. El
+parámetro `forzar_descarga` ignora el cache.
+
+El cliente HTTP vive en `airflow/plugins/`, no en `airflow/dags/`: Airflow 3 pone
+la carpeta de plugins en el `sys.path` de quien parsea los DAGs, pero no la de
+DAGs. Un módulo compartido en `dags/` falla con `ModuleNotFoundError` dentro del
+contenedor aunque los tests pasen —el `conftest` lo añadía a mano y tapaba el
+problema—, así que ahora los tests apuntan a `plugins/` y no a `dags/`.
+
+Los errores de red no se confunden con ausencia de datos: `get_json` lanza
+`ErrorAPI` en vez de devolver `None`. Antes un 429 y una serie vacía llegaban
+iguales a quien llamaba, y el resultado era un pipeline que perdía datos en
+silencio.
+
+**Escrituras idempotentes.** Los jobs no hacen `append` ciego: escriben con
+`mode("overwrite")` y `replaceWhere` sobre la columna de fecha de carga, de modo
+que reejecutar un DAG reemplaza esa carga en vez de añadir una copia. Delta
+valida que todas las filas escritas cumplan el predicado, así que una fila con
+la fecha equivocada hace fallar la escritura en lugar de colarse.
+
+Eso resuelve la reejecución, no la concurrencia: dos runs escribiendo la misma
+fecha a la vez seguirían pisándose, así que los DAGs declaran
+`max_active_runs=1`. El caso no es hipotético — `airflow dags unpause` en
+`load_example.sh` disparaba el run programado del día en paralelo con el manual,
+y las tablas bronze acababan con cada fila dos veces.
+
+**Spark es el único escritor del catálogo.** El schema no se crea desde Trino: si
+se creara allí quedaría fijado con `location = 's3://bronze/'` y Spark ya no
+podría declarar la suya. Trino conserva `register_table` habilitado, pero los
+pipelines del repo no lo usan; sirve para adoptar tablas Delta preexistentes.
+
+Trino cachea los metadatos de cada tabla `delta.metadata.cache-ttl` (10 min en
+esta configuración), así que un cambio de esquema puede tardar en verse aunque
+la tabla aparezca de inmediato en `SHOW TABLES`.
 
 ---
 
@@ -206,6 +286,16 @@ Ningún archivo del repositorio contiene credenciales. Los que las necesitan
 —`marquez.yml`, el `core-site.xml` del metastore— se generan al arrancar el
 contenedor a partir del `.env`, y los catálogos de Trino usan interpolación
 `${ENV:...}` en tiempo de ejecución.
+
+Las credenciales de MinIO se propagan **solo por variables de entorno**
+(`AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY`, derivadas en el Compose de
+`MINIO_ROOT_USER` y `MINIO_ROOT_PASSWORD`), nunca como propiedades de Spark.
+Una propiedad pasada con `--conf` viaja en la línea de comandos del proceso:
+queda en el `ps` del contenedor de Airflow y en `/proc/<pid>/cmdline`, aunque
+`SparkSubmitHook` la enmascare en el log y Spark la redacte en la UI del driver.
+S3A las resuelve con
+`software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider`
+y boto3 con su cadena por defecto.
 
 En local, OpenBao corre en modo `-dev`: almacenamiento en memoria y sellado
 automático. No es una configuración de producción.

@@ -20,6 +20,20 @@ x-airflow-common: &airflow-common
     AIRFLOW__OPENLINEAGE__TRANSPORT: '{"type": "http", "url": "http://marquez-api:9000", "endpoint": "api/v1/lineage"}'
     AIRFLOW__OPENLINEAGE__NAMESPACE: "vektralforge"
     AIRFLOW__OPENLINEAGE__DISABLED: "false"
+    # El provider de OpenLineage inyecta en cada spark-submit el parent job
+    # (para que el run de Spark cuelgue de su tarea en Marquez) y la URL de
+    # transporte. Sin esto el listener de Spark no sabría a dónde emitir y los
+    # dos runs aparecerían como grafos separados.
+    AIRFLOW__OPENLINEAGE__SPARK_INJECT_PARENT_JOB_INFO: "true"
+    AIRFLOW__OPENLINEAGE__SPARK_INJECT_TRANSPORT_INFO: "true"
+    # Credenciales de MinIO para S3A y boto3. Se pasan como variables de
+    # entorno y NUNCA como propiedades de Spark: una propiedad viaja en la
+    # línea de comandos de spark-submit y aparece en la UI del driver.
+    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    # Catálogo compartido con Trino. El driver de Spark corre en este
+    # contenedor, así que es aquí donde se resuelve.
+    HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: "true"
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
@@ -124,6 +138,9 @@ services:
       SPARK_MASTER_WEBUI_PORT: "8082"
       OPENLINEAGE_URL: http://marquez-api:9000
       OPENLINEAGE_NAMESPACE: vektralforge
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     ports:
       - "7077:7077"
       - "8082:8082"
@@ -143,6 +160,10 @@ services:
       SPARK_WORKER_WEBUI_PORT: "8083"
       OPENLINEAGE_URL: http://marquez-api:9000
       OPENLINEAGE_NAMESPACE: vektralforge
+      # Los executors resuelven las credenciales de S3A desde el entorno.
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     ports:
       - "8083:8083"
     depends_on:
