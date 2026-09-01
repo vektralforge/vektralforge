@@ -49,9 +49,10 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
 | Marquez | — | Almacén y UI de linaje |
 | PostgreSQL | 15 | Metadatos |
-| Redis | 7.2 | Caché de Superset |
+| Redis | 7.2 | Caché de Superset (metadatos y datos de los gráficos) |
 | OpenBao | 2.1.0 | Secretos (modo dev en local) |
-| Apache Kafka | 7.6.1 (CP) | En el stack, sin pipeline de streaming aún |
+| Apache Kafka | 7.6.1 (CP) | Perfil opcional `streaming`; sin pipeline aún |
+| Apache ZooKeeper | 7.6.1 (CP) | Perfil opcional `streaming`; solo sirve a Kafka |
 
 Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
 versión menor o PySpark rechaza la ejecución.
@@ -243,6 +244,13 @@ make test-all           # Tests
 make detect-secrets     # Escaneo de credenciales
 make deploy-staging     # Deploy K3s staging
 make deploy-prod        # Deploy K3s producción (pide confirmación)
+```
+
+Kafka y ZooKeeper no arrancan con `make dev-up`: están detrás de un perfil, para
+no encender dos contenedores que hoy nada consume. Para levantarlos:
+
+```bash
+cd infra/docker-compose && docker compose --profile streaming up -d
 ```
 
 `dev-reset` tarda alrededor de un minuto y sirve cuando los datos quedaron
