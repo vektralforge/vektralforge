@@ -124,7 +124,7 @@ services:
 
   # ── Spark ─────────────────────────────────────────────────────────────────
   spark-master:
-    image: vektralforge/spark:4.0.0
+    image: vektralforge/spark:4.1.3
     build:
       context: ../..
       dockerfile: infra/docker-compose/spark/Dockerfile
@@ -146,7 +146,7 @@ services:
       - "8082:8082"
 
   spark-worker:
-    image: vektralforge/spark:4.0.0
+    image: vektralforge/spark:4.1.3
     build:
       context: ../..
       dockerfile: infra/docker-compose/spark/Dockerfile

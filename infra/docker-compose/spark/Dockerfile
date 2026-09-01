@@ -1,6 +1,6 @@
 # VektralForge — imagen de Spark
 #
-# Spark 4.0.0 · Scala 2.13 · Java 17 · Python 3.12 · Delta 4.0.0 · OpenLineage 1.52.0
+# Spark 4.1.3 · Scala 2.13 · Java 17 · Python 3.12 · Delta 4.1.0 · OpenLineage 1.52.0
 #
 # Las versiones de Hadoop y del AWS SDK v2 NO se fijan a mano: Hadoop 3.4 migró
 # del SDK v1 al v2 y el artefacto cambió de com.amazonaws:aws-java-sdk-bundle a
@@ -11,9 +11,16 @@
 # ── Etapa 1: resolver los JAR con Maven ──────────────────────────────────────
 FROM maven:3.9-eclipse-temurin-17 AS jars
 
-ARG DELTA_VERSION=4.0.0
+ARG DELTA_VERSION=4.1.0
+# Desde Delta 4.1 el artefacto lleva la versión de Spark en el nombre
+# (delta-spark_4.0, _4.1, _4.2). Se usa la explícita en vez de la genérica
+# para que un desajuste falle al resolver el POM y no en tiempo de ejecución.
+ARG SPARK_MINOR=4.1
 ARG SCALA_BINARY=2.13
-ARG HADOOP_VERSION=3.4.1
+# Debe corresponder al Hadoop que empaqueta la imagen de Spark: 4.0.0 traía
+# 3.4.1 y 4.1.3 trae 3.4.2 (pom.xml de cada etiqueta). Mezclar hadoop-aws con
+# los hadoop-client de otra versión rompe S3A. Dependabot no vigila este ARG.
+ARG HADOOP_VERSION=3.4.2
 # El soporte de Spark 4 llegó en OpenLineage 1.37.0; versiones anteriores no
 # sirven aquí. Debe coincidir con infra/docker-compose/airflow/Dockerfile.
 ARG OPENLINEAGE_VERSION=1.52.0
@@ -28,7 +35,7 @@ RUN printf '%s\n' \
   '  <artifactId>spark-runtime-jars</artifactId>' \
   '  <version>1.0</version>' \
   '  <dependencies>' \
-  "    <dependency><groupId>io.delta</groupId><artifactId>delta-spark_${SCALA_BINARY}</artifactId><version>${DELTA_VERSION}</version></dependency>" \
+  "    <dependency><groupId>io.delta</groupId><artifactId>delta-spark_${SPARK_MINOR}_${SCALA_BINARY}</artifactId><version>${DELTA_VERSION}</version></dependency>" \
   "    <dependency><groupId>org.apache.hadoop</groupId><artifactId>hadoop-aws</artifactId><version>${HADOOP_VERSION}</version></dependency>" \
   "    <dependency><groupId>io.openlineage</groupId><artifactId>openlineage-spark_${SCALA_BINARY}</artifactId><version>${OPENLINEAGE_VERSION}</version></dependency>" \
   '  </dependencies>' \
@@ -43,7 +50,7 @@ RUN mvn -q -B dependency:copy-dependencies \
     && ls -1 /jars
 
 # ── Etapa 2: imagen final ────────────────────────────────────────────────────
-FROM apache/spark:4.0.0
+FROM apache/spark:4.1.3
 
 USER root
 
@@ -93,7 +100,7 @@ RUN mkdir -p /home/spark/.ivy2/cache /home/spark/.ivy2/jars && \
 RUN python3.12 --version && \
     python3.12 -c "import pyspark, delta; print('pyspark', pyspark.__version__)" && \
     ls /opt/spark/jars | grep -q "^hadoop-aws-" && \
-    ls /opt/spark/jars | grep -q "delta-spark_2.13" && \
+    ls /opt/spark/jars | grep -q "delta-spark_4.1_2.13" && \
     ls /opt/spark/jars | grep -q "^bundle-" && \
     ls /opt/spark/jars | grep -q "^openlineage-spark_2.13-" && \
     echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
