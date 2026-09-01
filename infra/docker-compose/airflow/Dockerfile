@@ -8,7 +8,7 @@
 # SDK v2 la hereda hadoop-aws de su POM padre y fijarla a mano es frágil.
 
 # ── Etapa 1: resolver los JAR con Maven ──────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-17 AS jars
+FROM maven:3-eclipse-temurin-26 AS jars
 
 # Deben coincidir con infra/docker-compose/spark/Dockerfile.
 ARG DELTA_VERSION=4.0.0
