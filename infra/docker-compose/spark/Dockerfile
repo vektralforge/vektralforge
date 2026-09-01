@@ -50,7 +50,7 @@ RUN mvn -q -B dependency:copy-dependencies \
     && ls -1 /jars
 
 # ── Etapa 2: imagen final ────────────────────────────────────────────────────
-FROM apache/spark:4.1.3
+FROM apache/spark:4.2.0
 
 USER root
 
