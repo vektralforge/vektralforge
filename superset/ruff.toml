@@ -1,0 +1,13 @@
+target-version = "py312"
+line-length = 100
+
+[lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+# Estos scripts corren DENTRO del contenedor de Superset: el `superset` que
+# importan es la aplicación, no la carpeta superset/ de este repositorio. Sin
+# esta línea ruff lo toma por código propio y separa `from superset import db`
+# del resto de sus submódulos.
+[lint.isort]
+known-third-party = ["superset"]

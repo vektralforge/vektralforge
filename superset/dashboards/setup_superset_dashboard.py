@@ -5,10 +5,10 @@ setup_superset_dashboard.py — con fetch_metadata incluido
 import json
 
 from superset import db
-from superset.models.core import Database
 from superset.connectors.sqla.models import SqlaTable
-from superset.models.slice import Slice
+from superset.models.core import Database
 from superset.models.dashboard import Dashboard
+from superset.models.slice import Slice
 
 # ── 1. Conexión Trino ─────────────────────────────────────────────────────────
 trino_db = db.session.query(Database).filter_by(database_name="Trino").first()
@@ -389,9 +389,7 @@ position_json = {
 }
 
 dashboard_title = "Indicadores Financieros Chile 2026"
-dashboard = (
-    db.session.query(Dashboard).filter_by(dashboard_title=dashboard_title).first()
-)
+dashboard = db.session.query(Dashboard).filter_by(dashboard_title=dashboard_title).first()
 if not dashboard:
     dashboard = Dashboard(
         dashboard_title=dashboard_title,

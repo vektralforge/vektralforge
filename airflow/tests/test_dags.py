@@ -103,9 +103,9 @@ def test_dag_tiene_tareas_y_dependencias(dagbag, dag_id):
 def test_dag_no_usa_api_de_airflow_2(dagbag, dag_id):
     """`schedule_interval` se eliminó en Airflow 3 en favor de `schedule`."""
     dag = dagbag.dags[dag_id]
-    assert (
-        not hasattr(dag, "schedule_interval") or dag.schedule is not None
-    ), f"{dag_id} no declara schedule"
+    assert not hasattr(dag, "schedule_interval") or dag.schedule is not None, (
+        f"{dag_id} no declara schedule"
+    )
 
 
 @pytest.mark.parametrize("dag_id", sorted(DAGS_ESPERADOS))

@@ -57,6 +57,19 @@ updates:
     labels:
       - "dependencies"
 
+  # ── Hooks de pre-commit ────────────────────────────────────────────────────
+  # El `rev` de .pre-commit-config.yaml quedaba fuera de todo: nadie lo subía
+  # con los requirements-dev, así que el hook local y el CI podían acabar
+  # linteando con versiones distintas de ruff. GitHub soporta este ecosistema
+  # desde marzo de 2026 y actualiza el `rev` como cualquier otra dependencia.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+
   # ── GitHub Actions ─────────────────────────────────────────────────────────
   - package-ecosystem: "github-actions"
     directory: "/"

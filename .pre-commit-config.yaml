@@ -18,8 +18,8 @@ repos:
       - id: detect-secrets
         args: ['--baseline', '.secrets.baseline']
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.4
+    rev: v0.16.5
     hooks:
-      - id: ruff
+      - id: ruff-check
         args: ['--fix']
       - id: ruff-format
