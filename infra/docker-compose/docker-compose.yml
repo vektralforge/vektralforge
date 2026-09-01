@@ -203,7 +203,7 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
 
   kafka:
-    image: confluentinc/cp-kafka:7.6.1
+    image: confluentinc/cp-kafka:8.3.1
     profiles: ["streaming"]
     restart: unless-stopped
     depends_on:
