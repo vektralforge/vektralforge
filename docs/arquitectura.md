@@ -44,9 +44,10 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | OpenLineage | 1.52.0 | `Operativo` | Linaje en Airflow y Spark |
 | Marquez | — | `Operativo` | Almacén y UI de linaje |
 | PostgreSQL | 15 | `Operativo` | Metadatos de Airflow, Hive, Marquez y Superset |
-| Redis | 7.2 | `Operativo` | Caché de Superset |
+| Redis | 7.2 | `Operativo` | Caché de Superset: metadatos y resultados de los gráficos |
 | OpenBao | 2.1.0 | `Parcial` | Secretos; en local corre en modo dev |
-| Apache Kafka | 7.6.1 (CP) | `Parcial` | En el stack, sin pipeline de streaming aún |
+| Apache Kafka | 7.6.1 (CP) | `Opcional` | Perfil `streaming`; sin pipeline aún |
+| Apache ZooKeeper | 7.6.1 (CP) | `Opcional` | Perfil `streaming`; solo sirve a Kafka |
 | Docker Compose | — | `Operativo` | Entorno local |
 | K3s / Kubernetes | — | `Planificado` | Plataforma de producción |
 | Sealed Secrets | — | `En evaluación` | Alternativa a OpenBao para K3s |
@@ -435,6 +436,12 @@ porque `hadoop-aws` hereda la versión del SDK de su POM padre.
 
 Las fechas dependen de la disponibilidad de quienes mantienen el proyecto. Ver
 las issues del repositorio para lo que está en curso.
+
+Sobre el hito de Kafka: antes de subir de versión hay que migrar a KRaft.
+Confluent Platform 7.9.x es la última que incluye ZooKeeper y la 8.x ya no habla
+con él, así que el par se queda fijo en 7.6.1 hasta que exista un pipeline que
+justifique la migración. Mientras tanto viven detrás del perfil `streaming` del
+Compose y no se levantan por defecto.
 
 ---
 
