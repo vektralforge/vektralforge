@@ -10,13 +10,21 @@ x-airflow-common: &airflow-common
   build:
     context: ../..
     dockerfile: infra/docker-compose/airflow/Dockerfile
-  env_file: .env
+  # Aquí había `env_file: .env`, que entregaba el archivo ENTERO como variables
+  # de entorno a los cuatro contenedores de Airflow: no solo la clave de
+  # Postgres, también la de MinIO, las de admin de Airflow y Superset, y el
+  # token de OpenBao. Un `docker inspect` sobre cualquiera las enseñaba todas.
+  #
+  # Ahora la lista es explícita. Si Airflow necesita una variable nueva del
+  # .env, se añade aquí y se ve en el diff, que es justamente lo que el
+  # env_file impedía.
   environment:
-    # La cadena de conexión se construye AQUÍ, no en el .env.
-    # Compose interpola ${...}; el .env no interpola sus propias variables,
-    # así que definirla allí produce un usuario literal "POSTGRES_USER".
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
+    # _CMD en vez del valor: Airflow ejecuta el comando y usa su salida, así la
+    # contraseña llega del secreto montado y no del entorno. El script hace el
+    # quote() de usuario y clave, que un '@' o un '/' romperían.
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: /opt/vektralforge/bin/cadena_de_conexion.py
+    POSTGRES_USER: ${POSTGRES_USER}
     AIRFLOW__OPENLINEAGE__TRANSPORT: '{"type": "http", "url": "http://marquez-api:9000", "endpoint": "api/v1/lineage"}'
     AIRFLOW__OPENLINEAGE__NAMESPACE: "vektralforge"
     AIRFLOW__OPENLINEAGE__DISABLED: "false"
@@ -38,6 +46,16 @@ x-airflow-common: &airflow-common
     AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: "true"
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
+    # Las cuatro que antes llegaban de rebote por el env_file. Airflow lee las
+    # AIRFLOW__* y AIRFLOW_CONN_* directamente del entorno; MINIO_ENDPOINT la
+    # leen los DAGs con os.environ.
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
+    AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+    AIRFLOW_CONN_SPARK_DEFAULT: ${AIRFLOW_CONN_SPARK_DEFAULT}
+    MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+  secrets:
+    - postgres_password
   volumes:
     - ../../airflow/dags:/opt/airflow/dags
     - ../../airflow/plugins:/opt/airflow/plugins
@@ -306,10 +324,15 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker-compose/airflow/Dockerfile
-    env_file: .env
+    # Este servicio no usa el ancla: lleva su propia lista, y solo necesita
+    # llegar a la base para migrarla.
     environment:
       AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/airflow
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: /opt/vektralforge/bin/cadena_de_conexion.py
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      POSTGRES_USER: ${POSTGRES_USER}
+    secrets:
+      - postgres_password
     command: db migrate
     restart: "no"
     volumes:

@@ -85,6 +85,13 @@ RUN PYSPARK_JARS=$(python -c "import pyspark, os; print(os.path.join(os.path.dir
 COPY infra/docker-compose/spark/spark-defaults.conf /opt/vektralforge/spark-conf/spark-defaults.conf
 ENV SPARK_CONF_DIR=/opt/vektralforge/spark-conf
 
+# La cadena de conexión a Postgres se calcula al vuelo desde el secreto montado,
+# vía AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD. Ver el docstring del script.
+COPY infra/docker-compose/airflow/cadena_de_conexion.py /opt/vektralforge/bin/cadena_de_conexion.py
+USER root
+RUN chmod 755 /opt/vektralforge/bin/cadena_de_conexion.py
+USER airflow
+
 RUN airflow version && \
     java -version && \
     python -c "import pyspark, delta; assert pyspark.__version__.startswith('4.1'), pyspark.__version__; print('pyspark', pyspark.__version__, 'delta OK')" && \
@@ -95,3 +102,25 @@ RUN airflow version && \
     ls "$PYSPARK_JARS" | grep -q "^openlineage-spark_2.13-" && \
     test -f "$SPARK_CONF_DIR/spark-defaults.conf" && \
     echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
+
+# El script de la cadena de conexión NO debe terminar en salto de línea: Airflow
+# no lo recorta y Postgres acaba buscando una base llamada "airflow\n". Costó un
+# arranque fallido descubrirlo; que falle aquí y no en el `db migrate`.
+#
+# La URL esperada se comprueba en dos grep, principio y final por separado, y no
+# en uno solo con la cadena entera. Escrita de una pieza contiene el patrón
+# usuario:clave@host y detect-secrets la marca como «Basic Auth Credentials»,
+# con razón: no distingue una clave real de la literal `clave-de-prueba`. Un
+# `# pragma: allowlist secret` no cabe en una línea con continuación.
+RUN printf 'clave-de-prueba' > /tmp/pw && \
+    POSTGRES_PASSWORD_FILE=/tmp/pw POSTGRES_USER=u \
+      /opt/vektralforge/bin/cadena_de_conexion.py > /tmp/salida && \
+    rm -f /tmp/pw && \
+    [ "$(tail -c1 /tmp/salida | od -An -c | tr -d ' ')" != "\\n" ] || { \
+      echo "ERROR: cadena_de_conexion.py termina en salto de línea." >&2; exit 1; } && \
+    grep -q '^postgresql+psycopg2://u:clave-de-prueba' /tmp/salida && \
+    grep -q '@postgres:5432/airflow$' /tmp/salida || { \
+      echo "ERROR: cadena_de_conexion.py no produce la URL esperada:" >&2; \
+      sed -E 's#//([^:]+):[^@]+@#//\1:<clave>@#' /tmp/salida >&2; exit 1; } && \
+    rm -f /tmp/salida && \
+    echo "cadena_de_conexion.py produce una URL válida y sin salto final"
