@@ -45,7 +45,7 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Apache Hive Metastore | 4.0.0 | Catálogo compartido Spark ↔ Trino |
 | Trino | 448 | Consulta SQL |
 | MinIO | 2024-04 | Almacenamiento de objetos S3 |
-| Apache Superset | 3.1.3 | Visualización |
+| Apache Superset | 6.1.0 | Visualización |
 | OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
 | Marquez | — | Almacén y UI de linaje |
 | PostgreSQL | 15 | Metadatos |
