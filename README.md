@@ -107,8 +107,16 @@ ejecutarlo cuando aparezcan variables nuevas.
 | Spark Master | http://localhost:8082 |
 | OpenBao | http://localhost:8200 |
 
-Las credenciales salen de `infra/docker-compose/.env` y se muestran al terminar
-`make dev-up`.
+Las credenciales salen de `infra/docker-compose/.env`, que tiene permisos 600.
+`make dev-up` **no las imprime**: el banner final muestra el nombre de la
+variable de cada una. Para leer una concreta:
+
+```bash
+grep '^AIRFLOW_ADMIN_PASSWORD=' infra/docker-compose/.env | cut -d= -f2-
+```
+
+Trino, Spark y Marquez no piden credenciales de ningún tipo: cualquiera que
+alcance esos puertos entra. Por eso el `.env` fija `BIND_HOST=127.0.0.1`.
 
 ---
 

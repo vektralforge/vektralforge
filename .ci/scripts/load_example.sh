@@ -70,8 +70,11 @@ ok "Stack operativo"
 log "Verificando buckets MinIO..."
 for b in raw bronze silver gold checkpoints; do
     if ! docker exec docker-compose-minio-1 mc ls "local/$b" &>/dev/null; then
-        warn "Buckets faltantes — ejecutando init_users.sh..."
-        bash .ci/scripts/init_users.sh "$ENV_FILE"
+        warn "Buckets faltantes — creándolos..."
+        # Solo los buckets. Antes se llamaba a init_users.sh entero, que además
+        # recreaba los usuarios admin y reinicializaba los roles de Superset:
+        # efectos que nadie pide al cargar datos de ejemplo.
+        bash .ci/scripts/init_users.sh "$ENV_FILE" buckets
         break
     fi
 done
