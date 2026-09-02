@@ -18,8 +18,10 @@ server:
 db:
   driverClass: org.postgresql.Driver
   url: jdbc:postgresql://${MARQUEZ_DB_HOST}:${MARQUEZ_DB_PORT}/${MARQUEZ_DB_NAME}
-  user: ${MARQUEZ_DB_USER}
-  password: ${MARQUEZ_DB_PASSWORD}
+  # Entrecomillados: un escalar YAML sin comillas se rompe con un '#' o un
+  # ': ' dentro del valor, y estos dos vienen del .env sin restricciones.
+  user: "${MARQUEZ_DB_USER}"
+  password: "${MARQUEZ_DB_PASSWORD}"
 
 migrateOnStartup: true
 

@@ -66,8 +66,13 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # La imagen oficial acepta el sufijo _FILE en cualquier POSTGRES_*: lee el
+      # valor del archivo en vez del entorno. Así la clave no sale en
+      # `docker inspect` ni en /proc/1/environ.
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_MULTIPLE_DATABASES: ${POSTGRES_MULTIPLE_DATABASES:-airflow,metastore,marquez,superset}
+    secrets:
+      - postgres_password
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh
@@ -121,10 +126,20 @@ services:
     environment:
       SERVICE_NAME: metastore
       DB_DRIVER: postgres
-      SERVICE_OPTS: "-Djavax.jdo.option.ConnectionDriverName=org.postgresql.Driver -Djavax.jdo.option.ConnectionURL=jdbc:postgresql://postgres:5432/metastore -Djavax.jdo.option.ConnectionUserName=${POSTGRES_USER} -Djavax.jdo.option.ConnectionPassword=${POSTGRES_PASSWORD}"
+      # SERVICE_OPTS iba aquí con las cuatro propiedades JDO, contraseña
+      # incluida. El entrypoint de la imagen lo concatena a HADOOP_CLIENT_OPTS,
+      # es decir, a la línea de comandos de la JVM: la veía cualquier proceso
+      # dentro del contenedor con un `ps`, y `docker top` desde fuera. Ahora las
+      # cuatro se escriben en hive-site.xml al arrancar. Se deja vacía y no sin
+      # definir porque el entrypoint de arriba la expande sin comprobar.
+      SERVICE_OPTS: ""
+      METASTORE_DB_URL: jdbc:postgresql://postgres:5432/metastore
+      METASTORE_DB_USER: ${POSTGRES_USER}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    secrets:
+      - postgres_password
     ports:
       - "${BIND_HOST:-127.0.0.1}:9083:9083"
     depends_on:
@@ -252,8 +267,10 @@ services:
       MARQUEZ_DB_PORT: "5432"
       MARQUEZ_DB_NAME: marquez
       MARQUEZ_DB_USER: ${POSTGRES_USER}
-      MARQUEZ_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      MARQUEZ_DB_PASSWORD_FILE: /run/secrets/postgres_password
       MARQUEZ_LOG_LEVEL: ${MARQUEZ_LOG_LEVEL:-INFO}
+    secrets:
+      - postgres_password
     ports:
       - "${BIND_HOST:-127.0.0.1}:9100:9000"
       - "${BIND_HOST:-127.0.0.1}:9101:9001"
@@ -361,9 +378,17 @@ services:
     restart: unless-stopped
     environment:
       SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/superset
+      # La cadena se arma en superset_config.py con la clave leída del secreto.
+      # Antes venía entera por DATABASE_URL, contraseña incluida.
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_DB: superset
+      DATABASE_USER: ${POSTGRES_USER}
+      DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
       REDIS_HOST: redis
       REDIS_PORT: 6379
+    secrets:
+      - postgres_password
     ports:
       - "${BIND_HOST:-127.0.0.1}:8088:8088"
     depends_on:
@@ -371,6 +396,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+# El origen `environment` toma el valor de POSTGRES_PASSWORD del .env y lo
+# entrega como archivo en /run/secrets/. No queda en el entorno del contenedor,
+# así que no aparece en `docker inspect` ni en /proc/<pid>/environ. Requiere
+# Compose 2.20 o superior.
+secrets:
+  postgres_password:
+    environment: POSTGRES_PASSWORD
 
 volumes:
   postgres-data:
