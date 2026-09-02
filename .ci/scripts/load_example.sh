@@ -7,8 +7,24 @@
 set -uo pipefail
 
 ENV_FILE="${1:-infra/docker-compose/.env}"
-TIMEOUT=300
-INTERVAL=10
+
+# Cuánto esperar a que una tarea termine.
+#
+# Antes eran 300 s, y contradecían al propio DAG: sus `default_args` declaran
+# execution_timeout de 20 min, retries=1 y retry_delay de 5 min, o sea un peor
+# caso legítimo de 45 minutos. Esperar 5 significaba reportar "✗ falló" sobre
+# tareas que estaban trabajando bien — confundir lento con roto.
+#
+# Pasó de verdad el 2 sep con mindicador.cl degradado: el intento 1 murió por
+# SSLError, la tarea entró en up_for_retry con 5 min de espera por delante, y el
+# presupuesto entero se consumió ahí mientras el intento 2 descargaba sin
+# problemas.
+#
+# 30 min cubre un ciclo completo de reintento sin llegar a los 45 del peor caso
+# absoluto, que casi siempre indica algo realmente atascado. Ajustable por
+# entorno para el CI o para una API que se sabe lenta.
+TIMEOUT="${VF_TIMEOUT_TAREA:-1800}"
+INTERVAL="${VF_INTERVALO_SONDEO:-10}"
 
 # Registro de resultados por DAG
 declare -A DAG_STATUS
@@ -38,14 +54,31 @@ wait_dag() {
                 airflow tasks state "$dag_id" "$task" "$run_id" 2>/dev/null \
                 | tail -1 | tr -d '[:space:]')
             echo "      [${elapsed}s] $task → ${state:-pendiente}"
-            if [ "$state" = "success" ]; then
-                ok "$task completado"
-                break
-            elif [ "$state" = "failed" ] || [ "$state" = "upstream_failed" ]; then
-                fail_msg "$task falló"
-                return 1
-            elif [ $task_elapsed -ge $TIMEOUT ]; then
-                fail_msg "$task no completó en ${TIMEOUT}s"
+            case "$state" in
+                success)
+                    ok "$task completado"
+                    break
+                    ;;
+                failed|upstream_failed)
+                    fail_msg "$task falló"
+                    return 1
+                    ;;
+                up_for_retry)
+                    # Ni éxito ni fallo: Airflow va a reintentar tras
+                    # retry_delay. Antes caía en el saco de "todavía nada" y el
+                    # presupuesto se agotaba durante la espera. Se avisa una
+                    # sola vez para que la pausa se entienda.
+                    if [ "${aviso_reintento:-}" != "$task" ]; then
+                        warn "$task reintentará — la pausa la fija retry_delay del DAG"
+                        aviso_reintento="$task"
+                    fi
+                    ;;
+            esac
+            if [ $task_elapsed -ge $TIMEOUT ]; then
+                # "No terminó" no es lo mismo que "falló": puede seguir viva.
+                fail_msg "$task sigue en '${state:-pendiente}' tras ${TIMEOUT}s"
+                fail_msg "  Puede seguir ejecutándose. Mira el estado real en:"
+                fail_msg "  http://localhost:8090/dags/${dag_id}/grid"
                 return 1
             fi
         done
@@ -88,6 +121,57 @@ ok "Buckets MinIO disponibles"
 # la bajaba en cada ejecución y dejaba dos runtimes de antlr en el classpath.
 # Si algún día vuelve a fallar el parser de SQL, la respuesta no es descargar un
 # JAR a mano: es mirar qué versión trae la imagen.
+
+# Ejecuta uno de los scripts de dashboards dentro del contenedor de Superset.
+#
+# Antes esto iba en línea con `2>/dev/null | grep -E "✓|✗|⚠|====" || true`, y esa
+# combinación hacía el paso INCAPAZ DE FALLAR: el stderr se descartaba, el grep
+# se quedaba solo con las líneas decoradas y el `|| true` borraba el código de
+# salida. Un ImportError dejaba el paso mudo y el resumen final seguía diciendo
+# SUCCESS.
+#
+# Importa porque estos scripts no usan la API REST: importan modelos internos de
+# Superset (`superset.connectors.sqla.models`, `superset.models.dashboard`), que
+# es lo primero que se mueve al subir de versión mayor. Sin ver el error, una
+# subida rota parece una subida limpia.
+DASHBOARD_STATUS=()
+
+configurar_dashboard() {
+    local etiqueta="$1" script="$2"
+    local ruta_local="superset/dashboards/${script}"
+    local salida codigo
+
+    log "Configurando dashboard ${etiqueta} en Superset..."
+
+    if ! docker cp "$ruta_local" "docker-compose-superset-1:/tmp/${script}"; then
+        fail_msg "${etiqueta}: no se pudo copiar ${script} al contenedor"
+        DASHBOARD_STATUS+=("✗ FAILED  (dashboard ${etiqueta})")
+        return 1
+    fi
+
+    # stderr se une a stdout a propósito: es donde aparece el traceback. No hace
+    # falta `set +e`: este script corre con `set -uo pipefail`, sin errexit —
+    # restaurarlo con `set -e` lo habría ACTIVADO para todo lo que viene después.
+    salida=$(docker exec docker-compose-superset-1 bash -c "cd /app && python3 -c \"
+import sys; sys.path.insert(0, '/app')
+from superset.app import create_app
+app = create_app()
+with app.app_context():
+    exec(open('/tmp/${script}').read())
+\"" 2>&1)
+    codigo=$?
+
+    if [ "$codigo" -ne 0 ]; then
+        fail_msg "${etiqueta}: el script terminó con código ${codigo}"
+        echo "$salida" | tail -15 | sed 's/^/      /'
+        DASHBOARD_STATUS+=("✗ FAILED  (dashboard ${etiqueta})")
+        return 1
+    fi
+
+    echo "$salida" | grep -E "✓|✗|⚠|====" | sed 's/^/  /'
+    DASHBOARD_STATUS+=("✓ SUCCESS (dashboard ${etiqueta})")
+    return 0
+}
 
 # ── 3. Copiar jobs Spark ──────────────────────────────────────────────────────
 log "Sincronizando jobs Spark..."
@@ -190,17 +274,7 @@ if load_dag "indicadores_financieros_chile" "dev-load-ind" \
         "SELECT indicador, COUNT(*) as filas FROM delta.bronze.indicadores_todos GROUP BY indicador ORDER BY indicador;" \
         2>/dev/null | grep -v "WARNING\|INFO\|jline\|^$" | sed 's/^/    /' || true
 
-    log "Configurando dashboard Superset..."
-    docker cp superset/dashboards/setup_superset_dashboard.py \
-        docker-compose-superset-1:/tmp/setup_superset_dashboard.py 2>/dev/null
-    docker exec docker-compose-superset-1 \
-        bash -c "cd /app && python3 -c \"
-import sys; sys.path.insert(0, '/app')
-from superset.app import create_app
-app = create_app()
-with app.app_context():
-    exec(open('/tmp/setup_superset_dashboard.py').read())
-\"" 2>/dev/null | grep -E "✓|✗|⚠|====" || true
+    configurar_dashboard "indicadores" setup_superset_dashboard.py || true
 
 else
     warn "indicadores_financieros_chile falló — omitiendo Trino y Superset para este DAG"
@@ -223,17 +297,7 @@ if load_dag "arclim_riesgo_climatico_chile" "dev-load-arclim" \
          FROM delta.bronze.arclim_series GROUP BY indicador ORDER BY indicador;" \
         2>/dev/null | grep -v "WARNING\|INFO\|jline\|^$" | sed 's/^/    /' || true
 
-    log "Configurando dashboard ARClim en Superset..."
-    docker cp superset/dashboards/setup_superset_arclim.py \
-        docker-compose-superset-1:/tmp/setup_superset_arclim.py 2>/dev/null
-    docker exec docker-compose-superset-1 \
-        bash -c "cd /app && python3 -c \"
-import sys; sys.path.insert(0, '/app')
-from superset.app import create_app
-app = create_app()
-with app.app_context():
-    exec(open('/tmp/setup_superset_arclim.py').read())
-\"" 2>/dev/null | grep -E "✓|✗|⚠|====" || true
+    configurar_dashboard "ARClim" setup_superset_arclim.py || true
 
 else
     warn "arclim_riesgo_climatico_chile falló — omitiendo Trino y dashboard ARClim"
@@ -246,6 +310,10 @@ echo "  Resumen de carga de ejemplos"
 echo "  ══════════════════════════════════════════════════"
 for dag_id in "${!DAG_STATUS[@]}"; do
     echo "    ${DAG_STATUS[$dag_id]}  ($dag_id)"
+done
+# Los dashboards también aparecen: antes su fallo era invisible aquí.
+for estado in ${DASHBOARD_STATUS[@]+"${DASHBOARD_STATUS[@]}"}; do
+    echo "    $estado"
 done
 echo ""
 echo "  Airflow   → http://localhost:8090"
