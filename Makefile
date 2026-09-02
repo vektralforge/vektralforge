@@ -78,7 +78,27 @@ init-env:
 
 # ── Stack local ───────────────────────────────────────────────────────────────
 
-dev-up: check-env
+# §4.13 — `dev-up` y `dev-reset` construyen antes de levantar.
+#
+# Antes no lo hacían, y `docker compose build` no recrea contenedores. Con las
+# dos cosas a la vez se podía editar un Dockerfile, reconstruir, y seguir
+# ejecutando la imagen anterior sin ningún aviso: pasó al subir Superset a 6.1.0,
+# donde el contenedor falló dos veces con el mismo error y el diagnóstico apuntó
+# al arreglo en vez de a que el arreglo no había llegado.
+#
+# Construir siempre sale barato porque Docker decide por CONTENIDO si hay algo
+# que hacer: con la caché caliente son un par de segundos. Y `up -d` recrea los
+# contenedores cuya imagen cambió — comprobado cambiando la de marquez-api y
+# viendo que el contenedor pasaba a apuntar al sha256 nuevo.
+#
+# Se probó antes una comprobación por fechas —comparar el mtime de los archivos
+# con la fecha de creación de la imagen— y NO converge: una reconstrucción
+# totalmente cacheada devuelve la MISMA imagen, con su fecha original, así que
+# los archivos siguen pareciendo más recientes para siempre. Y un `git checkout`
+# cambia el mtime sin cambiar el contenido. Docker ya resuelve esto por
+# contenido; duplicarlo por fechas solo añade falsos positivos y una tabla de
+# dependencias que mantener a mano.
+dev-up: check-env dev-build
 	@echo "→ Levantando stack local..."
 	$(COMPOSE) --env-file $(ENV_FILE) up -d
 	@echo ""
@@ -105,7 +125,7 @@ dev-ps: check-env
 
 # ── Reset ─────────────────────────────────────────────────────────────────────
 
-dev-reset: check-env
+dev-reset: check-env dev-build
 	@echo "→ Reset completo del stack (se borran los volúmenes)..."
 	$(COMPOSE) --env-file $(ENV_FILE) down -v
 	@echo "→ Levantando stack limpio..."
@@ -125,10 +145,14 @@ dev-build: check-env
 	@echo "→ Reconstruyendo las imágenes del proyecto..."
 	$(COMPOSE) --env-file $(ENV_FILE) build
 
+# Ahora que `dev-reset` construye siempre, lo que distingue a esta variante es
+# ignorar la caché: es la que sirve cuando se sospecha de una capa cacheada y no
+# de un Dockerfile desactualizado.
 dev-reset-hard: check-env
-	@echo "→ Reset extremo (borra volúmenes y reconstruye las imágenes)..."
+	@echo "→ Reset extremo (borra volúmenes y reconstruye sin caché)..."
 	$(COMPOSE) --env-file $(ENV_FILE) down -v
-	@$(MAKE) dev-build
+	@echo "→ Reconstruyendo las imágenes desde cero..."
+	$(COMPOSE) --env-file $(ENV_FILE) build --no-cache
 	@$(MAKE) dev-reset
 
 # ── Cargar datos de ejemplo ───────────────────────────────────────────────────
