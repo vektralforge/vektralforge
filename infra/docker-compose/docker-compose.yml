@@ -360,7 +360,7 @@ services:
   # Caché de Superset. Lo configura infra/docker-compose/superset/superset_config.py;
   # sin ese archivo las cachés de Superset son NullCache y esto no recibe nada.
   redis:
-    image: redis:7.2
+    image: redis:8.10
     restart: unless-stopped
     ports:
       - "${BIND_HOST:-127.0.0.1}:6379:6379"
