@@ -30,6 +30,9 @@ declare -a PASSWORDS=(
     "AIRFLOW_ADMIN_PASSWORD|usuario admin de Airflow"
     "SUPERSET_ADMIN_PASSWORD|usuario admin de Superset"
     "OPENBAO_TOKEN|token raíz de OpenBao"
+    "MINIO_PIPELINE_SECRET_KEY|cuenta de MinIO de Airflow y Spark"
+    "MINIO_HIVE_SECRET_KEY|cuenta de MinIO del metastore"
+    "MINIO_TRINO_SECRET_KEY|cuenta de MinIO de Trino"
 )
 
 # Valores de la plantilla que cuentan como «sin definir».

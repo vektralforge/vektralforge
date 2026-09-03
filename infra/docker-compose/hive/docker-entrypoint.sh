@@ -10,9 +10,14 @@ OUTPUT="${HIVE_CORE_SITE:-/opt/hadoop/etc/hadoop/core-site.xml}"
 
 : "${MINIO_ENDPOINT:=http://minio:9000}"
 
-if [ -z "${MINIO_ROOT_USER:-}" ] || [ -z "${MINIO_ROOT_PASSWORD:-}" ]; then
-  echo "ERROR: faltan MINIO_ROOT_USER o MINIO_ROOT_PASSWORD." >&2
-  echo "       Se pasan desde infra/docker-compose/.env vía docker-compose.yml." >&2
+# Son las de la cuenta de servicio vf-hive, NO las de la raíz de MinIO. Antes
+# aquí llegaban MINIO_ROOT_USER y MINIO_ROOT_PASSWORD: el metastore podía borrar
+# todos los buckets y administrar el servidor para hacer un trabajo que solo
+# necesita leer y escribir objetos.
+if [ -z "${MINIO_ACCESS_KEY:-}" ] || [ -z "${MINIO_SECRET_KEY:-}" ]; then
+  echo "ERROR: faltan MINIO_ACCESS_KEY o MINIO_SECRET_KEY." >&2
+  echo "       Las pone docker-compose.yml desde MINIO_HIVE_* del .env, y la" >&2
+  echo "       cuenta la crea \`init_users.sh cuentas\` en el dev-reset." >&2
   exit 1
 fi
 
@@ -24,8 +29,8 @@ fi
 # Delimitador | para no chocar con las barras de las URL.
 sed \
   -e "s|__MINIO_ENDPOINT__|${MINIO_ENDPOINT}|g" \
-  -e "s|__MINIO_ACCESS__|${MINIO_ROOT_USER}|g" \
-  -e "s|__MINIO_SECRET__|${MINIO_ROOT_PASSWORD}|g" \
+  -e "s|__MINIO_ACCESS__|${MINIO_ACCESS_KEY}|g" \
+  -e "s|__MINIO_SECRET__|${MINIO_SECRET_KEY}|g" \
   "$TEMPLATE" > "$OUTPUT"
 
 chmod 640 "$OUTPUT"
