@@ -55,9 +55,19 @@ RUN chmod 644 /opt/hadoop/share/hadoop/common/lib/*.jar
 # La configuración de S3 se genera al arrancar, no se versiona con credenciales.
 # Las propiedades pasadas por -D en HADOOP_CLIENT_OPTS llegan a la JVM pero no
 # al Configuration de Hadoop, que lee de core-site.xml.
-COPY infra/docker-compose/hive/core-site.xml.template /opt/hadoop/etc/hadoop/core-site.xml.template
+#
+# La base y el generador son los mismos que usan las imágenes de Airflow y de
+# Spark: los tres hablan con MinIO por S3A y necesitan las mismas propiedades.
+COPY infra/docker-compose/comun/core-site.xml.base /opt/hadoop/etc/hadoop/core-site.xml.base
+COPY infra/docker-compose/comun/credenciales_minio.sh /opt/vektralforge/bin/credenciales_minio.sh
 COPY infra/docker-compose/hive/docker-entrypoint.sh /opt/hive/docker-entrypoint.sh
-RUN chmod +x /opt/hive/docker-entrypoint.sh && \
+# chmod 755 y no `chmod +x`. Estos archivos llegan al contexto de build con
+# permisos 700, y `+x` sobre 700 deja 711: el kernel ejecuta el archivo, pero
+# el intérprete del shebang necesita LEERLO, y sin o+r falla con un
+# «bash: ...: Permission denied» que parece un problema de ejecución y no lo es.
+RUN chmod 755 /opt/hive/docker-entrypoint.sh \
+              /opt/vektralforge/bin/credenciales_minio.sh && \
+    chmod 644 /opt/hadoop/etc/hadoop/core-site.xml.base && \
     chown hive:hive /opt/hadoop/etc/hadoop
 
 # La imagen trae su propio hive-site.xml con once propiedades — entre ellas
@@ -91,5 +101,24 @@ RUN jar=$(find /opt -name "hadoop-common-*.jar" -print -quit) && \
       exit 1; }
 
 USER hive
+
+# Las comprobaciones van DETRÁS del `USER` a propósito. Antes iban delante,
+# como root, y por eso dieron verde sobre una imagen que no arrancaba: root se
+# salta la comprobación de lectura con la que fallaba el usuario real. Una
+# prueba que corre con más privilegios que el sistema que verifica no prueba
+# ese sistema. Y escriben en el destino REAL, no en /tmp, para que además
+# comprueben que el directorio es escribible por ese usuario.
+
+RUN printf 'clave-de-prueba' > /tmp/s && \
+    MINIO_ACCESS_KEY=prueba MINIO_ENDPOINT=http://minio:9000 \
+    MINIO_SECRET_KEY_FILE=/tmp/s \
+    VF_CORE_SITE=/opt/hadoop/etc/hadoop/core-site.xml \
+    VF_CORE_SITE_BASE=/opt/hadoop/etc/hadoop/core-site.xml.base \
+      /opt/vektralforge/bin/credenciales_minio.sh && \
+    rm -f /tmp/s && \
+    grep -q "<name>fs.s3a.secret.key</name>" /opt/hadoop/etc/hadoop/core-site.xml && \
+    grep -q "<name>fs.s3a.impl</name>" /opt/hadoop/etc/hadoop/core-site.xml && \
+    rm -f /opt/hadoop/etc/hadoop/core-site.xml && \
+    echo "credenciales_minio.sh genera un core-site.xml completo"
 
 ENTRYPOINT ["/opt/hive/docker-entrypoint.sh"]

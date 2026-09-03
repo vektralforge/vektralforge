@@ -52,14 +52,19 @@ except KeyError as e:
     print(f"✗ Falta la variable de entorno {e}")
     sys.exit(1)
 
-# Las credenciales NO se leen para pasarlas a Spark: se comprueba que estén y
-# se dejan en el entorno, donde las resuelven el provider de S3A y boto3. Una
-# credencial en un `--conf` viaja en la línea de comandos del proceso y aparece
-# en la UI del driver; en el entorno, no.
-for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
-    if _var not in os.environ:
-        print(f"✗ Falta la variable de entorno '{_var}'")
-        sys.exit(1)
+# Las credenciales NO se leen aquí para pasarlas a Spark. Tampoco están ya en
+# el entorno: el entrypoint del contenedor las escribe al arrancar en dos
+# archivos, uno por consumidor —core-site.xml para S3A, un INI del SDK para
+# boto3—, y lo que se comprueba es que ese segundo exista. Una credencial en un
+# `--conf` viajaría en la línea de comandos del proceso y aparecería en la UI
+# del driver; una en el entorno, en `docker inspect`.
+_ARCHIVO_CREDENCIALES = os.environ.get("AWS_SHARED_CREDENTIALS_FILE", "")
+if not _ARCHIVO_CREDENCIALES or not os.path.isfile(_ARCHIVO_CREDENCIALES):
+    print(
+        "✗ No hay credenciales de MinIO para boto3: "
+        f"AWS_SHARED_CREDENTIALS_FILE={_ARCHIVO_CREDENCIALES!r}"
+    )
+    sys.exit(1)
 
 HIVE_METASTORE_URIS = os.environ.get("HIVE_METASTORE_URIS", "thrift://hive-metastore:9083")
 
@@ -83,10 +88,12 @@ spark = (
         "org.apache.spark.sql.delta.catalog.DeltaCatalog",
     )
     .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
-    .config(
-        "spark.hadoop.fs.s3a.aws.credentials.provider",
-        "software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider",
-    )
+    # Aquí se fijaba fs.s3a.aws.credentials.provider a
+    # EnvironmentVariableCredentialsProvider. Ya no: el proveedor lo declara
+    # core-site.xml, que es también donde están las credenciales. Declararlo en
+    # dos sitios significa que el de aquí gana, y ganó: con la clave ya fuera
+    # del entorno, S3A seguía buscándola ahí y fallaba con «Unable to load
+    # credentials from system settings».
     .config("spark.hadoop.fs.s3a.path.style.access", "true")
     .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
@@ -104,8 +111,8 @@ spark.sparkContext.setLogLevel("WARN")
 spark.sql(f"CREATE DATABASE IF NOT EXISTS {BRONZE_DB} LOCATION '{BRONZE_BASE}/'")
 print(f"→ Spark {spark.version} — procesando ARClim para fecha: {fecha}")
 
-# Sin claves explícitas: boto3 las toma de AWS_ACCESS_KEY_ID y
-# AWS_SECRET_ACCESS_KEY, las mismas que usa el provider de S3A.
+# Sin claves explícitas: boto3 las lee del INI que le indica
+# AWS_SHARED_CREDENTIALS_FILE, el segundo eslabón de su cadena por defecto.
 _s3 = boto3.client("s3", endpoint_url=MINIO_ENDPOINT)
 
 escritos = {}

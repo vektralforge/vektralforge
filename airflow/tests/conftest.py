@@ -1,17 +1,20 @@
 """
 Configuración compartida de los tests de DAGs.
 
-Los DAGs comprueban a nivel de módulo que el endpoint y las credenciales estén
-en el entorno, sin valores por defecto: si falta una variable, el import falla.
-Es deliberado —evita que un despliegue arranque con credenciales silenciosamente
-incorrectas— pero implica que los tests deben proveerlas.
+Los DAGs comprueban a nivel de módulo que el endpoint esté en el entorno y que
+exista el archivo de credenciales, sin valores por defecto: si falta algo, el
+import falla. Es deliberado —evita que un despliegue arranque con credenciales
+silenciosamente incorrectas— pero implica que los tests deben proveerlo.
 
-Las credenciales van en AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY porque es de
-ahí de donde las leen boto3 y el EnvironmentVariableCredentialsProvider de S3A.
+Las credenciales ya no viajan en AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY. En
+el contenedor las escribe credenciales_minio.sh en un INI del SDK que boto3
+encuentra por AWS_SHARED_CREDENTIALS_FILE; aquí se genera uno equivalente en un
+temporal para que los tests se parezcan a lo que hay en ejecución.
 """
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -26,12 +29,23 @@ PLUGINS_DIR = Path(__file__).parent.parent / "plugins"
 if str(PLUGINS_DIR) not in sys.path:
     sys.path.insert(0, str(PLUGINS_DIR))
 
+# Un INI igual al que el entrypoint escribe en el contenedor. Se crea al
+# importar este archivo y no dentro de una fixture porque los módulos de DAG
+# comprueban su existencia en tiempo de import, que es cuando pytest los
+# recoge.
+ARCHIVO_CREDENCIALES = Path(tempfile.mkdtemp(prefix="vf-credenciales-")) / "credentials"
+ARCHIVO_CREDENCIALES.write_text(
+    "[default]\n"
+    "aws_access_key_id = test-user\n"
+    "aws_secret_access_key = test-password\n",  # pragma: allowlist secret
+    encoding="utf-8",
+)
+
 # Valores de prueba: los tests no se conectan a ningún servicio, solo necesitan
 # que las variables existan para que los módulos se importen.
 ENTORNO_PRUEBA = {
     "MINIO_ENDPOINT": "http://minio-test:9000",
-    "AWS_ACCESS_KEY_ID": "test-user",
-    "AWS_SECRET_ACCESS_KEY": "test-password",  # pragma: allowlist secret
+    "AWS_SHARED_CREDENTIALS_FILE": str(ARCHIVO_CREDENCIALES),
     "AIRFLOW__CORE__LOAD_EXAMPLES": "False",
     "AIRFLOW__CORE__UNIT_TEST_MODE": "True",
     # Airflow resuelve el código compartido desde aquí; los tests tienen que
