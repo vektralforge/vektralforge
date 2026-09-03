@@ -89,6 +89,43 @@ COPY --from=jars /jars/ /opt/spark/jars/
 # el provider de OpenLineage de Airflow en cada spark-submit.
 COPY infra/docker-compose/spark/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
+# ── Credenciales de MinIO: archivos, no variables de entorno ─────────────────
+#
+# Antes llegaban como AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY, que es lo que
+# resuelve EnvironmentVariableCredentialsProvider. Funcionaba, pero un
+# `docker inspect` sobre spark-master o spark-worker enseñaba la clave, igual
+# que `docker compose config` y el /proc/<pid>/environ de cualquier proceso del
+# contenedor. Ahora el entrypoint la lee del secreto montado y la escribe en
+# core-site.xml (600), que es donde SimpleAWSCredentialsProvider la busca.
+#
+# El INI del SDK se genera también aquí: los jobs de spark/jobs/ tienen un
+# cliente boto3 a nivel de módulo, y ese módulo se importa en los executors al
+# deserializar cualquier función definida en él.
+COPY infra/docker-compose/comun/core-site.xml.base /opt/vektralforge/conf/core-site.xml.base
+COPY infra/docker-compose/comun/credenciales_minio.sh /opt/vektralforge/bin/credenciales_minio.sh
+COPY infra/docker-compose/spark/docker-entrypoint.sh /opt/vektralforge/bin/docker-entrypoint.sh
+
+# /opt/spark/conf es de root en la imagen base y el contenedor corre como
+# spark. El entrypoint escribe en un temporal y renombra, y renombrar exige
+# permiso sobre el DIRECTORIO: sin este chown el arranque muere con «Permission
+# denied». Es exactamente el fallo que costó un arranque en el #47 con
+# hive-site.xml.
+# chmod 755 y no `chmod +x`. Estos archivos llegan al contexto de build con
+# permisos 700, y `+x` sobre 700 deja 711: el kernel ejecuta el archivo, pero
+# el intérprete del shebang necesita LEERLO, y sin o+r falla con un
+# «bash: ...: Permission denied» que parece un problema de ejecución y no lo es.
+RUN chmod 755 /opt/vektralforge/bin/credenciales_minio.sh \
+              /opt/vektralforge/bin/docker-entrypoint.sh && \
+    chmod 644 /opt/vektralforge/conf/core-site.xml.base && \
+    mkdir -p /opt/vektralforge/aws && \
+    chown -R spark:spark /opt/spark/conf /opt/vektralforge/aws && \
+    chmod 700 /opt/vektralforge/aws
+
+ENV VF_CORE_SITE=/opt/spark/conf/core-site.xml
+ENV VF_CORE_SITE_BASE=/opt/vektralforge/conf/core-site.xml.base
+ENV VF_AWS_CREDENTIALS=/opt/vektralforge/aws/credentials
+ENV AWS_SHARED_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
+
 # El contenedor corre como spark (UID 185) y su home pertenece a root en la
 # imagen base. Sin este chown, Ivy no puede escribir en ~/.ivy2.
 RUN mkdir -p /home/spark/.ivy2/cache /home/spark/.ivy2/jars && \
@@ -106,3 +143,30 @@ RUN python3.12 --version && \
     echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
 
 USER spark
+
+# Estas dos comprobaciones van DETRÁS de `USER spark`, a propósito. Antes iban
+# delante, como root, y por eso dieron verde sobre una imagen que no arrancaba:
+# root se salta la comprobación de lectura que hace fallar al usuario real.
+# Una prueba que corre con más privilegios que el sistema que verifica no
+# prueba ese sistema.
+
+# El entrypoint encadena el de la imagen base en vez de sustituirlo. Si algún
+# día la base deja de traerlo, esto lo dice ahora y no en el primer arranque.
+RUN test -x /opt/entrypoint.sh || { \
+      echo "ERROR: apache/spark ya no trae /opt/entrypoint.sh." >&2; \
+      echo "       docker-entrypoint.sh lo encadena; revisar antes de subir." >&2; \
+      exit 1; } && \
+    echo "entrypoint de la imagen base presente"
+
+# El generador de credenciales, ejecutado con una clave falsa y con el usuario
+# con el que va a correr de verdad. También se escribe donde va a escribir.
+RUN printf 'clave-de-prueba' > /tmp/s && \
+    MINIO_ACCESS_KEY=prueba MINIO_SECRET_KEY_FILE=/tmp/s \
+      /opt/vektralforge/bin/credenciales_minio.sh && \
+    rm -f /tmp/s && \
+    grep -q "<name>fs.s3a.secret.key</name>" /opt/spark/conf/core-site.xml && \
+    grep -q "^\\[default\\]$" /opt/vektralforge/aws/credentials && \
+    rm -f /opt/spark/conf/core-site.xml /opt/vektralforge/aws/credentials && \
+    echo "credenciales_minio.sh genera core-site.xml y el INI del SDK"
+
+ENTRYPOINT ["/opt/vektralforge/bin/docker-entrypoint.sh"]

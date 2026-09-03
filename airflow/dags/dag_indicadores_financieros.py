@@ -33,13 +33,25 @@ log = logging.getLogger(__name__)
 MINDICADOR_BASE = "https://mindicador.cl/api"
 TIMEOUT = 30  # segundos por request
 MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
-# Las credenciales se quedan en el entorno: boto3 y el provider de S3A las
-# resuelven desde AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY. No se pasan por
-# `conf` al SparkSubmitOperator: ahí acabarían en la línea de comandos del
-# proceso y en la UI del driver.
-for _var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
-    if _var not in os.environ:
-        raise RuntimeError(f"Falta la variable de entorno {_var!r}")
+# Las credenciales NO están en el entorno. El entrypoint del contenedor las
+# materializa al arrancar en dos archivos, uno por consumidor: boto3 lee el INI
+# que le indica AWS_SHARED_CREDENTIALS_FILE, y el driver de Spark —que corre en
+# este mismo contenedor, porque SparkSubmitOperator usa modo client— lee
+# core-site.xml desde SPARK_CONF_DIR. Ver credenciales_minio.sh.
+#
+# Tampoco se pasan por `conf` al SparkSubmitOperator: ahí acabarían en la línea
+# de comandos del proceso y en la UI del driver.
+#
+# Se comprueba la ruta y no solo la variable: una variable apuntando a un
+# archivo que no existe deja a boto3 sin credenciales y el fallo aparece a
+# media tarea, como un 403 de S3 que no señala la causa.
+_ARCHIVO_CREDENCIALES = os.environ.get("AWS_SHARED_CREDENTIALS_FILE", "")
+if not _ARCHIVO_CREDENCIALES or not os.path.isfile(_ARCHIVO_CREDENCIALES):
+    raise RuntimeError(
+        "No hay credenciales de MinIO para boto3: AWS_SHARED_CREDENTIALS_FILE="
+        f"{_ARCHIVO_CREDENCIALES!r}. Las escribe credenciales_minio.sh en el "
+        "arranque del contenedor, a partir del secreto que monta compose."
+    )
 # Indicadores diarios (se actualizan cada día hábil)
 INDICADORES_DIARIOS = ["uf", "dolar", "euro", "utm", "tpm"]
 
@@ -290,8 +302,10 @@ with DAG(
             "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
             "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
             "spark.hadoop.fs.s3a.endpoint": MINIO_ENDPOINT,
-            # Las credenciales no van aquí: el job las resuelve desde el
-            # entorno con EnvironmentVariableCredentialsProvider.
+            # Las credenciales no van aquí, y tampoco en el job: las declara
+            # el core-site.xml que el entrypoint escribe en SPARK_CONF_DIR, y
+            # el driver lo lee desde el classpath. Un --conf acabaría en la
+            # línea de comandos de spark-submit.
             "spark.hadoop.fs.s3a.path.style.access": "true",
             "spark.hadoop.fs.s3a.impl": "org.apache.hadoop.fs.s3a.S3AFileSystem",
             "spark.hadoop.fs.s3a.connection.ssl.enabled": "false",

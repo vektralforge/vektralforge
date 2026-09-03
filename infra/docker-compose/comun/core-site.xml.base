@@ -1,15 +1,19 @@
 <?xml version="1.0"?>
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
 <!--
-  Configuración de Hadoop para el Hive Metastore de VektralForge.
+  VektralForge — configuración de Hadoop compartida por los tres consumidores
+  de S3A: el driver de Spark (que corre en el contenedor de Airflow), los
+  executors de spark-worker y el Hive Metastore.
 
-  Este archivo se genera en el arranque del contenedor a partir de las
-  variables del .env. La plantilla se versiona; el core-site.xml resultante no.
+  Esto es la BASE: solo lleva lo que no depende del entorno. El endpoint, el
+  identificador de la cuenta y la clave los añade credenciales_minio.sh en el
+  arranque, insertándolos antes de </configuration>. El core-site.xml
+  resultante no se versiona; esta base sí.
 
-  Por qué existe: al compartir el metastore entre Spark y Trino, Hive valida y
-  crea rutas en el object store al gestionar esquemas y tablas externas. Las
-  propiedades pasadas por -D en HADOOP_CLIENT_OPTS llegan a la JVM pero no al
-  Configuration de Hadoop, que lee de aquí.
+  Por qué existe para el metastore: al compartir catálogo entre Spark y Trino,
+  Hive valida y crea rutas en el object store al gestionar esquemas y tablas
+  externas. Las propiedades pasadas por -D en HADOOP_CLIENT_OPTS llegan a la
+  JVM pero no al Configuration de Hadoop, que lee de aquí.
 -->
 <configuration>
 
@@ -34,19 +38,7 @@
     <value>org.apache.hadoop.fs.s3a.S3A</value>
   </property>
 
-  <!-- MinIO -->
-  <property>
-    <name>fs.s3a.endpoint</name>
-    <value>__MINIO_ENDPOINT__</value>
-  </property>
-  <property>
-    <name>fs.s3a.access.key</name>
-    <value>__MINIO_ACCESS__</value>
-  </property>
-  <property>
-    <name>fs.s3a.secret.key</name>
-    <value>__MINIO_SECRET__</value>
-  </property>
+  <!-- MinIO no publica los buckets como subdominios. -->
   <property>
     <name>fs.s3a.path.style.access</name>
     <value>true</value>
@@ -62,7 +54,10 @@
     <value>us-east-1</value>
   </property>
 
-  <!-- Credenciales explícitas: sin esto el SDK intenta IMDS y tarda en fallar. -->
+  <!-- Fija el proveedor en vez de dejar la cadena por defecto. Dos motivos:
+       sin credenciales explícitas el SDK intenta IMDS y tarda en fallar, y la
+       cadena por defecto incluye EnvironmentVariableCredentialsProvider, que
+       es justo el camino que este diseño quiere cerrar. -->
   <property>
     <name>fs.s3a.aws.credentials.provider</name>
     <value>org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider</value>

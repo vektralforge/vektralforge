@@ -285,19 +285,26 @@ versiones hasta que alguien las purgue.
 | Producción | OpenBao | `Planificado` |
 
 Ningún archivo del repositorio contiene credenciales. Los que las necesitan
-—`marquez.yml`, el `core-site.xml` del metastore— se generan al arrancar el
-contenedor a partir del `.env`, y los catálogos de Trino usan interpolación
-`${ENV:...}` en tiempo de ejecución.
+—`marquez.yml`, el `core-site.xml` que comparten Spark, Airflow y el metastore,
+y los catálogos de Trino— se generan al arrancar el contenedor a partir de los
+secretos que Compose entrega como archivos en `/run/secrets/`.
 
-Las credenciales de MinIO se propagan **solo por variables de entorno**
-(`AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY`, derivadas en el Compose de
-`MINIO_ROOT_USER` y `MINIO_ROOT_PASSWORD`), nunca como propiedades de Spark.
-Una propiedad pasada con `--conf` viaja en la línea de comandos del proceso:
-queda en el `ps` del contenedor de Airflow y en `/proc/<pid>/cmdline`, aunque
-`SparkSubmitHook` la enmascare en el log y Spark la redacte en la UI del driver.
-S3A las resuelve con
-`software.amazon.awssdk.auth.credentials.EnvironmentVariableCredentialsProvider`
-y boto3 con su cadena por defecto.
+Las credenciales de MinIO **no viajan como variables de entorno**. Cada
+consumidor entra con su propia cuenta de servicio —`vf-pipeline`, `vf-hive`,
+`vf-trino`; ninguna es la raíz— acotada por
+`infra/docker-compose/minio/politica-datos.json` a operar sobre los objetos de
+los cinco buckets. Su clave llega como archivo montado, fuera de
+`docker inspect`, de `docker compose config` y de `/proc/<pid>/environ`, y el
+entrypoint la materializa en el formato que cada consumidor sabe leer: S3A en
+`core-site.xml` con `SimpleAWSCredentialsProvider`, boto3 en el INI que le
+indica `AWS_SHARED_CREDENTIALS_FILE`, y Trino en el catálogo que renderiza al
+arrancar. Solo el servicio `minio` y `init_users.sh` —que legítimamente crean
+buckets y cuentas— reciben la raíz.
+
+Tampoco como propiedades de Spark. Una propiedad pasada con `--conf` viaja en
+la línea de comandos del proceso: queda en el `ps` del contenedor de Airflow y
+en `/proc/<pid>/cmdline`, aunque `SparkSubmitHook` la enmascare en el log y
+Spark la redacte en la UI del driver.
 
 En local, OpenBao corre en modo `-dev`: almacenamiento en memoria y sellado
 automático. No es una configuración de producción.

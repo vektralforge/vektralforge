@@ -34,17 +34,22 @@ x-airflow-common: &airflow-common
     # dos runs aparecerían como grafos separados.
     AIRFLOW__OPENLINEAGE__SPARK_INJECT_PARENT_JOB_INFO: "true"
     AIRFLOW__OPENLINEAGE__SPARK_INJECT_TRANSPORT_INFO: "true"
-    # Credenciales de MinIO para S3A y boto3. Se pasan como variables de
-    # entorno y NUNCA como propiedades de Spark: una propiedad viaja en la
-    # línea de comandos de spark-submit y aparece en la UI del driver.
+    # Credenciales de MinIO para S3A y boto3. Aquí viaja solo el
+    # IDENTIFICADOR de la cuenta, que no es un secreto; la clave la entrega
+    # compose como archivo y el entrypoint la materializa en dos sitios que sí
+    # sabe leer cada consumidor: core-site.xml para S3A y el INI del SDK para
+    # boto3. Ver infra/docker-compose/comun/credenciales_minio.sh.
+    #
+    # Nunca como propiedad de Spark: ahí acabaría en la línea de comandos de
+    # spark-submit y en la UI del driver.
     #
     # Es la cuenta de servicio vf-pipeline, NO la raíz. Antes aquí iban
     # MINIO_ROOT_USER y MINIO_ROOT_PASSWORD, con lo que estos contenedores
     # podían borrar todos los buckets y administrar el servidor. La política que
     # las acota está en infra/docker-compose/minio/politica-datos.json y la
     # aplica `init_users.sh cuentas`.
-    AWS_ACCESS_KEY_ID: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
-    AWS_SECRET_ACCESS_KEY: ${MINIO_PIPELINE_SECRET_KEY}
+    MINIO_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
+    MINIO_SECRET_KEY_FILE: /run/secrets/minio_pipeline_secret_key
     # Catálogo compartido con Trino. El driver de Spark corre en este
     # contenedor, así que es aquí donde se resuelve.
     HIVE_METASTORE_URIS: thrift://hive-metastore:9083
@@ -62,6 +67,7 @@ x-airflow-common: &airflow-common
     MINIO_ENDPOINT: ${MINIO_ENDPOINT}
   secrets:
     - postgres_password
+    - minio_pipeline_secret_key
   volumes:
     - ../../airflow/dags:/opt/airflow/dags
     - ../../airflow/plugins:/opt/airflow/plugins
@@ -161,9 +167,10 @@ services:
       METASTORE_DB_USER: ${POSTGRES_USER}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
       MINIO_ACCESS_KEY: ${MINIO_HIVE_ACCESS_KEY:-vf-hive}
-      MINIO_SECRET_KEY: ${MINIO_HIVE_SECRET_KEY}
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_hive_secret_key
     secrets:
       - postgres_password
+      - minio_hive_secret_key
     ports:
       - "${BIND_HOST:-127.0.0.1}:9083:9083"
     depends_on:
@@ -186,9 +193,14 @@ services:
       SPARK_MASTER_WEBUI_PORT: "8082"
       OPENLINEAGE_URL: http://marquez-api:9000
       OPENLINEAGE_NAMESPACE: vektralforge
-      AWS_ACCESS_KEY_ID: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_PIPELINE_SECRET_KEY}
+      # Solo el identificador. La clave llega como archivo y el entrypoint la
+      # escribe en el core-site.xml de SPARK_CONF_DIR, que es donde S3A la busca.
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_pipeline_secret_key
       HIVE_METASTORE_URIS: thrift://hive-metastore:9083
+    secrets:
+      - minio_pipeline_secret_key
     ports:
       - "${BIND_HOST:-127.0.0.1}:7077:7077"
       - "${BIND_HOST:-127.0.0.1}:8082:8082"
@@ -208,10 +220,15 @@ services:
       SPARK_WORKER_WEBUI_PORT: "8083"
       OPENLINEAGE_URL: http://marquez-api:9000
       OPENLINEAGE_NAMESPACE: vektralforge
-      # Los executors resuelven las credenciales de S3A desde el entorno.
-      AWS_ACCESS_KEY_ID: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_PIPELINE_SECRET_KEY}
+      # Los executors resuelven las credenciales de S3A desde el
+      # core-site.xml que el entrypoint escribe en el arranque. Antes las leían
+      # del entorno, con EnvironmentVariableCredentialsProvider.
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_pipeline_secret_key
       HIVE_METASTORE_URIS: thrift://hive-metastore:9083
+    secrets:
+      - minio_pipeline_secret_key
     ports:
       - "${BIND_HOST:-127.0.0.1}:8083:8083"
     depends_on:
@@ -219,15 +236,23 @@ services:
 
   # ── Trino ─────────────────────────────────────────────────────────────────
   trino:
-    image: trinodb/trino:448
+    image: vektralforge/trino:448
+    build:
+      context: ../..
+      dockerfile: infra/docker-compose/trino/Dockerfile
     restart: unless-stopped
     mem_limit: 768m
     environment:
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
       MINIO_ACCESS_KEY: ${MINIO_TRINO_ACCESS_KEY:-vf-trino}
-      MINIO_SECRET_KEY: ${MINIO_TRINO_SECRET_KEY}
+      MINIO_SECRET_KEY_FILE: /run/secrets/minio_trino_secret_key
+    secrets:
+      - minio_trino_secret_key
     volumes:
-      - ../../trino/catalog:/etc/trino/catalog
+      # De solo lectura y como PLANTILLA: Trino no sabe leer un secreto de un
+      # archivo, solo resolver ${ENV:...}, así que el entrypoint renderiza el
+      # catálogo real en /etc/trino/catalog con la clave del secreto montado.
+      - ../../trino/catalog:/etc/trino/catalog-plantilla:ro
     ports:
       - "${BIND_HOST:-127.0.0.1}:8081:8080"
     depends_on:
@@ -337,6 +362,11 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: /opt/vektralforge/bin/cadena_de_conexion.py
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
       POSTGRES_USER: ${POSTGRES_USER}
+      # No habla con MinIO, así que no recibe ni la cuenta ni el secreto. El
+      # entrypoint exige los dos salvo que se le diga que no aquí: preferimos
+      # que un servicio nuevo al que se le olvide la cuenta no arranque, a que
+      # arranque y falle con un 403 media hora después.
+      VF_CREDENCIALES_MINIO: "no"
     secrets:
       - postgres_password
     command: db migrate
@@ -433,6 +463,18 @@ services:
 secrets:
   postgres_password:
     environment: POSTGRES_PASSWORD
+  # Una cuenta de servicio por consumidor, cada una con su secreto: así el
+  # radio de una filtración sigue siendo el de la cuenta y no el del stack.
+  # Los IDENTIFICADORES no están aquí — van en environment:, porque no son
+  # secretos y llevan valor por defecto para que un .env anterior siga
+  # funcionando. Los secretos, a propósito, no llevan defecto: sin ellos el
+  # arranque debe fallar y no continuar con una credencial vacía.
+  minio_pipeline_secret_key:
+    environment: MINIO_PIPELINE_SECRET_KEY
+  minio_hive_secret_key:
+    environment: MINIO_HIVE_SECRET_KEY
+  minio_trino_secret_key:
+    environment: MINIO_TRINO_SECRET_KEY
 
 volumes:
   postgres-data:

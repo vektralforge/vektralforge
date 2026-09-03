@@ -1,41 +1,23 @@
 #!/usr/bin/env bash
 #
-# Genera core-site.xml y hive-site.xml a partir del entorno y del secreto
-# montado, luego cede el control al entrypoint original de la imagen de Hive.
+# Genera core-site.xml y hive-site.xml a partir del entorno y de los dos
+# secretos montados, luego cede el control al entrypoint original de la imagen.
 
 set -euo pipefail
 
-TEMPLATE="${HIVE_CORE_SITE_TEMPLATE:-/opt/hadoop/etc/hadoop/core-site.xml.template}"
-OUTPUT="${HIVE_CORE_SITE:-/opt/hadoop/etc/hadoop/core-site.xml}"
-
-: "${MINIO_ENDPOINT:=http://minio:9000}"
-
-# Son las de la cuenta de servicio vf-hive, NO las de la raíz de MinIO. Antes
-# aquí llegaban MINIO_ROOT_USER y MINIO_ROOT_PASSWORD: el metastore podía borrar
-# todos los buckets y administrar el servidor para hacer un trabajo que solo
-# necesita leer y escribir objetos.
-if [ -z "${MINIO_ACCESS_KEY:-}" ] || [ -z "${MINIO_SECRET_KEY:-}" ]; then
-  echo "ERROR: faltan MINIO_ACCESS_KEY o MINIO_SECRET_KEY." >&2
-  echo "       Las pone docker-compose.yml desde MINIO_HIVE_* del .env, y la" >&2
-  echo "       cuenta la crea \`init_users.sh cuentas\` en el dev-reset." >&2
-  exit 1
-fi
-
-if [ ! -f "$TEMPLATE" ]; then
-  echo "ERROR: no se encuentra la plantilla en $TEMPLATE" >&2
-  exit 1
-fi
-
-# Delimitador | para no chocar con las barras de las URL.
-sed \
-  -e "s|__MINIO_ENDPOINT__|${MINIO_ENDPOINT}|g" \
-  -e "s|__MINIO_ACCESS__|${MINIO_ACCESS_KEY}|g" \
-  -e "s|__MINIO_SECRET__|${MINIO_SECRET_KEY}|g" \
-  "$TEMPLATE" > "$OUTPUT"
-
-chmod 640 "$OUTPUT"
-
-echo "→ core-site.xml generado: ${MINIO_ENDPOINT} (s3:// y s3a:// vía S3A)"
+# ── core-site.xml: acceso a MinIO ────────────────────────────────────────────
+#
+# Lo escribe el script común, el mismo que usan las imágenes de Airflow y de
+# Spark: los tres consumidores de S3A necesitan exactamente las mismas
+# propiedades y antes solo el metastore las tenía en un archivo.
+#
+# La clave llega como archivo montado, no como MINIO_SECRET_KEY. Es la cuenta
+# de servicio vf-hive, NO la raíz de MinIO: antes aquí llegaban MINIO_ROOT_USER
+# y MINIO_ROOT_PASSWORD y el metastore podía borrar todos los buckets para
+# hacer un trabajo que solo necesita leer y escribir objetos.
+VF_CORE_SITE="${HIVE_CORE_SITE:-/opt/hadoop/etc/hadoop/core-site.xml}" \
+VF_CORE_SITE_BASE="${HIVE_CORE_SITE_BASE:-/opt/hadoop/etc/hadoop/core-site.xml.base}" \
+  /opt/vektralforge/bin/credenciales_minio.sh
 
 # ── hive-site.xml: conexión al metastore ─────────────────────────────────────
 #

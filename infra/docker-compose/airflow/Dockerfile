@@ -88,9 +88,42 @@ ENV SPARK_CONF_DIR=/opt/vektralforge/spark-conf
 # La cadena de conexión a Postgres se calcula al vuelo desde el secreto montado,
 # vía AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD. Ver el docstring del script.
 COPY infra/docker-compose/airflow/cadena_de_conexion.py /opt/vektralforge/bin/cadena_de_conexion.py
+
+# ── Credenciales de MinIO: archivos, no variables de entorno ─────────────────
+#
+# En este contenedor hay dos consumidores y cada uno lee un formato distinto:
+# el driver de Spark —SparkSubmitOperator usa modo client, así que corre AQUÍ—
+# busca core-site.xml en SPARK_CONF_DIR, y boto3 —el de los DAGs y el de los
+# jobs de spark/jobs/— lee el INI que le indica AWS_SHARED_CREDENTIALS_FILE.
+#
+# Antes las dos rutas se resolvían con AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY
+# en el entorno de los cuatro contenedores, donde las enseñaba `docker inspect`.
+COPY infra/docker-compose/comun/core-site.xml.base /opt/vektralforge/conf/core-site.xml.base
+COPY infra/docker-compose/comun/credenciales_minio.sh /opt/vektralforge/bin/credenciales_minio.sh
+COPY infra/docker-compose/airflow/docker-entrypoint.sh /opt/vektralforge/bin/docker-entrypoint.sh
+
+# COPY crea los directorios intermedios como root aunque el USER sea airflow, y
+# el entrypoint escribe en spark-conf/ y en aws/ al arrancar. Renombrar exige
+# permiso sobre el DIRECTORIO, así que el chown va sobre ellos y no sobre los
+# archivos.
 USER root
-RUN chmod 755 /opt/vektralforge/bin/cadena_de_conexion.py
+# chmod 755 y no `chmod +x`. Estos archivos llegan al contexto de build con
+# permisos 700, y `+x` sobre 700 deja 711: el kernel ejecuta el archivo, pero
+# el intérprete del shebang necesita LEERLO, y sin o+r falla con un
+# «bash: ...: Permission denied» que parece un problema de ejecución y no lo es.
+RUN chmod 755 /opt/vektralforge/bin/cadena_de_conexion.py \
+              /opt/vektralforge/bin/credenciales_minio.sh \
+              /opt/vektralforge/bin/docker-entrypoint.sh && \
+    chmod 644 /opt/vektralforge/conf/core-site.xml.base && \
+    mkdir -p /opt/vektralforge/aws && \
+    chown airflow:root /opt/vektralforge/spark-conf /opt/vektralforge/aws && \
+    chmod 700 /opt/vektralforge/aws
 USER airflow
+
+ENV VF_CORE_SITE=/opt/vektralforge/spark-conf/core-site.xml
+ENV VF_CORE_SITE_BASE=/opt/vektralforge/conf/core-site.xml.base
+ENV VF_AWS_CREDENTIALS=/opt/vektralforge/aws/credentials
+ENV AWS_SHARED_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 
 RUN airflow version && \
     java -version && \
@@ -124,3 +157,27 @@ RUN printf 'clave-de-prueba' > /tmp/pw && \
       sed -E 's#//([^:]+):[^@]+@#//\1:<clave>@#' /tmp/salida >&2; exit 1; } && \
     rm -f /tmp/salida && \
     echo "cadena_de_conexion.py produce una URL válida y sin salto final"
+
+# El entrypoint encadena /entrypoint, el de la imagen de Airflow, y se declara
+# detrás de dumb-init para no quedarse como PID 1 sin recoger zombis — que es
+# lo que hace la imagen base. Las dos piezas se comprueban aquí: si alguna
+# desaparece en una versión futura, el build lo dice y no el primer arranque.
+RUN test -x /entrypoint || { \
+      echo "ERROR: la imagen de Airflow ya no trae /entrypoint." >&2; exit 1; } && \
+    test -x /usr/bin/dumb-init || { \
+      echo "ERROR: la imagen de Airflow ya no trae dumb-init." >&2; exit 1; } && \
+    echo "entrypoint y dumb-init de la imagen base presentes"
+
+# El generador de credenciales, con una clave falsa, con el usuario con el que
+# va a correr y escribiendo en el destino real: así comprueba de paso que los
+# dos directorios son escribibles por `airflow`.
+RUN printf 'clave-de-prueba' > /tmp/s && \
+    MINIO_ACCESS_KEY=prueba MINIO_SECRET_KEY_FILE=/tmp/s \
+      /opt/vektralforge/bin/credenciales_minio.sh && \
+    rm -f /tmp/s && \
+    grep -q "<name>fs.s3a.secret.key</name>" /opt/vektralforge/spark-conf/core-site.xml && \
+    grep -q "^\\[default\\]$" /opt/vektralforge/aws/credentials && \
+    rm -f /opt/vektralforge/spark-conf/core-site.xml /opt/vektralforge/aws/credentials && \
+    echo "credenciales_minio.sh genera core-site.xml y el INI del SDK"
+
+ENTRYPOINT ["/usr/bin/dumb-init", "--", "/opt/vektralforge/bin/docker-entrypoint.sh"]
