@@ -47,7 +47,7 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | MinIO | 2024-04 | Almacenamiento de objetos S3 |
 | Apache Superset | 6.1.0 | Visualización |
 | OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
-| Marquez | — | Almacén y UI de linaje |
+| Marquez | 0.51.1 | Almacén y UI de linaje |
 | PostgreSQL | 15 | Metadatos |
 | Redis | 7.2 | Caché de Superset (metadatos y datos de los gráficos) |
 | OpenBao | 2.1.0 | Secretos (modo dev en local) |
