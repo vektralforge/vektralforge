@@ -1,5 +1,17 @@
 # VektralForge — Arquitectura
 
+> **In English.** This is the reference for what is actually implemented, not
+> what is planned. It covers the thirteen-service Docker Compose stack, the
+> Spark-writes / Trino-reads split over Delta Lake on MinIO with a shared Hive
+> Metastore, the OpenLineage path into Marquez, how credentials reach each
+> container as mounted files, and the four Mermaid diagrams of data flow,
+> services, lakehouse layers and secret delivery.
+>
+> Read the maturity badges: `Operativo`, `Parcial`, `Planificado`,
+> `En evaluación`. Anything not marked `Operativo` is not running — **there is
+> no Kubernetes deployment yet**. [README.md](../README.md) covers the same
+> ground in English, in less depth.
+
 Documento técnico de referencia. Describe el stack tal como está implementado,
 no como se planea que esté.
 

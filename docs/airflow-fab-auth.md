@@ -1,8 +1,20 @@
 # Autenticación de Airflow con FAB auth manager
 
-Guía para cambiar VektralForge de **SimpleAuthManager** (el predeterminado de
-Airflow 3) a **FabAuthManager**, que aporta gestión de usuarios y roles desde la
-interfaz y desde la CLI.
+> **In English.** How the stack authenticates Airflow users. Airflow 3 ships
+> SimpleAuthManager, which declares users in configuration and generates their
+> passwords; this stack runs **FabAuthManager** instead, so users and roles live
+> in the database and can be managed from the UI and the `airflow users` CLI.
+>
+> The document records the switch — provider, configuration, database
+> migration, admin user, verification — plus the predefined roles,
+> `webserver_config.py`, API tokens, common failures, and what to change before
+> deploying anywhere that is not a laptop.
+
+El stack usa **FabAuthManager**, no el **SimpleAuthManager** que Airflow 3 trae
+por defecto: `AIRFLOW__CORE__AUTH_MANAGER` lo fija en el compose y
+`apache-airflow-providers-fab` está en `airflow/requirements.txt`. Este
+documento registra ese cambio —cómo se hizo y cómo se opera—, no un trabajo
+pendiente.
 
 ## Por qué
 

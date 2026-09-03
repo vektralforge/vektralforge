@@ -1,5 +1,12 @@
 # Tests de los jobs Spark
 
+> **In English.** These tests cover `spark/jobs/transformaciones.py` — the pure
+> functions that turn an API response into rows. No Spark, no network, no boto3,
+> which is why the CI job runs them without installing pyspark. The document
+> lists what each test covers, including the percentile check against
+> `numpy.percentile`, and states what is **not** covered: the Delta write and
+> the Spark session itself.
+
 Cubren `spark/jobs/transformaciones.py`: todo lo que convierte una respuesta de
 API en filas. Sin Spark, sin red y sin boto3 — solo aritmética y diccionarios—,
 así que el job `test-spark` del CI no necesita instalar pyspark para correrlos.

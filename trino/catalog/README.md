@@ -1,5 +1,12 @@
 # Catálogos de Trino
 
+> **In English.** One `.properties` file per Trino catalog, loaded at startup
+> and queried by file name. Only `delta` is active — Delta Lake tables on MinIO
+> through the Hive Metastore. Files ending in `.disabled` are templates for
+> federated queries and are not loaded. Never write a literal credential in
+> these files: use `${ENV:VARIABLE}`; the `detect-secrets` hook blocks the
+> commit otherwise.
+
 Cada archivo `.properties` define un conector. Trino los carga al arrancar y
 expone cada uno como un catálogo consultable por nombre de archivo: el catálogo
 de `delta.properties` se consulta como `delta.esquema.tabla`.
