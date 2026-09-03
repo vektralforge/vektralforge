@@ -1,5 +1,11 @@
 # Recursos de marca
 
+> **In English.** Which brand asset to use where: horizontal lockup, symbol
+> only, spec sheet, favicons; `-dark` / `-light` / `-mono` variants; below 120 px
+> use the symbol alone. The wordmark is converted to paths, so **the text in
+> these SVGs cannot be edited** — regenerate from the typeface instead. Usage is
+> governed by [TRADEMARK.md](../../TRADEMARK.md), not by Apache 2.0.
+
 Activos gráficos de VektralForge. El manual completo —concepto, construcción
 geométrica, paleta, tipografía y usos incorrectos— está en
 [`docs/marca.md`](../marca.md).

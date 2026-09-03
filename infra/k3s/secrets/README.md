@@ -1,5 +1,11 @@
 # infra/k3s/secrets
 
+> **In English.** What the four secrets of the stack would look like on
+> Kubernetes, and why the move is cheap: Compose already delivers them as files
+> under `/run/secrets/`, which is exactly the shape of a `Secret` mounted as a
+> volume, so no entrypoint changes. **The K3s deployment does not exist yet** —
+> see the note below and the deployment issue.
+
 > **El despliegue a K3s está planificado, no implementado.** Este directorio
 > describe cómo se gestionarán los secretos cuando exista; hoy no hay ningún
 > manifiesto que los consuma. Ver el issue «Despliegue a K3s».

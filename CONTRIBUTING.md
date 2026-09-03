@@ -147,6 +147,14 @@ is by audience rather than by taste:
 in both languages; when you change one, change the other in the same pull
 request.
 
+Every Spanish document opens with a short **English abstract** in a blockquote:
+what it covers, the decisions it records, and where the English material is.
+That is deliberately an abstract and not a translation — an abstract stays true
+across edits, so it does not rot the way a mirrored copy does, and there is no
+check anywhere that can tell you a translation has stopped matching its
+original. Keep the abstract accurate when you change a document; do not grow it
+into a second copy.
+
 This is not a preference to be relitigated per file: the codebase is Spanish and
 rewriting it would lose more than it gains. Do not mix languages *within* a
 file — a Spanish module with English comments is worse than either.

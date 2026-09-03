@@ -1,7 +1,17 @@
 # VektralForge — Marca e Imagotipo
 
+> **In English.** The canonical brand manual: the concept behind the mark, its
+> geometric construction, the lockup variants, clear space and minimum sizes,
+> the colour system, typography (Space Grotesk, JetBrains Mono, Inter — all SIL
+> OFL 1.1) and the incorrect uses.
+>
+> Brand assets are covered by [TRADEMARK.md](../TRADEMARK.md), **not** by the
+> project's Apache 2.0 licence: a fork must drop the mark and use a different
+> name. [docs/brand/README.md](brand/README.md) is the short version — which
+> file to use where.
+
 **Versión 1.0 · Concepto elegido: "Vektor Slash"** (Concepto B: geometría y rampa terracota originales; sistema tipográfico y neutros del informe)
-Proyecto: vektralforge.org · Lakehouse Open Source Stack (Airflow · Spark · Delta Lake · MinIO · Trino · OpenBao sobre K3s)
+Proyecto: vektralforge.org · Lakehouse Open Source Stack (Airflow · Spark · Delta Lake · MinIO · Trino)
 
 Este documento es la referencia canónica de la identidad visual del proyecto. Se publica junto a los archivos SVG en el repositorio para que la comunidad pueda usar la marca de forma consistente.
 
