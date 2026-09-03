@@ -46,12 +46,31 @@ leer_valor() {
 
 # sed con delimitador | para no chocar con las barras de las URL, y escapando
 # el valor por si contiene caracteres especiales.
+#
+# Si la clave NO está en el archivo, se añade. Antes solo se sustituía: `sed` no
+# encontraba línea que cambiar, no escribía nada, y el bucle de más abajo —que
+# había leído un valor vacío y la daba por pendiente— anunciaba «generada» de
+# todos modos. Cualquier variable nueva de la plantilla se perdía en silencio
+# para quien ya tuviera un .env, que es todo el mundo salvo en la primera
+# instalación.
 escribir_valor() {
     local clave="$1" valor="$2"
     local escapado
     escapado=$(printf '%s' "$valor" | sed -e 's/[\\|&]/\\&/g')
-    sed -i.bak -E "s|^${clave}=.*|${clave}=${escapado}|" "$DESTINO"
-    rm -f "${DESTINO}.bak"
+    if grep -qE "^${clave}=" "$DESTINO"; then
+        sed -i.bak -E "s|^${clave}=.*|${clave}=${escapado}|" "$DESTINO"
+        rm -f "${DESTINO}.bak"
+    else
+        printf '%s=%s\n' "$clave" "$valor" >> "$DESTINO"
+    fi
+
+    # Comprobar lo escrito en vez de suponerlo: es justo lo que faltaba para que
+    # el fallo anterior se notara. -x exige línea completa y -F la trata como
+    # texto literal, sin interpretar nada del valor.
+    if ! grep -qxF "${clave}=${valor}" "$DESTINO"; then
+        echo "  ✗ No se pudo escribir $clave en $DESTINO" >&2
+        exit 1
+    fi
 }
 
 generar_hex() {
