@@ -176,7 +176,7 @@ trino/catalog/    Catálogos de Trino
 superset/         Configuración de dashboards
 infra/
   docker-compose/ Stack local y Dockerfiles
-  k3s/            Manifiestos Kubernetes
+  k3s/            Namespaces — el despliegue está planificado, no implementado
 .ci/scripts/      Lógica de lint, test y deploy
 .github/          CI y plantillas
 docs/             Documentación, marca y diagramas
@@ -261,8 +261,16 @@ make dev-load-example   # Ejecuta los pipelines y configura los dashboards
 make lint-all           # Ruff + sqlfluff
 make test-all           # Tests
 make detect-secrets     # Escaneo de credenciales
-make deploy-staging     # Deploy K3s staging
-make deploy-prod        # Deploy K3s producción (pide confirmación)
+```
+
+El despliegue a K3s **está planificado, no implementado**: `make deploy-staging`
+y `make deploy-prod` existen pero fallan con un mensaje que lo explica. Faltan
+los manifiestos de los servicios y, antes que eso, publicar las imágenes del
+proyecto en un registro. Ver el issue «Despliegue a K3s».
+
+```bash
+make deploy-staging     # Planificado — hoy falla explicando qué falta
+make deploy-prod        # Planificado — ídem
 ```
 
 Kafka y ZooKeeper no arrancan con `make dev-up`: están detrás de un perfil, para
