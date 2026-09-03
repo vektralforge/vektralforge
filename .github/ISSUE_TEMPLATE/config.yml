@@ -1,0 +1,10 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/vektralforge/vektralforge/security/advisories/new
+    about: >-
+      Do not open a public issue. Report privately through a draft advisory,
+      or email security@vektralforge.org. See SECURITY.md.
+  - name: Question or idea
+    url: https://github.com/vektralforge/vektralforge/discussions
+    about: Open a discussion instead — issues are for actionable work.

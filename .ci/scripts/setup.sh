@@ -36,8 +36,20 @@ pip install -r "$REPO_ROOT/airflow/requirements.txt"
 echo "→ Instalando dependencias Spark..."
 pip install -r "$REPO_ROOT/spark/requirements.txt"
 
+# Desde los requirements, no desde una lista escrita aquí: esta línea instalaba
+# ruff, sqlfluff y detect-secrets SIN versión, saltándose los pines que el CI sí
+# respeta. El resultado era que el lint local y el del CI podían discrepar, que
+# es exactamente lo que los pines existen para evitar.
 echo "→ Instalando herramientas de desarrollo..."
-pip install pre-commit detect-secrets ruff sqlfluff hvac --quiet
+pip install --quiet -r "$REPO_ROOT/airflow/requirements-dev.txt"
+pip install --quiet -r "$REPO_ROOT/spark/requirements-dev.txt"
+
+# pre-commit es la única que se queda sin fijar, y a propósito: no es un linter
+# sino el ejecutor, y las versiones que deciden el resultado son los `rev` de
+# .pre-commit-config.yaml, que sí están fijados y que Dependabot vigila con su
+# ecosistema `pre-commit`. Fijar además el ejecutor añadiría una dependencia que
+# mantener a cambio de casi nada.
+pip install --quiet pre-commit
 
 # ── 6. pre-commit ─────────────────────────────────────────────────────────────
 echo "→ Configurando pre-commit hooks..."

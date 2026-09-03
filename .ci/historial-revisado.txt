@@ -1,0 +1,33 @@
+# Hallazgos de alta entropía del historial que ya se miraron uno por uno.
+#
+# Formato:  <huella>  <motivo>
+# La huella son los 12 primeros hex del SHA-256 del token; la calcula
+# .ci/scripts/auditar_historial.sh y no revela el valor.
+#
+# Este archivo NO es una lista de excepciones para acallar avisos: es el
+# registro de la auditoría. Una huella se añade después de abrir su commit y
+# decidir, no antes. Y funciona además como control positivo — si el guion
+# deja de encontrar alguna de estas, falla, porque eso significa que dejó de
+# mirar donde miraba.
+#
+# ---------------------------------------------------------------------------
+# Commit 2a234169 (2026-08-14), .env.example — cuatro credenciales de ejemplo
+# con valor real en vez de marcador. Corregido después; hoy las cuatro líneas
+# dicen `GENERAR` y `.ci/scripts/init_env.sh` las genera por instalación.
+#
+# Están muertas: ninguna de las cuatro aparece en el `.env` vivo ni en el
+# `.env.example` actual, y ningún despliegue las usa — cada instalación
+# genera las suyas. Se decide NO reescribir el historial: son 162 comits, el
+# rebase invalidaría los PR de Dependabot abiertos y todos los SHA citados en
+# la documentación, y el beneficio de sacar cuatro secretos muertos no lo
+# paga.
+# ---------------------------------------------------------------------------
+dfb232e9e887  AIRFLOW__CORE__FERNET_KEY de ejemplo, muerta, .env.example @ 2a234169
+826615da6101  AIRFLOW__API__SECRET_KEY de ejemplo, muerta, .env.example @ 2a234169
+7ee29f6b0c3e  AIRFLOW__API_AUTH__JWT_SECRET de ejemplo, muerta, .env.example @ 2a234169
+a70f2b5ee1de  SUPERSET_SECRET_KEY de ejemplo, muerta, .env.example @ 2a234169
+
+# ---------------------------------------------------------------------------
+# Falso positivo: no es una credencial.
+# ---------------------------------------------------------------------------
+0fd0ed6b0a32  ruta de fichero (/opt/vektralforge/aws/credentials) en los Dockerfile

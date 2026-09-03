@@ -4,231 +4,237 @@
 </p>
 
 <p align="center">
-  <strong>Data Lakehouse open source con linaje de datos integrado</strong>
+  <strong>An open source data lakehouse with lineage built in</strong>
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-Apache%202.0-B4552D" alt="Apache 2.0"></a>
-  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/contribuciones-DCO-B4552D" alt="DCO"></a>
-  <a href="GOVERNANCE.md"><img src="https://img.shields.io/badge/gobernanza-TSC-B4552D" alt="Gobernanza"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-B4552D" alt="Apache 2.0"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/contributions-DCO-B4552D" alt="DCO"></a>
+  <a href="GOVERNANCE.md"><img src="https://img.shields.io/badge/governance-TSC-B4552D" alt="Governance"></a>
   <a href="../../actions/workflows/ci.yml"><img src="../../actions/workflows/ci.yml/badge.svg?branch=develop" alt="CI"></a>
+</p>
+
+<p align="center">
+  <strong>English</strong> · <a href="README.es.md">Español</a>
 </p>
 
 ---
 
-VektralForge integra Apache Airflow, Spark, Delta Lake, Trino y Superset en un
-stack desplegable, con trazabilidad de extremo a extremo mediante OpenLineage y
-Marquez. Levanta en local con Docker Compose y está pensado para producción
-sobre K3s.
+VektralForge wires Apache Airflow, Spark, Delta Lake, Trino and Superset into
+one stack, with end-to-end traceability through OpenLineage and Marquez. It runs
+locally on Docker Compose; a K3s deployment is planned but **not implemented**
+yet — see [Deployment](#deployment).
 
-Dos pipelines reales vienen incluidos, ambos contra APIs públicas chilenas sin
-credenciales: indicadores financieros de mindicador.cl y riesgo climático
-comunal de ARClim (Ministerio del Medio Ambiente).
+Two real pipelines ship with it, both against public Chilean APIs that need no
+credentials: financial indicators from mindicador.cl and municipal climate risk
+from ARClim (Chilean Ministry of the Environment).
 
-**Licencia [Apache 2.0](LICENSE) con [DCO](CONTRIBUTING.md) en lugar de CLA**: el
-copyright queda distribuido entre quienes contribuyen, no concentrado en una
-empresa. Ver [OPEN_SOURCE_PROMISE.md](OPEN_SOURCE_PROMISE.md).
+**[Apache 2.0](LICENSE) with a [DCO](CONTRIBUTING.md) instead of a CLA**:
+copyright stays distributed among the people who contribute rather than
+concentrated in one company. See [OPEN_SOURCE_PROMISE.md](OPEN_SOURCE_PROMISE.md).
 
-Patrocinado por [ALEPH SERVER LTDA.](https://alephserver.cl), que financia el
-proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
+Sponsored by [ALEPH SERVER LTDA.](https://alephserver.cl), which funds the
+project without controlling it — see [SPONSORS.md](SPONSORS.md) and
 [GOVERNANCE.md](GOVERNANCE.md).
 
 ---
 
 ## Stack
 
-| Componente | Versión | Rol |
+| Component | Version | Role |
 |---|---|---|
-| Apache Airflow | 3.3.0 | Orquestación |
-| Apache Spark | 4.1.3 | Procesamiento y escritura ACID |
-| Delta Lake | 4.1.0 | Formato de tabla transaccional |
-| Apache Hive Metastore | 4.0.0 | Catálogo compartido Spark ↔ Trino |
-| Trino | 448 | Consulta SQL |
-| MinIO | 2025-04 | Almacenamiento de objetos S3 · ver nota |
-| Apache Superset | 6.1.0 | Visualización |
-| OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
-| Marquez | 0.51.1 | Almacén y UI de linaje |
-| PostgreSQL | 15 | Metadatos |
-| Redis | 7.2 | Caché de Superset (metadatos y datos de los gráficos) |
-| OpenBao | 2.1.0 | Secretos (modo dev en local) |
-| Apache Kafka | 7.6.1 (CP) | Perfil opcional `streaming`; sin pipeline aún |
-| Apache ZooKeeper | 7.6.1 (CP) | Perfil opcional `streaming`; solo sirve a Kafka |
+| Apache Airflow | 3.3.0 | Orchestration |
+| Apache Spark | 4.1.3 | Processing and ACID writes |
+| Delta Lake | 4.1.0 | Transactional table format |
+| Apache Hive Metastore | 4.0.0 | Catalogue shared by Spark and Trino |
+| Trino | 448 | SQL query engine |
+| MinIO | 2025-04 | S3 object storage · see note |
+| Apache Superset | 6.1.0 | Visualisation |
+| OpenLineage | 1.52.0 | Lineage in Airflow and Spark |
+| Marquez | 0.51.1 | Lineage store and UI |
+| PostgreSQL | 15 | Metadata |
+| Redis | 7.2 | Superset cache (metadata and chart data) |
+| OpenBao | 2.1.0 | Secrets (dev mode locally) |
+| Apache Kafka | 7.6.1 (CP) | Optional `streaming` profile; no pipeline yet |
+| Apache ZooKeeper | 7.6.1 (CP) | Optional `streaming` profile; serves Kafka only |
 
-Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
-versión menor o PySpark rechaza la ejecución.
+**Python 3.12 everywhere**: the Spark driver and its executors must agree on the
+minor version or PySpark refuses to run.
 
-**Sobre MinIO.** La versión está fijada a propósito en `RELEASE.2025-04-08`: es
-la última que conserva la consola de administración íntegra, porque MinIO la
-retiró de la edición comunitaria en la release siguiente. Después el proyecto se
-apagó —última imagen pública en septiembre de 2025, repositorio archivado en
-2026—, así que **no hay una versión posterior a la que ir**, y ninguna imagen
-publicada incluye el parche de `CVE-2025-62506` (escalada de privilegios,
-severidad alta). Es un riesgo asumido para un stack de desarrollo local con los
-puertos en loopback, y no lo es para nada más. La salida no es otra versión de
-MinIO sino otro backend: el almacenamiento habla S3 y nada del proyecto depende
-de MinIO en particular — ver [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+**About MinIO.** The version is pinned on purpose to `RELEASE.2025-04-08`: it is
+the last one that keeps the full administration console, which MinIO removed
+from the community edition in the following release. The project then shut down
+— last published image in September 2025, repository archived in 2026 — so
+**there is no later version to move to**, and no published image carries the fix
+for `CVE-2025-62506` (privilege escalation, high severity). That is an accepted
+risk for a local development stack bound to loopback, and it is not acceptable
+for anything else. The way out is not another MinIO release but another backend:
+the storage layer speaks S3 and nothing in the project depends on MinIO in
+particular — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-Licencias de terceros, incluidas las dos que no son permisivas —MinIO (AGPLv3) y
-Graylog (SSPL)— en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Third-party licences, including the two that are not permissive — MinIO (AGPLv3)
+and Graylog (SSPL) — are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
 
-## Arranque
+## Getting started
 
-### Requisitos
+### Requirements
 
 ```bash
 docker --version        # >= 24.0
 docker compose version  # >= 2.20
-python3.12 --version    # 3.12 exacto — brew install python@3.12
+python3.12 --version    # exactly 3.12 — brew install python@3.12
 make --version
 ```
 
-Docker Desktop necesita al menos **8 GB de RAM** asignados
-(Settings → Resources → Memory). Con menos, los contenedores mueren por OOM.
+Docker Desktop needs at least **8 GB of RAM** allocated
+(Settings → Resources → Memory). With less, containers are killed by the OOM
+reaper.
 
-### Puesta en marcha
+### Start it
 
 ```bash
 git clone https://github.com/vektralforge/vektralforge.git
 cd vektralforge
 
-make init-env          # Genera claves y pide contraseñas
-make setup             # Crea .venv con Python 3.12
-make dev-up            # Levanta el stack
-make dev-load-example  # Ejecuta los pipelines y configura los dashboards
+make init-env          # Generates keys, offers a password per service
+make setup             # Creates .venv with Python 3.12
+make dev-up            # Brings the stack up
+make dev-load-example  # Runs the pipelines and builds the dashboards
 ```
 
-`make init-env` crea `infra/docker-compose/.env` a partir de `.env.example`:
-genera las claves criptográficas y ofrece una contraseña por servicio, que
-puedes aceptar o reemplazar. Es idempotente, así que puedes volver a
-ejecutarlo cuando aparezcan variables nuevas.
+`make init-env` creates `infra/docker-compose/.env` from `.env.example`: it
+generates the cryptographic keys and offers a password per service, which you can
+accept or replace. It is idempotent, so run it again whenever new variables
+appear.
 
-`make dev-load-example` tarda unos cinco minutos la primera vez.
+`make dev-load-example` takes about five minutes the first time.
 
-### Servicios
+### Services
 
-| Servicio | URL |
+| Service | URL |
 |---|---|
 | Airflow | http://localhost:8090 |
 | Superset | http://localhost:8088 |
 | Trino | http://localhost:8081 |
 | MinIO | http://localhost:9001 |
-| Marquez (linaje) | http://localhost:3000 |
+| Marquez (lineage) | http://localhost:3000 |
 | Spark Master | http://localhost:8082 |
 | OpenBao | http://localhost:8200 |
 
-Las credenciales salen de `infra/docker-compose/.env`, que tiene permisos 600.
-`make dev-up` **no las imprime**: el banner final muestra el nombre de la
-variable de cada una. Para leer una concreta:
+Credentials live in `infra/docker-compose/.env`, mode 600. `make dev-up` **does
+not print them**: the closing banner shows the name of each variable instead. To
+read one:
 
 ```bash
 grep '^AIRFLOW_ADMIN_PASSWORD=' infra/docker-compose/.env | cut -d= -f2-
 ```
 
-Trino, Spark y Marquez no piden credenciales de ningún tipo: cualquiera que
-alcance esos puertos entra. Por eso el `.env` fija `BIND_HOST=127.0.0.1`.
+Trino, Spark and Marquez ask for no credentials at all: anyone who reaches those
+ports is in. That is why `.env` sets `BIND_HOST=127.0.0.1`.
 
 ---
 
-## Arquitectura
+## Architecture
 
-**Spark escribe, Trino lee.** Las operaciones ACID sobre Delta Lake —`MERGE`,
-`UPDATE`, `DELETE`, `VACUUM`— solo las hace Spark; Trino aporta consulta SQL
-interactiva sobre las mismas tablas.
+**Spark writes, Trino reads.** ACID operations on Delta Lake — `MERGE`,
+`UPDATE`, `DELETE`, `VACUUM` — are Spark's job; Trino provides interactive SQL
+over the same tables.
 
-Ambos comparten el Hive Metastore. Los jobs escriben con `saveAsTable`, no con
-`save(ruta)`, así que la tabla queda registrada en el catálogo en el mismo acto
-en que se escribe y Trino la ve sin registrarla dos veces. Añadir un pipeline no
-exige tocar ningún script de registro: basta con escribir en `bronze`.
-
-```
-API pública → Airflow → Spark → Delta Lake → MinIO
-                                     ↓
-                          Hive Metastore (compartido)
-                                     ↓
-                                  Trino → Superset
-
-        OpenLineage captura el linaje en cada paso → Marquez
-```
-
-El linaje se captura en dos niveles. El provider de OpenLineage de Airflow emite
-el run de cada tarea; el `OpenLineageSparkListener` —declarado en el
-`spark-defaults.conf` que comparten las imágenes de Airflow y Spark— emite los
-datasets de entrada y salida de cada job. Airflow inyecta en cada `spark-submit`
-el parent job y la URL de transporte, así que el run de Spark cuelga de su tarea
-en Marquez en vez de aparecer como un grafo suelto.
-
-El soporte de Spark 4 llegó en OpenLineage 1.37.0: versiones anteriores no
-sirven con este stack.
-
-Las capas siguen el patrón medallón: `raw/` guarda la respuesta cruda de la API,
-`bronze/` las tablas Delta tipadas, `silver/` y `gold/` los modelos derivados.
-
-Detalle completo en [docs/arquitectura.md](docs/arquitectura.md).
-
-### Estructura
+Both share the Hive Metastore. Jobs write with `saveAsTable` rather than
+`save(path)`, so a table is registered in the catalogue by the same act that
+writes it and Trino sees it without a second registration step. Adding a pipeline
+does not mean touching a registration script: writing to `bronze` is enough.
 
 ```
-airflow/          DAGs, plugins y tests
-spark/            Jobs PySpark y tests
-trino/catalog/    Catálogos de Trino
-superset/         Configuración de dashboards
+public API → Airflow → Spark → Delta Lake → MinIO
+                                    ↓
+                        Hive Metastore (shared)
+                                    ↓
+                                 Trino → Superset
+
+     OpenLineage captures lineage at every step → Marquez
+```
+
+Lineage is captured at two levels. Airflow's OpenLineage provider emits the run
+of each task; the `OpenLineageSparkListener` — declared in the
+`spark-defaults.conf` shared by the Airflow and Spark images — emits each job's
+input and output datasets. Airflow injects the parent job and the transport URL
+into every `spark-submit`, so the Spark run hangs off its task in Marquez instead
+of appearing as a disconnected graph.
+
+Spark 4 support landed in OpenLineage 1.37.0; earlier versions do not work with
+this stack.
+
+The layers follow the medallion pattern: `raw/` holds the raw API response,
+`bronze/` the typed Delta tables, `silver/` and `gold/` the derived models.
+
+Full detail in [docs/arquitectura.md](docs/arquitectura.md) (Spanish).
+
+### Layout
+
+```
+airflow/          DAGs, plugins and tests
+spark/            PySpark jobs and tests
+trino/catalog/    Trino catalogues
+superset/         Dashboard configuration
 infra/
-  docker-compose/ Stack local y Dockerfiles
-  k3s/            Namespaces — el despliegue está planificado, no implementado
-.ci/scripts/      Lógica de lint, test y deploy
-.github/          CI y plantillas
-docs/             Documentación, marca y diagramas
+  docker-compose/ Local stack and Dockerfiles
+  k3s/            Namespaces — the deployment is planned, not implemented
+.ci/scripts/      Lint, test and deploy logic
+.github/          CI and templates
+docs/             Documentation, brand and diagrams
 ```
 
-Las dependencias están separadas en `requirements.txt` y `requirements-dev.txt`:
-las herramientas de test no forman parte del entorno de ejecución.
+Dependencies are split between `requirements.txt` and `requirements-dev.txt`:
+test tooling is not part of the runtime environment.
 
 ---
 
-## Pipelines de ejemplo
+## Example pipelines
 
-| DAG | Fuente | Frecuencia | Salida |
+| DAG | Source | Schedule | Output |
 |---|---|---|---|
-| `indicadores_financieros_chile` | [mindicador.cl](https://mindicador.cl) | Lunes a viernes, 10:00 | 5 tablas Delta |
-| `arclim_riesgo_climatico_chile` | [ARClim](https://arclim.mma.gob.cl) — MMA Chile | Lunes, 06:00 | 3 tablas Delta |
+| `indicadores_financieros_chile` | [mindicador.cl](https://mindicador.cl) | Weekdays, 10:00 | 5 Delta tables |
+| `arclim_riesgo_climatico_chile` | [ARClim](https://arclim.mma.gob.cl) — Chilean MMA | Mondays, 06:00 | 3 Delta tables |
 
-Ambas APIs son públicas y no requieren clave, de modo que cualquiera que clone
-el repositorio puede ejecutar los pipelines completos sin registrarse en ningún
-sitio. Fue un criterio de selección: un ejemplo que necesita credenciales no es
-un ejemplo.
+Both APIs are public and need no key, so anyone who clones the repository can run
+the full pipelines without registering anywhere. That was a selection criterion:
+an example that needs credentials is not an example.
 
-Son servicios públicos que nadie nos debe, así que el cliente HTTP compartido
-(`airflow/plugins/http_publico.py`) se identifica con un User-Agent con URL de
-contacto, reintenta 429 y 5xx con backoff respetando `Retry-After`, y espacia
-las llamadas de series.
+They are public services nobody owes us, so the shared HTTP client
+(`airflow/plugins/http_publico.py`) identifies itself with a User-Agent carrying
+a contact URL, retries 429 and 5xx with backoff while honouring `Retry-After`,
+and spaces out series calls.
 
-`raw/` es zona de aterrizaje **y cache**: lo ya descargado para una fecha no se
-vuelve a pedir, así que reejecutar un DAG mientras se itera sobre el transform
-no cuesta ni una llamada. Para refrescar de verdad, disparar con
+`raw/` is both a landing zone **and a cache**: whatever has already been
+downloaded for a date is not requested again, so re-running a DAG while iterating
+on the transform costs no API calls at all. To genuinely refresh, trigger with
 `forzar_descarga=true`.
 
-**Indicadores financieros**: UF, dólar, euro, UTM y TPM se publican cada día
-hábil; el IPC es mensual, así que una serie vacía no se trata como error.
+**Financial indicators**: UF, dollar, euro, UTM and TPM are published every
+business day; CPI is monthly, so an empty series is not treated as an error.
 
-**Riesgo climático**: cuatro indicadores por las 345 comunas de Chile —presente,
-futuro y delta— y series de tiempo 1970–2070 bajo escenario SSP5-8.5 para las
-capitales regionales. `valor_p10` y `valor_p90` son la envolvente de los 20
-modelos climáticos que devuelve la API para cada año, no percentiles de la serie.
+**Climate risk**: four indicators across the 345 municipalities of Chile —
+present, future and delta — plus 1970–2070 time series under the SSP5-8.5
+scenario for regional capitals. `valor_p10` and `valor_p90` are the envelope of
+the 20 climate models the API returns for each year, not percentiles of the
+series.
 
-ARClim no sirve `total_precipitation` ni `dry_days`: devuelven 500 en `/datos/` y
-en `/series/`, en las tres variantes. Están declarados en
-`INDICADORES_NO_DISPONIBLES` con la comprobación fechada; basta un atributo de
-`total_precipitation` para que falle entera la petición de `/datos/`.
+ARClim does not serve `total_precipitation` or `dry_days`: both return 500 from
+`/datos/` and `/series/`, in all three variants. They are declared in
+`INDICADORES_NO_DISPONIBLES` with the date the check was made; a single
+`total_precipitation` attribute is enough to fail an entire `/datos/` request.
 
-Las escrituras son **idempotentes por fecha de carga**: los jobs usan
-`replaceWhere` sobre `fecha_carga` (`fecha_proceso` en indicadores), así que
-reejecutar un DAG reemplaza esa carga en lugar de duplicar filas. Los DAGs
-declaran `max_active_runs=1` porque la idempotencia no protege de dos
-escritores simultáneos sobre la misma fecha.
+Writes are **idempotent per load date**: jobs use `replaceWhere` over
+`fecha_carga` (`fecha_proceso` for the indicators), so re-running a DAG replaces
+that load rather than duplicating rows. The DAGs declare `max_active_runs=1`,
+because idempotency does not protect against two concurrent writers on the same
+date.
 
-### Consultas de referencia
+### Sample queries
 
 ```sql
 SHOW TABLES FROM delta.bronze;
@@ -245,160 +251,169 @@ ORDER BY anio_serie;
 
 ---
 
-## Comandos
+## Commands
 
 ```bash
-make init-env           # Prepara .env con claves generadas
-make setup              # Crea .venv con Python 3.12
-make dev-up             # Levanta el stack
-make dev-down           # Lo detiene
-make dev-ps             # Estado de los contenedores
-make dev-logs           # Logs (SERVICE=airflow-scheduler para uno solo)
-make dev-build          # Reconstruye las imágenes (tras cambiar un Dockerfile)
-make dev-reset          # Borra volúmenes y recrea usuarios
-make dev-reset-hard     # Además reconstruye las imágenes locales
-make dev-load-example   # Ejecuta los pipelines y configura los dashboards
+make init-env           # Prepares .env with generated keys
+make setup              # Creates .venv with Python 3.12
+make dev-up             # Brings the stack up
+make dev-down           # Stops it
+make dev-ps             # Container status
+make dev-logs           # Logs (SERVICE=airflow-scheduler for just one)
+make dev-build          # Rebuilds the images (after changing a Dockerfile)
+make dev-reset          # Wipes volumes and recreates users
+make dev-reset-hard     # Also rebuilds the local images
+make dev-load-example   # Runs the pipelines and builds the dashboards
 make lint-all           # Ruff + sqlfluff
 make test-all           # Tests
-make detect-secrets     # Escaneo de credenciales
+make detect-secrets     # Credential scan (working tree)
+make auditar-historial  # Credential scan (git history)
 ```
 
-El despliegue a K3s **está planificado, no implementado**: `make deploy-staging`
-y `make deploy-prod` existen pero fallan con un mensaje que lo explica. Faltan
-los manifiestos de los servicios y, antes que eso, publicar las imágenes del
-proyecto en un registro. Ver el issue «Despliegue a K3s».
-
-```bash
-make deploy-staging     # Planificado — hoy falla explicando qué falta
-make deploy-prod        # Planificado — ídem
-```
-
-Kafka y ZooKeeper no arrancan con `make dev-up`: están detrás de un perfil, para
-no encender dos contenedores que hoy nada consume. Para levantarlos:
+Kafka and ZooKeeper do not start with `make dev-up`: they sit behind a profile,
+so that two containers nothing currently consumes are not left running. To bring
+them up:
 
 ```bash
 cd infra/docker-compose && docker compose --profile streaming up -d
 ```
 
-`dev-reset` tarda alrededor de un minuto y sirve cuando los datos quedaron
-inconsistentes, o tras cambiar `POSTGRES_USER` o `POSTGRES_PASSWORD` — el
-usuario se fija al crear el volumen. `dev-reset-hard` tarda unos tres minutos y
-hace falta cuando cambiaste algún Dockerfile; si solo necesitas la imagen nueva
-sin perder los datos, `dev-build` reconstruye y `dev-up` recrea los contenedores.
+`dev-reset` takes about a minute and is what you want when the data ended up
+inconsistent, or after changing `POSTGRES_USER` or `POSTGRES_PASSWORD` — the user
+is fixed when the volume is created. `dev-reset-hard` takes about three minutes
+and is needed after changing a Dockerfile; if you only need the new image without
+losing data, `dev-build` rebuilds and `dev-up` recreates the containers.
+
+### Deployment
+
+The K3s deployment is **planned, not implemented**. `make deploy-staging` and
+`make deploy-prod` exist but fail with a message explaining what is missing: the
+service manifests, and before those, publishing the project's images to a
+registry. See the "Despliegue a K3s" issue.
+
+```bash
+make deploy-staging     # Planned — currently fails explaining what is missing
+make deploy-prod        # Planned — likewise
+```
 
 ---
 
-## Secretos
+## Secrets
 
-| Entorno | Herramienta | Estado |
+| Environment | Tool | Status |
 |---|---|---|
-| Local | `.env` | Operativo |
-| Staging | Sealed Secrets | En evaluación |
-| Producción | OpenBao | Planificado |
+| Local | `.env` | Working |
+| Staging | Sealed Secrets | Under evaluation |
+| Production | OpenBao | Planned |
 
-Ningún archivo del repositorio contiene credenciales. Los que las necesitan
-—`marquez.yml`, el `core-site.xml` que comparten Spark, Airflow y el metastore,
-y los catálogos de Trino— se generan al arrancar el contenedor a partir de los
-secretos que Compose entrega como archivos en `/run/secrets/`.
+No file in the repository contains credentials. The ones that need them —
+`marquez.yml`, the `core-site.xml` shared by Spark, Airflow and the metastore,
+and the Trino catalogues — are generated when the container starts, from the
+secrets Compose delivers as files under `/run/secrets/`.
 
-Las credenciales de MinIO **no viajan como variables de entorno**. Cada
-consumidor entra con su propia cuenta de servicio —`vf-pipeline`, `vf-hive`,
-`vf-trino`; ninguna es la raíz— acotada por
-`infra/docker-compose/minio/politica-datos.json` a operar sobre los objetos de
-los cinco buckets. Su clave llega como archivo montado, fuera de
-`docker inspect`, de `docker compose config` y de `/proc/<pid>/environ`, y el
-entrypoint la materializa en el formato que cada consumidor sabe leer: S3A en
-`core-site.xml` con `SimpleAWSCredentialsProvider`, boto3 en el INI que le
-indica `AWS_SHARED_CREDENTIALS_FILE`, y Trino en el catálogo que renderiza al
-arrancar. Solo el servicio `minio` y `init_users.sh` —que legítimamente crean
-buckets y cuentas— reciben la raíz.
+MinIO credentials **do not travel as environment variables**. Each consumer signs
+in with its own service account — `vf-pipeline`, `vf-hive`, `vf-trino`; none of
+them root — scoped by
+`infra/docker-compose/minio/politica-datos.json` to object operations on the five
+buckets. Its key arrives as a mounted file, out of reach of `docker inspect`,
+`docker compose config` and `/proc/<pid>/environ`, and the entrypoint
+materialises it in whatever form each consumer knows how to read: S3A in
+`core-site.xml` with `SimpleAWSCredentialsProvider`, boto3 in the INI pointed at
+by `AWS_SHARED_CREDENTIALS_FILE`, and Trino in the catalogue it renders at
+startup. Only the `minio` service and `init_users.sh` — which legitimately create
+buckets and accounts — receive the root credentials.
 
-Tampoco se pasan como propiedades de Spark: un `--conf` acaba en la línea de
-comandos de `spark-submit` y en el `ps` del contenedor, aunque el hook lo
-enmascare en el log. Un test del CI verifica que ninguna tarea las reintroduzca
-en la configuración.
+They are not passed as Spark properties either: a `--conf` ends up on the
+`spark-submit` command line and in the container's `ps`, even though the hook
+masks it in the log. A CI test verifies that no task reintroduces them into the
+configuration.
 
-Detalle en [docs/secretos.md](docs/secretos.md).
-
----
-
-## Contribuir
-
-Las contribuciones son bienvenidas. Antes de tu primer pull request:
-
-- [CONTRIBUTING.md](CONTRIBUTING.md) — flujo de trabajo y firma DCO (`git commit -s`)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — normas de convivencia
-- [GOVERNANCE.md](GOVERNANCE.md) — cómo se toman las decisiones
-- [SECURITY.md](SECURITY.md) — reporte de vulnerabilidades (**no** por issue público)
-
-Issues y pull requests se aceptan en español o en inglés.
-
-El CI ejecuta lint, tests y escaneo de credenciales en cada pull request. Los
-tests cubren el parseo de los DAGs y sus funciones puras; **la ejecución del
-stack completo no está automatizada**, así que verifica con `make dev-up` y
-`make dev-load-example` antes de proponer cambios en la infraestructura.
+Detail in [docs/secretos.md](docs/secretos.md) (Spanish).
 
 ---
 
-## Notas de compatibilidad
+## Contributing
 
-- **Python 3.12 exacto.** Versiones más nuevas rompen la compilación de pandas,
-  que los providers de Airflow acotan a `<2.2`. Driver y executors de Spark
-  deben coincidir en versión menor.
-- **Spark 4 usa Scala 2.13.** El soporte de 2.12 se eliminó, así que todas las
-  coordenadas de JAR cambian respecto a Spark 3.5.
-- **AWS SDK v2 en Spark, v1 en el metastore.** Hadoop 3.4 (Spark 4) migró al v2;
-  Hadoop 3.3 (imagen de Hive 4.0.0) sigue con el v1. Son artefactos distintos, no
-  versiones del mismo. Los Dockerfiles los resuelven con Maven en vez de fijarlos
-  a mano, y verifican en tiempo de build que el `hadoop-common` de la imagen
-  coincida con el ARG.
-- **El metastore está clavado en Hive 4.0.0, y no es una preferencia.** Spark 4
-  lleva embebido el cliente de Hive 2.3.10, que llama al método Thrift
-  `get_table`. Ese método **se eliminó en Hive 4.0.1**; desde entonces solo
-  existe `get_table_req`. Comprobado en el IDL de cada etiqueta:
+Contributions are welcome. Before your first pull request:
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — workflow and DCO sign-off (`git commit -s`)
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — community standards
+- [GOVERNANCE.md](GOVERNANCE.md) — how decisions get made
+- [SECURITY.md](SECURITY.md) — vulnerability reports (**not** through a public issue)
+
+**Language.** Governance documents and this README are in English; the Spanish
+README, the documentation under `docs/` and the code comments are in Spanish.
+Issues and pull requests are accepted in either language. See CONTRIBUTING.md.
+
+CI runs linting, tests and a credential scan on every pull request. The tests
+cover DAG parsing and pure functions; **running the full stack is not
+automated**, so verify with `make dev-up` and `make dev-load-example` before
+proposing infrastructure changes.
+
+---
+
+## Compatibility notes
+
+- **Exactly Python 3.12.** Newer versions break the pandas build, which the
+  Airflow providers cap at `<2.2`. The Spark driver and executors must agree on
+  the minor version.
+- **Spark 4 uses Scala 2.13.** Support for 2.12 was removed, so every JAR
+  coordinate changes relative to Spark 3.5.
+- **AWS SDK v2 in Spark, v1 in the metastore.** Hadoop 3.4 (Spark 4) moved to v2;
+  Hadoop 3.3 (the Hive 4.0.0 image) is still on v1. They are different artifacts,
+  not versions of the same one. The Dockerfiles resolve them with Maven rather
+  than pinning by hand, and verify at build time that the image's
+  `hadoop-common` matches the ARG.
+- **The metastore is nailed to Hive 4.0.0, and that is not a preference.**
+  Spark 4 embeds the Hive 2.3.10 client, which calls the Thrift method
+  `get_table`. That method **was removed in Hive 4.0.1**; since then only
+  `get_table_req` exists. Checked against the IDL of each tag:
 
   | Hive | `get_table` |
   |---|---|
-  | 4.0.0 | sí |
+  | 4.0.0 | yes |
   | 4.0.1 · 4.1.0 · 4.2.x | **no** |
 
-  Se intentó subir a 4.2.1: el metastore arranca, `CREATE DATABASE` funciona
-  —`get_database` sigue existiendo— y **todas** las escrituras de tabla fallan
-  con `Invalid method name: 'get_table'`. Cualquier subida del metastore, aunque
-  sea de un parche, rompe el stack mientras Spark use su cliente embebido.
+  An upgrade to 4.2.1 was attempted: the metastore starts, `CREATE DATABASE`
+  works — `get_database` still exists — and **every** table write fails with
+  `Invalid method name: 'get_table'`. Any metastore upgrade, even a patch,
+  breaks the stack while Spark uses its embedded client.
 
-  Salir de ahí exigiría `spark.sql.hive.metastore.jars` con un juego de Hive 4.x
-  en la imagen del driver, con los conflictos de classpath que eso trae. No se
-  ha hecho porque aquí Hive solo actúa como registro nombre→ubicación: las
-  transacciones las gestiona Delta. `dependabot.yml` ignora estas subidas para
-  que la propuesta no vuelva cada release.
-- **ANSI mode activo por defecto en Spark 4.** Los casts inválidos lanzan
-  excepción en lugar de devolver `null`.
-- **Airflow 3 exige `execution_api_server_url` y un JWT compartido** entre
-  contenedores. Las tareas ya no acceden a la base de metadatos: hablan con el
-  api-server por HTTP.
-- **Trino usa `s3://`, Spark usa `s3a://`.** El metastore mapea ambos esquemas al
-  conector S3A.
-- **`apache-airflow-providers-amazon` excluido** por incompatibilidad con
-  SQLAlchemy 2.x. El acceso a MinIO se hace con `boto3` directo.
+  Getting out would mean `spark.sql.hive.metastore.jars` with a Hive 4.x set in
+  the driver image, and the classpath conflicts that brings. It has not been done
+  because here Hive only acts as a name→location registry: transactions are
+  Delta's job. `dependabot.yml` ignores these upgrades so the proposal does not
+  come back every release.
+- **ANSI mode is on by default in Spark 4.** Invalid casts raise instead of
+  returning `null`.
+- **Airflow 3 requires `execution_api_server_url` and a shared JWT** across
+  containers. Tasks no longer reach the metadata database: they talk to the
+  api-server over HTTP.
+- **Trino writes `s3://`, Spark writes `s3a://`.** The metastore maps both
+  schemes onto the S3A connector.
+- **`apache-airflow-providers-amazon` is excluded** because of incompatibility
+  with SQLAlchemy 2.x. MinIO access goes through `boto3` directly.
 
 ---
 
-## Documentación
+## Documentation
 
-| Documento | Contenido |
+| Document | Contents |
 |---|---|
-| [docs/arquitectura.md](docs/arquitectura.md) | Arquitectura, flujo de datos, CI/CD, hardware y decisiones de diseño |
-| [docs/secretos.md](docs/secretos.md) | Gestión de credenciales por entorno |
-| [docs/airflow-fab-auth.md](docs/airflow-fab-auth.md) | Usuarios y roles en Airflow |
-| [docs/marca.md](docs/marca.md) | Manual de marca e imagotipo |
-| [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Inventario de licencias de terceros |
+| [docs/arquitectura.md](docs/arquitectura.md) | Architecture, data flow, CI/CD, hardware and design decisions |
+| [docs/secretos.md](docs/secretos.md) | Credential management per environment |
+| [docs/airflow-fab-auth.md](docs/airflow-fab-auth.md) | Users and roles in Airflow |
+| [docs/marca.md](docs/marca.md) | Brand manual |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
+| [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | Third-party licence inventory |
+
+Documents under `docs/` are in Spanish.
 
 ---
 
 <p align="center">
   <sub>
     Apache 2.0 · Copyright The VektralForge Authors ·
-    Patrocinado por <a href="https://alephserver.cl">ALEPH SERVER LTDA.</a>
+    Sponsored by <a href="https://alephserver.cl">ALEPH SERVER LTDA.</a>
   </sub>
 </p>

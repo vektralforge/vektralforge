@@ -68,8 +68,7 @@ entry point.
 
 ## Development setup
 
-The project targets **Python 3.12**. Note the constraint below on Spark, which
-runs an older interpreter.
+The project targets **Python 3.12** everywhere, Spark included.
 
 ```bash
 git clone https://github.com/vektralforge/vektralforge.git
@@ -95,6 +94,22 @@ FAKE_TOKEN = "not-a-real-secret"  # pragma: allowlist secret
 Never mark a real credential this way. Push protection is enabled on the
 repository and will reject the push regardless.
 
+`detect-secrets` looks at the working tree. A credential that was committed and
+then removed is gone from the tree but still in history — and history is public.
+`make auditar-historial` scans every added line of every commit for
+high-entropy strings, in two passes (base64 and hex, because a long hex key has
+low entropy in the base64 alphabet and slips past the first one). Findings are
+reported by a SHA-256 fingerprint, never by value.
+
+Each finding is triaged once and recorded in `.ci/historial-revisado.txt` with
+the reason. That file is not a mute button: it is also the audit's positive
+control — if a recorded finding stops showing up, the script fails, because the
+likeliest explanation is that the scan stopped looking where it was looking.
+
+If you ever commit a live credential: **rotate it first**, then worry about the
+history. Removing it from the tree does not remove it from the clones people
+already have.
+
 ## Coding conventions
 
 **Spark and Python versions.** Python 3.12 everywhere: the project environment,
@@ -118,6 +133,23 @@ respect it — mixed spellings are hard to fix once they spread.
 
 Never `Vektral Forge`, `vektral-forge`, `VEKTRALFORGE`, or any spelling with an
 `r` in place of the `k`.
+
+**Language.** The project is written in two languages on purpose, and the split
+is by audience rather than by taste:
+
+| | Language |
+| --- | --- |
+| Anything read while deciding whether to contribute — `README.md`, this file, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, `SECURITY.md`, `CHANGELOG.md`, issue and pull request templates | English |
+| Everything inside the code — identifiers, comments, docstrings, script output, `docs/` | Spanish |
+| Issues, pull requests and commit messages | Either. The Conventional Commits type and scope are always English |
+
+`README.es.md` is the Spanish translation of the README and the only file kept
+in both languages; when you change one, change the other in the same pull
+request.
+
+This is not a preference to be relitigated per file: the codebase is Spanish and
+rewriting it would lose more than it gains. Do not mix languages *within* a
+file — a Spanish module with English comments is worse than either.
 
 **Commit messages** follow [Conventional Commits](https://www.conventionalcommits.org/):
 

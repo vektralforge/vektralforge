@@ -18,19 +18,25 @@ concurrency:
 env:
   PYTHON_VERSION: "3.12"
 
+# Las actions van fijadas por SHA y no por etiqueta. Una etiqueta como `v7` es
+# móvil: quien controle el repositorio de la action puede reapuntarla a otro
+# commit, y ese commit corre con acceso al token del workflow. El comentario
+# `# v7` es para los humanos; Dependabot actualiza el SHA y el comentario a la
+# vez, así que no se pierde legibilidad.
+
 jobs:
 
   lint:
     name: Lint
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Sin `cache: pip`: este job instala dos paquetes pequeños y la caché
       # costaba más de lo que ahorraba. Peor: sin `cache-dependency-path`,
       # setup-python calcula la clave sobre TODOS los requirements del
       # repositorio, así que cambiaba cada vez que Dependabot tocaba cualquiera.
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -40,7 +46,7 @@ jobs:
         run: |
           pip install --quiet \
             "$(grep '^ruff==' airflow/requirements-dev.txt)" \
-            sqlfluff
+            "$(grep '^sqlfluff==' airflow/requirements-dev.txt)"
 
       - run: .ci/scripts/lint_dags.sh
       - run: .ci/scripts/lint_spark.sh
@@ -50,14 +56,14 @@ jobs:
     name: Escaneo de secretos
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # detect-secrets compara contra el baseline; el historial completo
           # permite además revisar los commits del pull request.
           fetch-depth: 0
 
       # Un solo paquete: sin caché, por lo mismo que en `lint`.
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -70,9 +76,9 @@ jobs:
     name: Tests de DAGs
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -94,7 +100,7 @@ jobs:
       # que es casi todo el ahorro, con cero coste de almacenamiento.
       - name: Restaurar caché de pip
         id: cache-pip
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: pip-dags-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('airflow/requirements.txt', 'airflow/requirements-dev.txt') }}
@@ -119,7 +125,7 @@ jobs:
       # entrada nueva. Guardar con una clave que ya existe daría un aviso.
       - name: Guardar caché de pip
         if: github.event_name == 'push' && steps.cache-pip.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           key: ${{ steps.cache-pip.outputs.cache-primary-key }}
@@ -130,12 +136,12 @@ jobs:
     name: Tests de jobs Spark
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Sin caché: pytest, ruff y chispa son unos pocos MB, y chispa no
       # arrastra pyspark. Descargarlos es más barato que subir y bajar un
       # archivo de caché.
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
@@ -160,8 +166,20 @@ jobs:
           RESULTADOS: ${{ join(needs.*.result, ',') }}
         run: |
           echo "Resultados: $RESULTADOS"
-          if echo "$RESULTADOS" | tr ',' '\n' | grep -qv '^success$'; then
-            echo "✗ Algún job no terminó correctamente"
+
+          # `skipped` es un resultado LEGÍTIMO: un job con filtro de rutas no
+          # corre en los PR que no tocan sus archivos, y eso no es un fallo.
+          # Con el `grep -qv '^success$'` anterior, añadir un job filtrado
+          # —el §4.15 lo va a hacer— habría bloqueado todos los PR de
+          # documentación, y en silencio: la regla de protección de rama solo
+          # dice «CI failing», sin explicar cuál ni por qué.
+          #
+          # Se rechaza por nombre en vez de aceptar todo lo que no sea success,
+          # para que un resultado nuevo de GitHub no pase inadvertido.
+          malos=$(echo "$RESULTADOS" | tr ',' '\n' | grep -vE '^(success|skipped)$' || true)
+          if [ -n "$malos" ]; then
+            echo "✗ Algún job no terminó correctamente:"
+            echo "$malos" | sed 's/^/    /'
             exit 1
           fi
           echo "✓ CI OK"

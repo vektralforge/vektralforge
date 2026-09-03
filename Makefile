@@ -7,7 +7,7 @@
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
         lint-dags test-dags lint-spark test-spark lint-sql \
-        lint-all test-all detect-secrets \
+        lint-all test-all detect-secrets auditar-historial \
         deploy-staging deploy-prod
 
 .DEFAULT_GOAL := help
@@ -191,6 +191,12 @@ test-all: test-dags test-spark
 detect-secrets:
 	@bash .ci/scripts/detect_secrets.sh
 
+# detect-secrets mira el árbol de trabajo; esto mira el historial. Un secreto
+# borrado en un commit posterior sigue estando en el historial, y con el
+# repositorio público sigue siendo público.
+auditar-historial:
+	@bash .ci/scripts/auditar_historial.sh
+
 # ── Deploy ────────────────────────────────────────────────────────────────────
 
 deploy-staging:
@@ -225,7 +231,8 @@ help:
 	@echo "  Calidad de código:"
 	@echo "    make lint-all             Lint completo (Ruff + sqlfluff)"
 	@echo "    make test-all             Tests completos"
-	@echo "    make detect-secrets       Escaneo de credenciales"
+	@echo "    make detect-secrets       Escaneo de credenciales (árbol de trabajo)"
+	@echo "    make auditar-historial    Escaneo de credenciales (historial de git)"
 	@echo ""
 	@echo "  Deploy — PLANIFICADO, no implementado:"
 	@echo "    make deploy-staging       Falla explicando qué falta"
