@@ -124,8 +124,31 @@ services:
       - "${BIND_HOST:-127.0.0.1}:5432:5432"
 
   # ── MinIO ─────────────────────────────────────────────────────────────────
+  #
+  # ESTA VERSIÓN ES DELIBERADA Y ES UN CALLEJÓN SIN SALIDA. Léelo antes de
+  # subirla, porque «actualizar a la última» aquí empeora las cosas.
+  #
+  # MinIO retiró de la edición comunitaria la consola de administración y el
+  # login LDAP/OIDC en RELEASE.2025-05-24. Esta, del 8 de abril de 2025, es la
+  # última que conserva la consola íntegra, y trae doce meses de correcciones
+  # sobre la 2024-04 en la que estaba el proyecto.
+  #
+  # Después el proyecto se apagó: última imagen pública el 2025-09-07, última
+  # release —solo código fuente— en octubre de 2025, «maintenance mode» en
+  # diciembre, y el repositorio archivado en 2026. No hay ninguna versión
+  # posterior a la que ir.
+  #
+  # Y ninguna imagen pública, tampoco la más nueva, lleva el parche de
+  # CVE-2025-62506 (escalada de privilegios, severidad alta): se corrigió solo
+  # en esa última release que nunca llegó a publicarse como imagen. Aquí se
+  # asume conscientemente, con el stack en loopback y en desarrollo local; en
+  # cualquier otro escenario no es asumible.
+  #
+  # La salida no es otra versión de MinIO sino otro backend. El almacenamiento
+  # de VektralForge habla S3 y nada depende de MinIO en particular: ver la nota
+  # de THIRD-PARTY-NOTICES.md, que ya nombra Garage, SeaweedFS y Ceph RGW.
   minio:
-    image: minio/minio:RELEASE.2024-04-18T19-09-19Z
+    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
