@@ -39,6 +39,7 @@ updates:
       - "/infra/docker-compose/superset"
       - "/infra/docker-compose/hive"
       - "/infra/docker-compose/marquez"
+      - "/infra/docker-compose/trino"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -52,8 +53,9 @@ updates:
     ignore:
       - dependency-name: "apache/hive"
 
-  # Imágenes referenciadas directamente en el Compose (postgres, trino, kafka,
-  # minio, redis, openbao).
+  # Imágenes referenciadas directamente en el Compose: postgres, minio, redis,
+  # openbao, marquez-web y el par de Kafka. Las que se construyen viven en el
+  # ecosistema `docker` de arriba, una entrada por Dockerfile.
   - package-ecosystem: "docker-compose"
     directory: "/infra/docker-compose"
     schedule:
@@ -62,6 +64,14 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # minio/minio se queda en RELEASE.2025-04-08, la última con la consola de
+    # administración íntegra: la 2025-05-24 la retiró de la edición comunitaria.
+    # Da igual, además, porque no hay a dónde ir — el proyecto se archivó en
+    # 2026 y la última imagen pública es de septiembre de 2025. Sin este ignore,
+    # Dependabot propondría indefinidamente subir a una versión sin consola de
+    # un proyecto muerto. La salida es cambiar de backend S3, no de etiqueta.
+    ignore:
+      - dependency-name: "minio/minio"
 
   # ── Hooks de pre-commit ────────────────────────────────────────────────────
   # El `rev` de .pre-commit-config.yaml quedaba fuera de todo: nadie lo subía

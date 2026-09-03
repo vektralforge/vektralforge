@@ -39,7 +39,7 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Delta Lake | 4.1.0 | `Operativo` | Formato de tabla transaccional |
 | Hive Metastore | 4.0.0 | `Operativo` | Catálogo compartido Spark ↔ Trino |
 | Trino | 448 | `Operativo` | Consulta SQL |
-| MinIO | 2024-04 | `Operativo` | Almacenamiento de objetos S3 |
+| MinIO | 2025-04 | `Sin upstream` | Almacenamiento de objetos S3 · ver nota |
 | Apache Superset | 6.1.0 | `Operativo` | Visualización |
 | OpenLineage | 1.52.0 | `Operativo` | Linaje en Airflow y Spark |
 | Marquez | 0.51.1 | `Operativo` | Almacén y UI de linaje |
@@ -74,6 +74,17 @@ Sobre control de acceso: **no hay una capa transversal**. Trino usa
 `delta.security=ALLOW_ALL` en desarrollo y Airflow gestiona usuarios con
 FabAuthManager. Apache Ranger daría políticas unificadas a nivel de tabla,
 columna y fila, pero no está implementado.
+
+**Sobre MinIO.** La versión está fijada a propósito en `RELEASE.2025-04-08`: es
+la última que conserva la consola de administración íntegra, porque MinIO la
+retiró de la edición comunitaria en la release siguiente. Después el proyecto se
+apagó —última imagen pública en septiembre de 2025, repositorio archivado en
+2026—, así que **no hay una versión posterior a la que ir**, y ninguna imagen
+publicada incluye el parche de `CVE-2025-62506` (escalada de privilegios,
+severidad alta). Es un riesgo asumido para un stack de desarrollo local con los
+puertos en loopback, y no lo es para nada más. La salida no es otra versión de
+MinIO sino otro backend: el almacenamiento habla S3 y nada del proyecto depende
+de MinIO en particular — ver [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
 
 Las licencias de terceros, incluidas MinIO (AGPLv3) y Graylog (SSPL), están en
 [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
