@@ -26,10 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Sin `cache: pip`: este job instala dos paquetes pequeños y la caché
+      # costaba más de lo que ahorraba. Peor: sin `cache-dependency-path`,
+      # setup-python calcula la clave sobre TODOS los requirements del
+      # repositorio, así que cambiaba cada vez que Dependabot tocaba cualquiera.
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
 
       # Las versiones se leen de los requirements-dev para que CI y entorno
       # local usen exactamente las mismas herramientas.
@@ -53,10 +56,10 @@ jobs:
           # permite además revisar los commits del pull request.
           fetch-depth: 0
 
+      # Un solo paquete: sin caché, por lo mismo que en `lint`.
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
 
       - name: Instalar detect-secrets
         run: pip install --quiet "$(grep '^detect-secrets==' airflow/requirements-dev.txt)"
@@ -72,10 +75,31 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: |
-            airflow/requirements.txt
-            airflow/requirements-dev.txt
+
+      # El ÚNICO job con caché de pip: es el único que instala Airflow con sus
+      # providers, pyspark y delta-spark, que son ~1 GB de descargas.
+      #
+      # Se restaura siempre y se GUARDA SOLO en los push a develop y main. El
+      # motivo: las entradas de caché se aíslan por rama, así que una creada en
+      # un pull request no la puede usar nadie más —ni otro PR, ni develop— y
+      # sin embargo cuenta contra el límite de 10 GB del repositorio. Con un
+      # `cache: pip` normal, cada PR de Dependabot que tocara los requirements
+      # estrenaba su propio GB. Se llegó a 17,18 GB en 14 entradas, ocho de
+      # ellas en refs de pull request y dos duplicadas entre develop y el #40:
+      # GitHub desalojaba por LRU sin parar y la caché de develop dejaba de
+      # existir justo cuando hacía falta.
+      #
+      # Los PR siguen aprovechándola por `restore-keys`: si sus requirements
+      # cambiaron, restauran la de develop y pip descarga solo la diferencia,
+      # que es casi todo el ahorro, con cero coste de almacenamiento.
+      - name: Restaurar caché de pip
+        id: cache-pip
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.cache/pip
+          key: pip-dags-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('airflow/requirements.txt', 'airflow/requirements-dev.txt') }}
+          restore-keys: |
+            pip-dags-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-
 
       # Se instalan los mismos requirements que la imagen, con el archivo de
       # constraints de Airflow. Sin él, pip puede resolver una combinación de
@@ -90,6 +114,16 @@ jobs:
             --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.3.0/constraints-3.12.txt"
           pip install --quiet -r airflow/requirements-dev.txt
 
+      # `cache-hit` solo es 'true' con acierto EXACTO: tras restaurar por
+      # `restore-keys` vale 'false', que es justo cuando conviene guardar la
+      # entrada nueva. Guardar con una clave que ya existe daría un aviso.
+      - name: Guardar caché de pip
+        if: github.event_name == 'push' && steps.cache-pip.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.cache-pip.outputs.cache-primary-key }}
+
       - run: .ci/scripts/test_dags.sh
 
   test-spark:
@@ -98,11 +132,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Sin caché: pytest, ruff y chispa son unos pocos MB, y chispa no
+      # arrastra pyspark. Descargarlos es más barato que subir y bajar un
+      # archivo de caché.
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
-          cache-dependency-path: spark/requirements-dev.txt
 
       # No se instala pyspark: los tests que existirán prueban funciones puras
       # de transformación, no necesitan una SparkSession. Añadirlo cuando algún
