@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "OperarObjetosDeLosBucketsDelLakehouse",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation",
+        "s3:ListBucketMultipartUploads",
+        "s3:ListMultipartUploadParts",
+        "s3:AbortMultipartUpload"
+      ],
+      "Resource": [
+        "arn:aws:s3:::raw",          "arn:aws:s3:::raw/*",
+        "arn:aws:s3:::bronze",       "arn:aws:s3:::bronze/*",
+        "arn:aws:s3:::silver",       "arn:aws:s3:::silver/*",
+        "arn:aws:s3:::gold",         "arn:aws:s3:::gold/*",
+        "arn:aws:s3:::checkpoints",  "arn:aws:s3:::checkpoints/*"
+      ]
+    }
+  ]
+}

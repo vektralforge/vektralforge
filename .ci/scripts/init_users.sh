@@ -39,6 +39,18 @@ SS_PASS=$(get_var SUPERSET_ADMIN_PASSWORD)
 SS_EMAIL=$(get_var SUPERSET_ADMIN_EMAIL)
 OB_TOKEN=$(get_var OPENBAO_TOKEN)
 
+# Cuentas de servicio de MinIO. Los identificadores no son secretos; llevan
+# valor por defecto para que un .env antiguo no rompa el arranque.
+PIPELINE_KEY=$(get_var MINIO_PIPELINE_ACCESS_KEY)
+PIPELINE_SECRET=$(get_var MINIO_PIPELINE_SECRET_KEY)
+HIVE_KEY=$(get_var MINIO_HIVE_ACCESS_KEY)
+HIVE_SECRET=$(get_var MINIO_HIVE_SECRET_KEY)
+TRINO_KEY=$(get_var MINIO_TRINO_ACCESS_KEY)
+TRINO_SECRET=$(get_var MINIO_TRINO_SECRET_KEY)
+PIPELINE_KEY="${PIPELINE_KEY:-vf-pipeline}"
+HIVE_KEY="${HIVE_KEY:-vf-hive}"
+TRINO_KEY="${TRINO_KEY:-vf-trino}"
+
 POSTGRES_USER="${POSTGRES_USER:-vektralforge}"
 AF_USER="${AF_USER:-admin}"
 AF_EMAIL="${AF_EMAIL:-admin@example.com}"
@@ -55,6 +67,9 @@ check_required MINIO_ROOT_USER "$MINIO_USER"
 check_required MINIO_ROOT_PASSWORD "$MINIO_PASS"  # pragma: allowlist secret
 check_required AIRFLOW_ADMIN_PASSWORD "$AF_PASS"  # pragma: allowlist secret
 check_required SUPERSET_ADMIN_PASSWORD "$SS_PASS"  # pragma: allowlist secret
+check_required MINIO_PIPELINE_SECRET_KEY "$PIPELINE_SECRET"  # pragma: allowlist secret
+check_required MINIO_HIVE_SECRET_KEY "$HIVE_SECRET"  # pragma: allowlist secret
+check_required MINIO_TRINO_SECRET_KEY "$TRINO_SECRET"  # pragma: allowlist secret
 
 # ── Paso de secretos a los contenedores ──────────────────────────────────────
 #
@@ -140,6 +155,60 @@ paso_buckets() {
     else
         step_failed "MinIO: $out"
     fi
+}
+
+# Crea las cuentas de servicio con las que Airflow, Spark, Hive y Trino entran a
+# MinIO.
+#
+# Antes los cinco consumidores usaban las credenciales RAÍZ: cualquiera de esos
+# contenedores podía borrar todos los buckets, crear usuarios o cambiar
+# políticas. Ahora cada uno tiene una cuenta acotada por politica-datos.json, que
+# permite operar sobre los objetos de los cinco buckets y nada más.
+#
+# Las cuentas cuelgan de la raíz y sus permisos son la INTERSECCIÓN de los del
+# padre con la política adjunta, que es lo que las acota sin crear usuarios
+# adicionales.
+#
+# Se borra y se recrea en vez de editar: `add` y `rm` son los verbos estables, y
+# durante un dev-reset no hay nadie usando la cuenta anterior.
+crear_cuenta_minio() {
+    local nombre="$1" clave="$2" secreto="$3" out
+
+    if out=$(docker exec --env-file "$(archivo_env "svcacct-$nombre" \
+              "MC_USER=$MINIO_USER" "MC_PASS=$MINIO_PASS" \
+              "SVC_KEY=$clave" "SVC_SECRET=$secreto")" \
+        "$C_MINIO" sh -c '
+        set -e
+        mc alias set local http://localhost:9000 "$MC_USER" "$MC_PASS" --quiet
+        if mc admin user svcacct info local "$SVC_KEY" >/dev/null 2>&1; then
+            mc admin user svcacct rm local "$SVC_KEY" >/dev/null
+        fi
+        mc admin user svcacct add local "$MC_USER" \
+            --access-key "$SVC_KEY" --secret-key "$SVC_SECRET" \
+            --policy /tmp/politica-datos.json >/dev/null
+        ' 2>&1); then
+        echo "  ✓ $clave"
+    else
+        step_failed "cuenta $clave: $(echo "$out" | tail -2)"
+    fi
+}
+
+paso_cuentas() {
+    echo "→ Creando cuentas de servicio en MinIO..."
+    local politica="infra/docker-compose/minio/politica-datos.json"
+
+    if [ ! -f "$politica" ]; then
+        step_failed "no se encuentra $politica"
+        return
+    fi
+    if ! docker cp "$politica" "$C_MINIO:/tmp/politica-datos.json" >/dev/null 2>&1; then
+        step_failed "no se pudo copiar la política a $C_MINIO"
+        return
+    fi
+
+    crear_cuenta_minio pipeline "$PIPELINE_KEY" "$PIPELINE_SECRET"
+    crear_cuenta_minio hive     "$HIVE_KEY"     "$HIVE_SECRET"
+    crear_cuenta_minio trino    "$TRINO_KEY"    "$TRINO_SECRET"
 }
 
 # `superset db upgrade` va aquí y no en un paso propio porque `fab create-admin`
@@ -245,18 +314,20 @@ paso_banner() {
 case "${SUBCOMANDO:=${2:-todo}}" in
     bases)    paso_bases ;;
     buckets)  paso_buckets ;;
+    cuentas)  paso_cuentas ;;
     usuarios) paso_usuarios ;;
     banner)   paso_banner ;;
     todo)
         paso_bases
         paso_buckets
+        paso_cuentas
         paso_usuarios
         paso_resumen
         paso_banner
         ;;
     *)
         echo "  ✗ Subcomando desconocido: $SUBCOMANDO" >&2
-        echo "    Usa: bases | buckets | usuarios | banner | todo" >&2
+        echo "    Usa: bases | buckets | cuentas | usuarios | banner | todo" >&2
         exit 1
         ;;
 esac

@@ -37,8 +37,14 @@ x-airflow-common: &airflow-common
     # Credenciales de MinIO para S3A y boto3. Se pasan como variables de
     # entorno y NUNCA como propiedades de Spark: una propiedad viaja en la
     # línea de comandos de spark-submit y aparece en la UI del driver.
-    AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-    AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+    #
+    # Es la cuenta de servicio vf-pipeline, NO la raíz. Antes aquí iban
+    # MINIO_ROOT_USER y MINIO_ROOT_PASSWORD, con lo que estos contenedores
+    # podían borrar todos los buckets y administrar el servidor. La política que
+    # las acota está en infra/docker-compose/minio/politica-datos.json y la
+    # aplica `init_users.sh cuentas`.
+    AWS_ACCESS_KEY_ID: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
+    AWS_SECRET_ACCESS_KEY: ${MINIO_PIPELINE_SECRET_KEY}
     # Catálogo compartido con Trino. El driver de Spark corre en este
     # contenedor, así que es aquí donde se resuelve.
     HIVE_METASTORE_URIS: thrift://hive-metastore:9083
@@ -154,8 +160,8 @@ services:
       METASTORE_DB_URL: jdbc:postgresql://postgres:5432/metastore
       METASTORE_DB_USER: ${POSTGRES_USER}
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_HIVE_ACCESS_KEY:-vf-hive}
+      MINIO_SECRET_KEY: ${MINIO_HIVE_SECRET_KEY}
     secrets:
       - postgres_password
     ports:
@@ -180,8 +186,8 @@ services:
       SPARK_MASTER_WEBUI_PORT: "8082"
       OPENLINEAGE_URL: http://marquez-api:9000
       OPENLINEAGE_NAMESPACE: vektralforge
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_PIPELINE_SECRET_KEY}
       HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     ports:
       - "${BIND_HOST:-127.0.0.1}:7077:7077"
@@ -203,8 +209,8 @@ services:
       OPENLINEAGE_URL: http://marquez-api:9000
       OPENLINEAGE_NAMESPACE: vektralforge
       # Los executors resuelven las credenciales de S3A desde el entorno.
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_ACCESS_KEY_ID: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_PIPELINE_SECRET_KEY}
       HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     ports:
       - "${BIND_HOST:-127.0.0.1}:8083:8083"
@@ -218,8 +224,8 @@ services:
     mem_limit: 768m
     environment:
       MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ACCESS_KEY: ${MINIO_TRINO_ACCESS_KEY:-vf-trino}
+      MINIO_SECRET_KEY: ${MINIO_TRINO_SECRET_KEY}
     volumes:
       - ../../trino/catalog:/etc/trino/catalog
     ports:
