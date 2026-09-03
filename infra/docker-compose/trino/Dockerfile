@@ -8,7 +8,7 @@
 # contenedor —y aparecer en `docker inspect` y en `docker compose config`—. El
 # resto del stack ya la recibe como archivo montado; esto pone a Trino en la
 # misma línea.
-FROM trinodb/trino:448
+FROM trinodb/trino:483
 
 USER root
 
