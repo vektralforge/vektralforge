@@ -78,17 +78,34 @@ check_required MINIO_TRINO_SECRET_KEY "$TRINO_SECRET"  # pragma: allowlist secre
 # Con --env-file solo viaja la ruta de un archivo, creado con permisos 600 en un
 # directorio 700 y borrado al salir.
 #
-# Alcance honesto: dentro del contenedor el comando final sigue recibiendo la
-# clave como argumento —ni `airflow users create`, ni `superset fab create-admin`
-# ni `mc alias set` la aceptan de otra forma—, así que sigue apareciendo en el
-# `ps` de ESE contenedor mientras dura el comando. Lo que se cierra es la
-# exposición en el host, que es la amplia.
+# Eso cerraba la exposición en el HOST. Dentro del contenedor la clave seguía
+# llegando como argumento, y esa frase decía además que no había alternativa:
+# «ni airflow users create, ni superset fab create-admin ni mc alias set la
+# aceptan de otra forma». Era falso en los tres casos.
+#
+#   · `airflow users create` sin --password llama a getpass dos veces.
+#   · `superset fab create-admin` usa @click.password_option(), que es prompt
+#     con confirmación.
+#   · `mc alias import ALIAS /dev/stdin` lee la credencial de la entrada
+#     estándar, y sustituye a `mc alias set`.
+#
+# Los tres reciben ahora la clave por la TUBERÍA de `docker exec -i`: ni en la
+# línea de comandos, ni en el entorno, ni en un archivo dentro del contenedor.
+# Solo en el pipe y en la memoria del proceso.
+#
+# Queda uno, y no tiene salida: `mc admin user svcacct add` solo acepta
+# --secret-key con el valor en la línea de comandos. Los secretos de las tres
+# cuentas de servicio siguen ahí durante los milisegundos que dura el comando,
+# y conviene decirlo entero: `docker top` enseña desde el host la línea de
+# comandos de los procesos de dentro, así que ese caso concreto tampoco estaba
+# cerrado en el host.
 DIR_SECRETOS=$(mktemp -d)
 chmod 700 "$DIR_SECRETOS"
 trap 'rm -rf "$DIR_SECRETOS"' EXIT
 
 # Formato de --env-file: una línea NOMBRE=valor, sin comillas, el valor literal
-# hasta el fin de línea.
+# hasta el fin de línea. Lo usa ya solo `crear_cuenta_minio`, que es el único
+# paso sin una vía por stdin.
 archivo_env() {
     local nombre="$1"
     shift
@@ -96,6 +113,27 @@ archivo_env() {
     printf '%s\n' "$@" > "$archivo"
     chmod 600 "$archivo"
     printf '%s' "$archivo"
+}
+
+# `mc alias import` lee de stdin un JSON con la credencial. Es la vía por la que
+# la raíz de MinIO entra al contenedor sin pasar por argv ni por el entorno.
+#
+# Se usa un alias PROPIO y no `local`: ese lo trae `mc` por defecto y es el que
+# usa el healthcheck del contenedor (`mc ready local`). Sobreescribirlo
+# funcionaba, pero dejaba la credencial raíz escrita en el config de mc dentro
+# del contenedor para el resto de su vida. El alias propio se borra con un trap
+# al terminar cada comando.
+#
+# Solo hay que escapar la barra invertida y la comilla doble: `make init-env`
+# genera claves alfanuméricas, pero un .env escrito a mano puede traer
+# cualquier cosa, y un JSON roto daría un error de mc que no señala la causa.
+escapar_json() {
+    printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+json_alias_minio() {
+    printf '{"url":"http://localhost:9000","accessKey":"%s","secretKey":"%s","api":"s3v4","path":"auto"}\n' \
+        "$(escapar_json "$MINIO_USER")" "$(escapar_json "$MINIO_PASS")"
 }
 
 C_POSTGRES=docker-compose-postgres-1
@@ -142,14 +180,14 @@ paso_bases() {
 paso_buckets() {
     # ── MinIO ────────────────────────────────────────────────────────────────────
     echo "→ Creando buckets en MinIO..."
-    if out=$(docker exec --env-file "$(archivo_env minio "MC_USER=$MINIO_USER" "MC_PASS=$MINIO_PASS")" \
-        "$C_MINIO" sh -c '
+    if out=$(json_alias_minio | docker exec -i "$C_MINIO" sh -c '
         set -e
-        mc alias set local http://localhost:9000 "$MC_USER" "$MC_PASS" --quiet
+        mc alias import vf /dev/stdin --quiet
+        trap "mc alias remove vf >/dev/null 2>&1" EXIT
         for b in raw bronze silver gold checkpoints; do
-            mc mb --ignore-existing "local/$b" --quiet
+            mc mb --ignore-existing "vf/$b" --quiet
         done
-        mc ls local
+        mc ls vf
     ' 2>&1); then
         echo "$out" | sed 's/^/  /'
     else
@@ -174,16 +212,22 @@ paso_buckets() {
 crear_cuenta_minio() {
     local nombre="$1" clave="$2" secreto="$3" out
 
-    if out=$(docker exec --env-file "$(archivo_env "svcacct-$nombre" \
-              "MC_USER=$MINIO_USER" "MC_PASS=$MINIO_PASS" \
+    # La raíz entra por stdin. El SECRETO de la cuenta de servicio no puede:
+    # `mc admin user svcacct add` solo acepta --secret-key con el valor en la
+    # línea de comandos, así que sigue viajando por --env-file hasta el entorno
+    # del contenedor y de ahí a argv. Es el residual del §2.10.
+    if out=$(json_alias_minio | docker exec -i \
+        --env-file "$(archivo_env "svcacct-$nombre" \
+              "MC_USER=$MINIO_USER" \
               "SVC_KEY=$clave" "SVC_SECRET=$secreto")" \
         "$C_MINIO" sh -c '
         set -e
-        mc alias set local http://localhost:9000 "$MC_USER" "$MC_PASS" --quiet
-        if mc admin user svcacct info local "$SVC_KEY" >/dev/null 2>&1; then
-            mc admin user svcacct rm local "$SVC_KEY" >/dev/null
+        mc alias import vf /dev/stdin --quiet
+        trap "mc alias remove vf >/dev/null 2>&1" EXIT
+        if mc admin user svcacct info vf "$SVC_KEY" >/dev/null 2>&1; then
+            mc admin user svcacct rm vf "$SVC_KEY" >/dev/null
         fi
-        mc admin user svcacct add local "$MC_USER" \
+        mc admin user svcacct add vf "$MC_USER" \
             --access-key "$SVC_KEY" --secret-key "$SVC_SECRET" \
             --policy /tmp/politica-datos.json >/dev/null
         ' 2>&1); then
@@ -221,10 +265,13 @@ paso_usuarios() {
     # SimpleAuthManager los usuarios se declaran por configuración.
     echo "→ Creando usuario admin en Airflow ($AF_USER)..."
     if docker exec "$C_AIRFLOW" airflow users list >/dev/null 2>&1; then
-        if out=$(docker exec --env-file "$(archivo_env airflow "CLAVE_ADMIN=$AF_PASS")" \
+        # Sin --password: el CLI llama a getpass dos veces, así que la clave
+        # llega por la tubería. `printf` es un builtin de bash, de modo que la
+        # clave tampoco aparece en argv de ningún proceso del HOST.
+        if out=$(printf '%s\n%s\n' "$AF_PASS" "$AF_PASS" | docker exec -i \
             "$C_AIRFLOW" sh -c '
                 airflow users create \
-                    --username "$1" --password "$CLAVE_ADMIN" \
+                    --username "$1" \
                     --firstname Admin --lastname VektralForge \
                     --role Admin --email "$2"
             ' _ "$AF_USER" "$AF_EMAIL" 2>&1); then
@@ -249,11 +296,13 @@ paso_usuarios() {
     fi
 
     echo "→ Creando usuario admin en Superset ($SS_USER)..."
-    if out=$(docker exec --env-file "$(archivo_env superset "CLAVE_ADMIN=$SS_PASS")" \
+    # Igual que Airflow: @click.password_option() pregunta con confirmación,
+    # así que basta con no pasar --password y darle la clave por stdin.
+    if out=$(printf '%s\n%s\n' "$SS_PASS" "$SS_PASS" | docker exec -i \
         "$C_SUPERSET" sh -c '
             superset fab create-admin \
                 --username "$1" --firstname Admin --lastname VektralForge \
-                --email "$2" --password "$CLAVE_ADMIN"
+                --email "$2"
         ' _ "$SS_USER" "$SS_EMAIL" 2>&1); then
         echo "  ✓ creado"
     elif echo "$out" | grep -qiE "already exists|Error: .*duplicate"; then
