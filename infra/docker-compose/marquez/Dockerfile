@@ -1,5 +1,15 @@
 # Marquez solo publica imágenes amd64. En Apple Silicon corre bajo emulación.
-FROM --platform=linux/amd64 marquezproject/marquez:latest
+#
+# 0.51.1 y no `latest`. Eran la misma imagen el día que se fijó —mismo digest,
+# sha256:0721c976…— así que esto no cambia nada hoy; cambia que mañana no se
+# mueva sola. `latest` hacía además que la versión no se pudiera saber sin
+# entrar al contenedor a mirar el nombre del jar, y que Dependabot no tuviera
+# nada que vigilar.
+#
+# Va junto con marquezproject/marquez-web en docker-compose.yml: la UI habla
+# con la API por su REST y las dos versiones se publican en pareja. Subir una
+# sola es pedir un desajuste silencioso.
+FROM --platform=linux/amd64 marquezproject/marquez:0.51.1
 
 # La imagen oficial usa WORKDIR /usr/src/app y arranca con ./entrypoint.sh
 COPY marquez.yml.template /usr/src/app/marquez.yml.template

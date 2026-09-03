@@ -42,7 +42,7 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | MinIO | 2024-04 | `Operativo` | Almacenamiento de objetos S3 |
 | Apache Superset | 6.1.0 | `Operativo` | Visualización |
 | OpenLineage | 1.52.0 | `Operativo` | Linaje en Airflow y Spark |
-| Marquez | — | `Operativo` | Almacén y UI de linaje |
+| Marquez | 0.51.1 | `Operativo` | Almacén y UI de linaje |
 | PostgreSQL | 15 | `Operativo` | Metadatos de Airflow, Hive, Marquez y Superset |
 | Redis | 7.2 | `Operativo` | Caché de Superset: metadatos y resultados de los gráficos |
 | OpenBao | 2.1.0 | `Parcial` | Secretos; en local corre en modo dev |

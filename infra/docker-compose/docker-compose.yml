@@ -308,6 +308,10 @@ services:
   # conexión a la BD desde variables de entorno.
   # Puerto 9000 interno → 9100 externo (evita AirPlay :5000 y MinIO :9000 en macOS)
   marquez-api:
+    # Con nombre y versión propios, como el resto de las imágenes construidas:
+    # así `docker images` dice qué versión de Marquez hay sin abrir nada. La
+    # versión sale del FROM de infra/docker-compose/marquez/Dockerfile.
+    image: vektralforge/marquez-api:0.51.1
     build: ./marquez
     restart: unless-stopped
     platform: linux/amd64
@@ -335,7 +339,9 @@ services:
 
   # ── Marquez Web (UI de linaje) ────────────────────────────────────────────
   marquez-web:
-    image: marquezproject/marquez-web:latest
+    # Misma versión que la API, siempre: la UI habla con ella por su REST y
+    # las dos se publican en pareja. Ver la nota del Dockerfile de marquez.
+    image: marquezproject/marquez-web:0.51.1
     restart: unless-stopped
     platform: linux/amd64
     environment:
@@ -433,6 +439,10 @@ services:
   # Base de metadatos propia: compartir la de Airflow mezcla dos aplicaciones
   # en un mismo esquema y complica los respaldos y las migraciones.
   superset:
+    # Igual que las otras cuatro construidas: nombre y versión propios, para que
+    # `docker images` diga qué hay corriendo. Era, junto con marquez-api, la
+    # única que se quedaba con el nombre que inventa compose.
+    image: vektralforge/superset:6.1.0
     build: ./superset
     restart: unless-stopped
     environment:
