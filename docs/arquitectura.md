@@ -96,7 +96,48 @@ versión menor o PySpark rechaza la ejecución.
 
 ## 3. Flujo de datos
 
-![Flujo de datos end-to-end](img/01-flujo-datos.svg)
+```mermaid
+flowchart LR
+    subgraph fuentes["Fuentes · dos APIs REST públicas"]
+        API1["mindicador.cl"]
+        API2["ARClim"]
+    end
+
+    AF["<b>Airflow 3.3.0</b><br/>orquesta"]
+
+    subgraph minio["MinIO · almacenamiento S3"]
+        RAW["<b>raw/</b><br/>respuesta cruda · caché"]
+        BRZ["<b>bronze/</b><br/>tablas Delta"]
+        SLV["silver/<br/><i>vacío</i>"]
+        GLD["gold/<br/><i>vacío</i>"]
+    end
+
+    SPK["<b>Spark 4.1.3 · Delta 4.1.0</b><br/>única escritura ACID"]
+    HMS["Hive Metastore 4.0.0"]
+    TRN["<b>Trino 448</b><br/>única lectura SQL"]
+    SUP["Superset 6.1.0"]
+    MQZ["Marquez · OpenLineage"]
+
+    API1 --> AF
+    API2 --> AF
+    AF -->|"extract · boto3"| RAW
+    AF -->|"spark-submit · modo client"| SPK
+    RAW --> SPK
+    SPK -->|"replaceWhere por fecha_carga"| BRZ
+    SPK -.->|"registra la tabla"| HMS
+    HMS --> TRN
+    BRZ --> TRN
+    TRN --> SUP
+    AF -.->|eventos| MQZ
+    SPK -.->|eventos| MQZ
+    BRZ -.-> SLV -.-> GLD
+
+    classDef vacio stroke-dasharray:4 3,color:#888
+    class SLV,GLD vacio
+```
+
+Las capas `silver/` y `gold/` existen como buckets y **no las escribe ningún
+job**: aparecen punteadas por eso.
 
 **Spark escribe, Trino lee.** Las operaciones ACID sobre Delta Lake —`MERGE`,
 `UPDATE`, `DELETE`, `VACUUM`— solo las hace Spark. Trino aporta consulta SQL
@@ -181,7 +222,57 @@ la tabla aparezca de inmediato en `SHOW TABLES`.
 
 ## 4. Arquitectura de servicios
 
-![Stack de servicios](img/02-stack-servicios.svg)
+```mermaid
+flowchart LR
+    AFS["<b>airflow 3.3.0</b><br/>webserver :8090 · scheduler · dag-processor"]
+
+    subgraph proc["Procesamiento"]
+        direction TB
+        SPM["spark-master<br/>:7077 · UI :8082"]
+        SPW["spark-worker<br/>UI :8083"]
+    end
+
+    subgraph cons["Catálogo y consulta"]
+        direction TB
+        TRN["trino<br/>:8081"]
+        HMS["hive-metastore<br/>thrift :9083"]
+    end
+
+    MIN["<b>minio</b><br/>API :9000 · consola :9001"]
+
+    subgraph vis["Visualización y linaje"]
+        direction TB
+        SUP["superset<br/>:8088"]
+        MQW["marquez-web<br/>:3000"]
+        MQA["marquez-api<br/>:9100"]
+    end
+
+    subgraph apoyo["Servicios de apoyo"]
+        direction TB
+        PG["postgres 15 · :5432<br/>airflow · metastore · marquez"]
+        RDS["redis 7.2 · :6379<br/>caché de Superset"]
+        OB["openbao 2.1.0 · :8200<br/>modo -dev, sin consumidores"]
+        KFK["kafka 7.6.1 · :9092 + zookeeper<br/>perfil streaming, no arranca"]
+    end
+
+    AFS -->|"spark-submit · modo client"| SPM
+    SPM --- SPW
+    SPM --> MIN
+    HMS --> MIN
+    TRN --> HMS
+    TRN --> MIN
+    SUP --> TRN
+    MQW --> MQA
+    AFS -.->|OpenLineage| MQA
+    SPM -.->|OpenLineage| MQA
+
+    classDef inactivo stroke-dasharray:4 3,color:#888
+    class OB,KFK inactivo
+```
+
+`postgres` aloja tres bases: la de Airflow, la del metastore y la de Marquez.
+`openbao` y el par de Kafka aparecen punteados porque **están levantados sin que
+nada los consuma todavía** — OpenBao además en modo `-dev`.
 
 `SparkSubmitOperator` ejecuta `spark-submit` desde el contenedor de Airflow, no
 desde el de Spark. Eso evita montar el socket de Docker —que daría a Airflow
@@ -209,14 +300,12 @@ vektralforge/
 ├── superset/dashboards/       # Scripts de configuración de dashboards
 ├── infra/
 │   ├── docker-compose/        # Stack local y Dockerfiles
-│   ├── k3s/                   # Manifiestos Kubernetes
-│   └── helm/                  # Charts propios
-├── .ci/scripts/               # Lógica de lint, test y deploy
+│   └── k3s/                   # Namespaces y README de secretos — no hay manifiestos
+├── .ci/scripts/               # Lógica de lint, test, auditoría y deploy
 ├── .github/workflows/         # CI en GitHub Actions
 ├── docs/
 │   ├── arquitectura.md
-│   ├── brand/                 # Activos de marca
-│   └── img/                   # Diagramas SVG
+│   └── brand/                 # Activos de marca
 ├── Makefile
 └── README.md
 ```
@@ -250,8 +339,6 @@ propio.
 
 ### Ramas
 
-![Estrategia de branching](img/05-cicd-ambientes.svg)
-
 | Rama | Destino | Verificación |
 |---|---|---|
 | `feature/*` | Local | CI completo en el pull request |
@@ -270,7 +357,17 @@ lo habitual es dejarla como ejecución nocturna.
 
 ## 7. Capas del lakehouse
 
-![Capas del Lakehouse](img/03-capas-lakehouse.svg)
+```mermaid
+flowchart LR
+    F["APIs REST"] -->|"boto3"| RAW["<b>raw/</b><br/>crudo · 30 días"]
+    RAW -->|"Spark"| BRZ["<b>bronze/</b><br/>Delta tipado · 90 días"]
+    BRZ -.->|"sin implementar"| SLV["silver/<br/>limpio · indefinido"]
+    SLV -.->|"sin implementar"| GLD["gold/<br/>agregado · indefinido"]
+    BRZ --> TRN["Trino → Superset"]
+
+    classDef vacio stroke-dasharray:4 3,color:#888
+    class SLV,GLD vacio
+```
 
 | Capa | Contenido | Retención prevista |
 |---|---|---|
@@ -287,7 +384,23 @@ versiones hasta que alguien las purgue.
 
 ## 8. Secretos
 
-![Gestión de secretos](img/04-gestion-secretos.svg)
+```mermaid
+flowchart LR
+    ENV[".env<br/><i>fuera de git</i>"] -->|"secrets: environment"| CMP["Docker Compose"]
+    CMP -->|"archivo, no variable"| RS["/run/secrets/&lt;nombre&gt;<br/>dentro del contenedor"]
+    RS --> EP["entrypoint de la imagen"]
+    EP --> CS["core-site.xml<br/>S3A · Spark, Airflow, metastore"]
+    EP --> INI["INI del SDK<br/>boto3"]
+    EP --> CAT["catálogo de Trino<br/>renderizado al arrancar"]
+    EP --> HS["hive-site.xml<br/>propiedades JDO"]
+
+    classDef gen fill:#f6f8fa,stroke:#999
+    class CS,INI,CAT,HS gen
+```
+
+Los cuatro archivos de la derecha se generan en el arranque con permisos `600` y
+**no están versionados**. Ni la clave ni la contraseña aparecen en
+`docker inspect`, en `docker compose config` ni en `/proc/<pid>/environ`.
 
 | Entorno | Herramienta | Estado |
 |---|---|---|
@@ -443,8 +556,6 @@ porque `hadoop-aws` hereda la versión del SDK de su POM padre.
 ---
 
 ## 13. Hoja de ruta
-
-![Hoja de ruta](img/06-hoja-de-ruta.svg)
 
 | Fase | Hito |
 |---|---|
