@@ -1,0 +1,52 @@
+name: Feature or change
+description: Propose something the project does not do yet
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Proposals that describe a **problem** get discussed; proposals that
+        describe only a solution tend to stall. Start with what is hard today.
+
+  - type: textarea
+    id: problema
+    attributes:
+      label: The problem
+      description: What is difficult, slow or impossible right now.
+    validations:
+      required: true
+
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: What you propose
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: What else you considered
+      description: >-
+        Including "do nothing". Several findings in this repository were closed
+        by deleting code rather than by adding it.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the stack
+      multiple: true
+      options:
+        - Airflow / DAGs
+        - Spark / Delta
+        - Hive Metastore
+        - Trino
+        - Superset
+        - MinIO / storage
+        - OpenLineage / Marquez
+        - Compose / images
+        - CI, tests or tooling
+        - Documentation
+        - Deployment (K3s)
+    validations:
+      required: true

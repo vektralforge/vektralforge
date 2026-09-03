@@ -9,3 +9,9 @@ pytest==9.1.1
 pytest-cov==7.1.0
 ruff==0.16.5
 detect-secrets==1.5.0
+
+# El linter de SQL. Estaba sin fijar en el CI y en setup.sh, así que cada
+# ejecución podía traer una versión distinta y un lint que pasaba ayer podía
+# fallar hoy sin que nadie hubiera tocado el SQL. 4.3.0 es la que el CI ya
+# instalaba al no fijar nada, así que fijarla no cambia el comportamiento.
+sqlfluff==4.3.0

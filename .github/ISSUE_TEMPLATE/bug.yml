@@ -1,0 +1,75 @@
+name: Bug report
+description: Something behaves differently from what the documentation says
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The most useful bug report is one where
+        someone else can reproduce the failure — the second most useful is one
+        that says clearly what was expected and what happened instead.
+
+        **Not here:** security vulnerabilities. See SECURITY.md.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: >-
+        Paste the error, not a summary of it. If the output is long, the last
+        30 lines are usually enough.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: If the documentation says otherwise, link to the line.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >-
+        The exact commands, from a known starting point. `make dev-reset` is a
+        good one, because it removes the volumes and rules out leftover state.
+      placeholder: |
+        1. make dev-reset
+        2. make dev-load-example
+        3. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: estado
+    attributes:
+      label: Stack state
+      description: >-
+        Output of `make dev-ps`. A container in a restart loop explains most
+        failures, and it is the first thing anyone will ask for.
+      render: shell
+
+  - type: input
+    id: versions
+    attributes:
+      label: Docker and OS
+      placeholder: "Docker 27.3 · macOS 15.1 arm64"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: previo
+    attributes:
+      label: Before opening
+      options:
+        - label: I searched the existing issues
+          required: true
+        - label: >-
+            The output I pasted contains no credentials. `init_users.sh` prints
+            variable names rather than values, but a `.env` or a stack trace can
+            still carry one.
+          required: true
