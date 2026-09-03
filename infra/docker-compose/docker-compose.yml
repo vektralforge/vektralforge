@@ -92,7 +92,7 @@ services:
   # init-multiple-dbs.sh SOLO se ejecuta al crear el volumen. Si se añade una
   # base a POSTGRES_MULTIPLE_DATABASES hay que hacer `make dev-reset`.
   postgres:
-    image: postgres:15
+    image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
