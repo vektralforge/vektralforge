@@ -42,7 +42,7 @@ RUN mvn -q -B dependency:copy-dependencies \
     && ls -1 /jars
 
 # ── Etapa 2: imagen final ────────────────────────────────────────────────────
-FROM apache/airflow:3.3.0-python3.12
+FROM apache/airflow:3.3.1-python3.12
 
 ARG AIRFLOW_VERSION=3.3.0
 ARG PYTHON_VERSION=3.12
