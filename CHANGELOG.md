@@ -12,6 +12,14 @@ under **Upgrading**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Branch protection is now enforced on `develop` and `main`.** Merging needs a
+  pull request, one approving review from somebody other than the author, and
+  the `CI` and DCO checks green. Direct pushes, force pushes and branch deletion
+  are refused — with an empty bypass list, so the rule applies to repository
+  admins too.
+
 ## [0.1.0] — 2026-09-03
 
 First tagged release. The stack has been running end to end for some time; this
