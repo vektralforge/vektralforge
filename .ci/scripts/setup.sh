@@ -6,16 +6,23 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 VENV_DIR="$REPO_ROOT/.venv"
 
-# ── 1. Verificar Python ───────────────────────────────────────────────────────
-echo "→ Verificando Python 3.10+..."
-python3 -c "import sys; assert sys.version_info >= (3,10), 'Requiere Python 3.10+'"
-PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-echo "  Python $PYTHON_VERSION detectado ✓"
+# ── 1. Chequear/instalar dependencias de sistema ─────────────────────────────
+# Delegado por completo a check_deps.sh: valida (e instala, con confirmación
+# del usuario) python3.12, venv, pip, git, make, Homebrew/gestor de paquetes y
+# Docker+Compose. Se sourcea (no se ejecuta directo) para que quede disponible
+# su main() acá mismo, y para que el `exec > >(tee ...)` de su logging cubra
+# también el resto de este script, no solo el chequeo de dependencias.
+# Al llamar a main() queda exportado PYTHON_BIN con la ruta absoluta del
+# intérprete 3.12 ya validado — se usa más abajo para crear el virtualenv, en
+# vez de confiar en cuál "python3" resuelva el PATH (que podía ser cualquier
+# versión >= 3.10, no necesariamente la 3.12 que el resto del proyecto pisa).
+source "$REPO_ROOT/.ci/scripts/check_deps.sh"
+main
 
 # ── 2. Crear virtualenv si no existe ─────────────────────────────────────────
 if [ ! -d "$VENV_DIR" ]; then
-  echo "→ Creando virtualenv en .venv/ ..."
-  python3 -m venv "$VENV_DIR"
+  echo "→ Creando virtualenv en .venv/ (con $PYTHON_BIN) ..."
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
   echo "  ✓ Virtualenv creado"
 else
   echo "→ Virtualenv .venv/ ya existe, reutilizando"
