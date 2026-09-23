@@ -3,7 +3,7 @@
 # Requisitos: Python 3.12, Docker Compose v2, GNU Make
 # Variables de entorno: infra/docker-compose/.env (ver .env.example)
 
-.PHONY: help check-env check-python \
+.PHONY: help check-env \
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
         lint-dags test-dags lint-spark test-spark lint-sql \
@@ -14,28 +14,19 @@
 
 COMPOSE  = docker compose -f infra/docker-compose/docker-compose.yml
 ENV_FILE = infra/docker-compose/.env
-PYTHON   = python3.12
 
 # Variables que deben existir y tener valor en el .env
 REQUIRED_VARS = POSTGRES_USER POSTGRES_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD
 
 # ── Verificaciones ────────────────────────────────────────────────────────────
-
-check-python:
-	@command -v $(PYTHON) >/dev/null 2>&1 || { \
-		echo ""; \
-		echo "  ✗ ERROR: se requiere Python 3.12 (no se encontró '$(PYTHON)')"; \
-		echo ""; \
-		echo "  VektralForge fija Python 3.12: versiones más nuevas rompen la"; \
-		echo "  compilación de pandas, que los providers de Airflow acotan a <2.2."; \
-		echo ""; \
-		echo "    macOS:   brew install python@3.12"; \
-		echo "    Ubuntu:  sudo apt install python3.12 python3.12-venv"; \
-		echo "    pyenv:   pyenv install 3.12 && pyenv local 3.12"; \
-		echo ""; \
-		exit 1; \
-	}
-	@echo "  ✓ $$($(PYTHON) --version)"
+#
+# El chequeo de Python 3.12 (antes un target `check-python` acá) vivía
+# duplicado: esta misma verificación, pero más superficial (solo
+# `command -v`), corría de nuevo apenas arrancaba .ci/scripts/setup.sh, que
+# ahora delega TODO el chequeo de dependencias de sistema — Python 3.12
+# exacto, venv, pip, git, make, Homebrew/gestor de paquetes, Docker+Compose —
+# a .ci/scripts/check_deps.sh. Se eliminó acá para no mantener dos fuentes de
+# verdad sobre qué versión de Python se requiere.
 
 check-env:
 	@if [ ! -f "$(ENV_FILE)" ]; then \
@@ -68,9 +59,9 @@ check-env:
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
-setup: check-python check-env
+setup: check-env
 	@echo "→ Ejecutando setup..."
-	@PYTHON_BIN=$(PYTHON) bash .ci/scripts/setup.sh
+	@bash .ci/scripts/setup.sh
 
 # ── Crea $(ENV_FILE) con claves generadas ─────────────────────────────────────────────────────────────────────
 init-env:
