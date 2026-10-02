@@ -27,19 +27,25 @@ REQUIRED_VARS = POSTGRES_USER POSTGRES_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSW
 # exacto, venv, pip, git, make, Homebrew/gestor de paquetes, Docker+Compose —
 # a .ci/scripts/check_deps.sh. Se eliminó acá para no mantener dos fuentes de
 # verdad sobre qué versión de Python se requiere.
+#
+# El logging de este archivo usa el mismo formato [INFO]/[ERROR] que
+# check_deps.sh, en inglés — homologado a mano acá porque cada línea de una
+# receta de Make corre en su propio subshell (no hay forma de sourcear los
+# helpers _info/_ok/_err de check_deps.sh y que persistan entre líneas, como
+# sí ocurre en setup.sh).
 
 check-env:
 	@if [ ! -f "$(ENV_FILE)" ]; then \
 		echo ""; \
-		echo "  ✗ ERROR: no existe $(ENV_FILE)"; \
+		echo "[ERROR] $(ENV_FILE) not found"; \
 		echo ""; \
-		echo "  Docker Compose lee las variables desde ese archivo. Sin él, los"; \
-		echo "  contenedores arrancan con credenciales sin expandir y Postgres"; \
-		echo "  rechaza la conexión unos noventa segundos después."; \
+		echo "  Docker Compose reads its variables from that file. Without it,"; \
+		echo "  the containers start with unexpanded credentials and Postgres"; \
+		echo "  refuses the connection about ninety seconds later."; \
 		echo ""; \
 		echo "    cp .env.example $(ENV_FILE)"; \
 		echo ""; \
-		echo "  Luego edita los valores según tu entorno."; \
+		echo "  Then edit the values for your environment."; \
 		echo ""; \
 		exit 1; \
 	fi
@@ -50,17 +56,17 @@ check-env:
 	done; \
 	if [ -n "$$missing" ]; then \
 		echo ""; \
-		echo "  ✗ ERROR: variables sin valor en $(ENV_FILE):"; \
+		echo "[ERROR] Variables with no value in $(ENV_FILE):"; \
 		for v in $$missing; do echo "      $$v"; done; \
 		echo ""; \
 		exit 1; \
 	fi
-	@echo "  ✓ $(ENV_FILE) completo"
+	@echo "[INFO]  $(ENV_FILE) ... OK"
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
 setup: check-env
-	@echo "→ Ejecutando setup..."
+	@echo "[INFO]  Running setup"
 	@bash .ci/scripts/setup.sh
 
 # ── Crea $(ENV_FILE) con claves generadas ─────────────────────────────────────────────────────────────────────
@@ -90,10 +96,10 @@ init-env:
 # contenido; duplicarlo por fechas solo añade falsos positivos y una tabla de
 # dependencias que mantener a mano.
 dev-up: check-env dev-build
-	@echo "→ Levantando stack local..."
+	@echo "[INFO]  Starting local stack"
 	$(COMPOSE) --env-file $(ENV_FILE) up -d
 	@echo ""
-	@echo "  ✓ Stack disponible en:"
+	@echo "[INFO]  Stack available at:"
 	@echo "    Airflow  → http://localhost:8090"
 	@echo "    Trino    → http://localhost:8081"
 	@echo "    MinIO    → http://localhost:9001"
@@ -102,8 +108,8 @@ dev-up: check-env dev-build
 	@echo "    OpenBao  → http://localhost:8200"
 	@echo "    Spark    → http://localhost:8082"
 	@echo ""
-	@echo "  Credenciales en: $(ENV_FILE)"
-	@echo "  Datos de ejemplo: make dev-load-example"
+	@echo "[INFO]  Credentials in: $(ENV_FILE)"
+	@echo "[INFO]  Sample data: make dev-load-example"
 
 dev-down: check-env
 	$(COMPOSE) --env-file $(ENV_FILE) down
@@ -117,42 +123,41 @@ dev-ps: check-env
 # ── Reset ─────────────────────────────────────────────────────────────────────
 
 dev-reset: check-env dev-build
-	@echo "→ Reset completo del stack (se borran los volúmenes)..."
+	@echo "[INFO]  Full stack reset (volumes will be deleted)"
 	$(COMPOSE) --env-file $(ENV_FILE) down -v
-	@echo "→ Levantando stack limpio..."
+	@echo "[INFO]  Starting clean stack"
 	$(COMPOSE) --env-file $(ENV_FILE) up -d
-	@echo "→ Esperando que los servicios estén listos (60s)..."
+	@echo "[INFO]  Waiting for services to be ready (60s)"
 	@sleep 60
 	@bash .ci/scripts/init_users.sh $(ENV_FILE)
 	@echo ""
-	@echo "  Para cargar datos de ejemplo:"
-	@echo "    make dev-load-example"
+	@echo "[INFO]  To load sample data: make dev-load-example"
 
 # `down --rmi local` NO sirve aquí: borra solo las imágenes sin tag propio en el
 # campo `image:`, y las tres del proyecto lo tienen (vektralforge/airflow,
 # vektralforge/spark, vektralforge/hive-metastore). Compose las saltaba, así que
 # un cambio en un Dockerfile nunca llegaba al contenedor. Se reconstruye explícito.
 dev-build: check-env
-	@echo "→ Reconstruyendo las imágenes del proyecto..."
+	@echo "[INFO]  Rebuilding project images"
 	$(COMPOSE) --env-file $(ENV_FILE) build
 
 # Ahora que `dev-reset` construye siempre, lo que distingue a esta variante es
 # ignorar la caché: es la que sirve cuando se sospecha de una capa cacheada y no
 # de un Dockerfile desactualizado.
 dev-reset-hard: check-env
-	@echo "→ Reset extremo (borra volúmenes y reconstruye sin caché)..."
+	@echo "[INFO]  Extreme reset (deletes volumes and rebuilds with no cache)"
 	$(COMPOSE) --env-file $(ENV_FILE) down -v
-	@echo "→ Reconstruyendo las imágenes desde cero..."
+	@echo "[INFO]  Rebuilding images from scratch"
 	$(COMPOSE) --env-file $(ENV_FILE) build --no-cache
 	@$(MAKE) dev-reset
 
 # ── Cargar datos de ejemplo ───────────────────────────────────────────────────
 
 dev-load-example: check-env
-	@echo "→ Cargando datos de ejemplo..."
+	@echo "[INFO]  Loading sample data"
 	@echo "  DAGs: indicadores_financieros_chile · arclim_riesgo_climatico_chile"
-	@echo "  Fuentes: mindicador.cl · API ARClim (ambas públicas, sin API key)"
-	@echo "  Salida: tablas Delta en Trino + dashboards en Superset"
+	@echo "  Sources: mindicador.cl · ARClim API (both public, no API key)"
+	@echo "  Output: Delta tables in Trino + dashboards in Superset"
 	@echo ""
 	@bash .ci/scripts/load_example.sh $(ENV_FILE)
 
@@ -174,10 +179,10 @@ lint-sql:
 	@bash .ci/scripts/lint_sql.sh
 
 lint-all: lint-dags lint-spark lint-sql
-	@echo "✓ Lint completo OK"
+	@echo "[INFO]  Lint complete ... OK"
 
 test-all: test-dags test-spark
-	@echo "✓ Tests ejecutados (ver avisos arriba)"
+	@echo "[INFO]  Tests run (see warnings above)"
 
 detect-secrets:
 	@bash .ci/scripts/detect_secrets.sh
@@ -194,47 +199,47 @@ deploy-staging:
 	@bash .ci/scripts/deploy_k3s.sh staging
 
 deploy-prod:
-	@read -p "¿Confirmar deploy a PRODUCCIÓN? (escribe 'yes'): " c; \
+	@read -p "[INFO]  Confirm deploy to PRODUCTION? (type 'yes'): " c; \
 	if [ "$$c" = "yes" ]; then \
 		bash .ci/scripts/deploy_k3s.sh prod; \
 	else \
-		echo "Deploy cancelado."; \
+		echo "[INFO]  Deploy cancelled"; \
 	fi
 
 # ── Help ──────────────────────────────────────────────────────────────────────
 
 help:
 	@echo ""
-	@echo "  VektralForge — comandos disponibles"
+	@echo "  VektralForge — available commands"
 	@echo ""
-	@echo "  Setup y stack local:"
-	@echo "    make setup                Crea .venv (Python 3.12) e instala dependencias"
-	@echo "    make init-env             Crea $(ENV_FILE) con claves generadas"
-	@echo "    make dev-up               Levanta el stack"
-	@echo "    make dev-down             Detiene el stack"
-	@echo "    make dev-ps               Estado de los contenedores"
-	@echo "    make dev-logs             Logs en tiempo real (SERVICE=airflow-scheduler para uno solo)"
-	@echo "    make dev-build            Reconstruye las imágenes tras cambiar un Dockerfile"
-	@echo "    make dev-reset            Reset completo (borra volúmenes, recrea usuarios)"
-	@echo "    make dev-reset-hard       Reset extremo (borra volúmenes y reconstruye imágenes)"
-	@echo "    make dev-load-example     Carga los pipelines de ejemplo y los dashboards"
+	@echo "  Setup and local stack:"
+	@echo "    make setup                Creates .venv (Python 3.12) and installs dependencies"
+	@echo "    make init-env             Creates $(ENV_FILE) with generated keys"
+	@echo "    make dev-up               Starts the stack"
+	@echo "    make dev-down             Stops the stack"
+	@echo "    make dev-ps               Container status"
+	@echo "    make dev-logs             Live logs (SERVICE=airflow-scheduler for a single one)"
+	@echo "    make dev-build            Rebuilds images after changing a Dockerfile"
+	@echo "    make dev-reset            Full reset (deletes volumes, recreates users)"
+	@echo "    make dev-reset-hard       Extreme reset (deletes volumes and rebuilds images)"
+	@echo "    make dev-load-example     Loads the sample pipelines and dashboards"
 	@echo ""
-	@echo "  Calidad de código:"
-	@echo "    make lint-all             Lint completo (Ruff + sqlfluff)"
-	@echo "    make test-all             Tests completos"
-	@echo "    make detect-secrets       Escaneo de credenciales (árbol de trabajo)"
-	@echo "    make auditar-historial    Escaneo de credenciales (historial de git)"
+	@echo "  Code quality:"
+	@echo "    make lint-all             Full lint (Ruff + sqlfluff)"
+	@echo "    make test-all             Full tests"
+	@echo "    make detect-secrets       Credential scan (working tree)"
+	@echo "    make auditar-historial    Credential scan (git history)"
 	@echo ""
-	@echo "  Deploy — PLANIFICADO, no implementado:"
-	@echo "    make deploy-staging       Falla explicando qué falta"
-	@echo "    make deploy-prod          Ídem"
+	@echo "  Deploy — PLANNED, not implemented:"
+	@echo "    make deploy-staging       Fails explaining what's missing"
+	@echo "    make deploy-prod          Same"
 	@echo ""
-	@echo "  Primer arranque:"
+	@echo "  First run:"
 	@echo "    cp .env.example $(ENV_FILE)"
 	@echo "    make setup"
 	@echo "    make dev-up"
 	@echo "    make dev-load-example"
 	@echo ""
-	@echo "  Requisitos: Python 3.12 · Docker Compose v2"
-	@echo "  Variables:  $(ENV_FILE)"
+	@echo "  Requirements: Python 3.12 · Docker Compose v2"
+	@echo "  Variables:    $(ENV_FILE)"
 	@echo ""

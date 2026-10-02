@@ -18,7 +18,12 @@
 #   4. Whatever is missing and CAN be installed automatically (Homebrew on
 #      macOS, Python, venv, pip, git) is offered for installation — but the
 #      user is asked before touching the system, nothing is installed
-#      silently.
+#      silently. Each install call is encapsulated: its raw output (brew/pip/
+#      apt chatter) never prints directly — a live progress indicator is
+#      shown instead, and everything that would have printed is written to
+#      a dedicated install-<timestamp>.log, always, so a failure is fully
+#      diagnosable from that file even though the screen only shows a short
+#      error.
 #   5. Whatever is missing and CANNOT be installed automatically (a Linux
 #      distro's own package manager, Docker, make, Xcode CLT on macOS) is
 #      reported with manual instructions.
@@ -56,6 +61,11 @@ LOG_FILE=""
 MISSING_INSTALLABLE=()   # names: python3.12 / venv / pip / git
 MISSING_MANUAL=()        # names: docker / make / xcode-clt
 MANUAL_INSTRUCTIONS=()   # remediation text, one per MISSING_MANUAL entry
+
+INSTALL_LOG_FILE=""      # set once installation actually starts (install_missing)
+ANIMATE=0                # 1 when /dev/tty is writable: draw the live progress bar there
+PROGRESS_BAR_WIDTH=20
+PROGRESS_FILL_WIDTH=6
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
@@ -117,6 +127,162 @@ run_priv() {
     "$@"
   else
     sudo "$@"
+  fi
+}
+
+# ── Install-step progress (encapsulated calls) ─────────────────────────────────
+# Each fix_* call is wrapped by run_install_step below so its raw output never
+# reaches the screen directly: it's redirected into a per-step buffer, a live
+# progress indicator is drawn in its place (on /dev/tty, so it never pollutes
+# a log file), and the buffer is always flushed into INSTALL_LOG_FILE once the
+# step ends — on success for the record, on failure so nothing is lost.
+
+format_duration() {
+  local total_s="$1" m s
+  m=$((total_s / 60))
+  s=$((total_s % 60))
+  printf '%d:%02d' "$m" "$s"
+}
+
+# Prints one frame of an indeterminate progress bar (a filled block bouncing
+# back and forth). There is no real percentage to show here — brew/pip/apt
+# don't expose one reliably enough to parse — so this communicates "still
+# working" rather than "X% done".
+render_progress_bar() {
+  local frame="$1"
+  local range=$((PROGRESS_BAR_WIDTH - PROGRESS_FILL_WIDTH))
+  local cycle=$((range * 2))
+  local pos=$((frame % cycle))
+  if [ "$pos" -gt "$range" ]; then
+    pos=$((cycle - pos))
+  fi
+  local bar="" i=0
+  while [ "$i" -lt "$PROGRESS_BAR_WIDTH" ]; do
+    if [ "$i" -ge "$pos" ] && [ "$i" -lt "$((pos + PROGRESS_FILL_WIDTH))" ]; then
+      bar="${bar}▓"
+    else
+      bar="${bar}░"
+    fi
+    i=$((i + 1))
+  done
+  printf '%s' "$bar"
+}
+
+# Only animate when there's an actual terminal to draw on (not under a
+# non-interactive log capture, CI runner, etc.) — otherwise the escape
+# sequences would just corrupt whatever is consuming stdout.
+detect_animate_capability() {
+  if { : >/dev/tty; } 2>/dev/null; then
+    ANIMATE=1
+  else
+    ANIMATE=0
+  fi
+}
+
+setup_install_logging() {
+  local log_dir
+  log_dir="$(dirname "$LOG_FILE")"
+  INSTALL_LOG_FILE="$log_dir/install-$(date +%Y%m%d-%H%M%S).log"
+  : > "$INSTALL_LOG_FILE" 2>/dev/null || INSTALL_LOG_FILE="/tmp/install-$(date +%Y%m%d-%H%M%S).log"
+}
+
+# Runs in the background while a step's fix_* function is executing in the
+# foreground. Reads the step's own buffer file to show the latest real line
+# it printed (brew/pip's own chatter, or one of its _info calls) as the
+# "current event" line under the bar. Killed by _finish_install_step once
+# the step ends.
+step_spinner() {
+  local step="$1" total="$2" label="$3" buf="$4" start_ts="$5"
+  local frame=0 drawn=0
+  while :; do
+    local elapsed=$((SECONDS - start_ts))
+    local bar event l1 l2
+    bar="$(render_progress_bar "$frame")"
+    event="$(tail -n 1 "$buf" 2>/dev/null)"
+    [ -z "$event" ] && event="starting..."
+    l1="$(printf '  [%d/%d] %-14s [%s]  running... (%s)' "$step" "$total" "$label" "$bar" "$(format_duration "$elapsed")")"
+    l2="$(printf '        -> %s' "$event")"
+    if [ "$drawn" -eq 1 ]; then
+      printf '\033[2A' >/dev/tty
+    fi
+    printf '\033[2K%s\n' "$l1" >/dev/tty
+    printf '\033[2K%s\n' "$l2" >/dev/tty
+    drawn=1
+    frame=$((frame + 1))
+    sleep 0.2
+  done
+}
+
+# Called exactly once per step, however it ends: a normal return from the
+# fix_* function, or the abrupt `exit 1` several of them use on a fatal
+# failure (run_install_step's EXIT trap routes here too in that case).
+_finish_install_step() {
+  local step="$1" total="$2" label="$3" buf="$4" start_ts="$5" spinner_pid="$6" status="$7"
+
+  if [ -n "$spinner_pid" ]; then
+    kill "$spinner_pid" 2>/dev/null || true
+    wait "$spinner_pid" 2>/dev/null || true
+    # Erase the two animated lines left on screen.
+    printf '\033[1A\033[2K\033[1A\033[2K' >/dev/tty 2>/dev/null || true
+  fi
+
+  local raw=""
+  [ -f "$buf" ] && raw="$(cat "$buf" 2>/dev/null)"
+  {
+    echo "===== [$step/$total] $label - $(date '+%Y-%m-%d %H:%M:%S') ====="
+    printf '%s\n' "$raw"
+    echo ""
+  } >> "$INSTALL_LOG_FILE" 2>/dev/null
+  rm -f "$buf"
+
+  local elapsed=$((SECONDS - start_ts))
+  if [ "$status" -eq 0 ]; then
+    _ok "$label installed ($(format_duration "$elapsed"))"
+  else
+    echo ""
+    _err "$label installation failed (exit code $status)"
+    local err_lines
+    err_lines="$(printf '%s\n' "$raw" | grep -E '^\[ERROR\]' || true)"
+    if [ -n "$err_lines" ]; then
+      echo ""
+      printf '%s\n' "$err_lines"
+    fi
+    echo ""
+    _info "Full install log saved: $INSTALL_LOG_FILE"
+    echo ""
+  fi
+}
+
+# Encapsulates a single fix_* call: its own output (plus any raw command
+# output it doesn't already suppress) is captured instead of printed live,
+# and a progress indicator takes its place on screen.
+run_install_step() {
+  local step="$1" total="$2" label="$3" fn="$4"
+  local buf start_ts spinner_pid=""
+  buf="$(mktemp)"
+  start_ts=$SECONDS
+
+  if [ "$ANIMATE" -eq 1 ]; then
+    step_spinner "$step" "$total" "$label" "$buf" "$start_ts" &
+    spinner_pid=$!
+  else
+    echo "[INFO]  [$step/$total] $label — installing..."
+  fi
+
+  # shellcheck disable=SC2064,SC2154
+  trap "local __status=\$?; exec 1>&5 2>&6; exec 5>&- 6>&-; _finish_install_step '$step' '$total' '$label' '$buf' '$start_ts' '$spinner_pid' \"\$__status\"" EXIT
+
+  exec 5>&1 6>&2
+  exec 1>>"$buf" 2>&1
+  "$fn"
+  local status=$?
+  exec 1>&5 2>&6
+  exec 5>&- 6>&-
+
+  trap - EXIT
+  _finish_install_step "$step" "$total" "$label" "$buf" "$start_ts" "$spinner_pid" "$status"
+  if [ "$status" -ne 0 ]; then
+    exit 1
   fi
 }
 
@@ -720,16 +886,28 @@ report_and_confirm() {
 }
 
 install_missing() {
-  local dep
+  local total="${#MISSING_INSTALLABLE[@]}"
+  detect_animate_capability
+  setup_install_logging
+
+  echo "[INFO]  Installing dependencies ($total pending)"
+  echo ""
+
+  local step=0 dep
   for dep in "${MISSING_INSTALLABLE[@]+"${MISSING_INSTALLABLE[@]}"}"; do
+    step=$((step + 1))
     case "$dep" in
-      homebrew)   fix_homebrew ;;
-      python3.12) fix_python312 ;;
-      venv)       fix_venv ;;
-      pip)        fix_pip ;;
-      git)        fix_git ;;
+      homebrew)   run_install_step "$step" "$total" "homebrew"   fix_homebrew ;;
+      python3.12) run_install_step "$step" "$total" "python3.12" fix_python312 ;;
+      venv)       run_install_step "$step" "$total" "venv"       fix_venv ;;
+      pip)        run_install_step "$step" "$total" "pip"        fix_pip ;;
+      git)        run_install_step "$step" "$total" "git"        fix_git ;;
     esac
   done
+
+  echo ""
+  echo "[INFO]  All dependencies installed"
+  echo "[INFO]  Full install log saved: $INSTALL_LOG_FILE"
   echo ""
 }
 
