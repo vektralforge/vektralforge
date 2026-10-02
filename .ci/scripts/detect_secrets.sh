@@ -13,8 +13,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 if [ ! -f .secrets.baseline ]; then
-    echo "  ✗ No existe .secrets.baseline"
-    echo "    Generarlo con: detect-secrets scan > .secrets.baseline"
+    echo "[ERROR] .secrets.baseline not found"
+    echo "    Generate it with: detect-secrets scan > .secrets.baseline"
     exit 1
 fi
 
@@ -48,15 +48,15 @@ nuevos=$(comm -13 <(echo "$antes" | sort) <(echo "$despues" | sort))
 
 if [ -n "$nuevos" ]; then
     echo ""
-    echo "  ✗ Credenciales potenciales no presentes en el baseline:"
+    echo "[ERROR] Potential credentials not present in the baseline:"
     echo "$nuevos" | sed 's/^/      /'
     echo ""
-    echo "    Si son falsos positivos, márcalos en el código:"
-    echo "        VALOR = \"...\"  # pragma: allowlist secret"
+    echo "    If they're false positives, mark them in the code:"
+    echo "        VALUE = \"...\"  # pragma: allowlist secret"
     echo ""
-    echo "    Si son reales: NO los añadas al baseline. Rótalos y sácalos"
-    echo "    del código."
+    echo "    If they're real: do NOT add them to the baseline. Rotate them"
+    echo "    and remove them from the code."
     exit 1
 fi
 
-echo "✓ Sin credenciales nuevas respecto al baseline"
+echo "[INFO]  No new credentials relative to the baseline"

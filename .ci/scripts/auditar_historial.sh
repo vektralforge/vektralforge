@@ -27,6 +27,10 @@
 #   .ci/scripts/auditar_historial.sh develop    # solo una rama o rango
 #
 # Salida: 0 si no hay hallazgos nuevos, 1 si los hay.
+#
+# Log: mismo formato [INFO]/[WARN]/[ERROR] en inglés que el resto de los
+# scripts — homologado también dentro del programa Python embebido, ya que
+# sus print() son la salida real que ve quien corre esto.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -95,8 +99,8 @@ ASIGNACION = re.compile(
 def enmascarar(linea):
     m = ASIGNACION.match(linea)
     if m:
-        return f"{m.group(1)}<{len(m.group(2))} caracteres ocultos>"[:200]
-    return RACHA.sub(lambda m: f"<{len(m.group(0))} caracteres ocultos>", linea)[:200]
+        return f"{m.group(1)}<{len(m.group(2))} hidden characters>"[:200]
+    return RACHA.sub(lambda m: f"<{len(m.group(0))} hidden characters>", linea)[:200]
 
 
 # Ids de objetos de este repositorio: un SHA que git conoce no es una
@@ -166,48 +170,48 @@ for linea in registro.splitlines():
             )
             hallazgos[h]["veces"] += 1
 
-print(f"  Rango: {RANGO}   lineas anadidas examinadas: {lineas_leidas}")
+print(f"[INFO]  Range: {RANGO}   added lines examined: {lineas_leidas}")
 
 # Control positivo: si un hallazgo ya revisado deja de verse, no es una buena
 # noticia — es que el escaneo dejo de mirar donde miraba. Falla igual.
 perdidos = set(revisados) - vistos_revisados
 if revisados:
-    print(f"  Control positivo: {len(vistos_revisados)}/{len(revisados)} "
-          "hallazgos ya revisados vueltos a encontrar")
+    print(f"[INFO]  Positive control: {len(vistos_revisados)}/{len(revisados)} "
+          "previously reviewed findings found again")
 else:
-    print("  Control positivo: no hay ninguno — "
-          f"{REVISADOS} esta vacio, el escaneo no esta comprobado")
+    print("[WARN]  Positive control: none — "
+          f"{REVISADOS} is empty, the scan is unverified")
 
 if perdidos:
-    print("\n  x No se encontraron hallazgos que si estaban en el historial:")
+    print("\n[ERROR] Findings that used to be in the history were not found again:")
     for h in sorted(perdidos):
         print(f"      {h}  {revisados[h]}")
-    print("\n    O se reescribio el historial, o este guion dejo de detectarlos.")
-    print("    Las dos posibilidades hay que mirarlas antes de seguir.")
+    print("\n    Either the history was rewritten, or this script stopped detecting them.")
+    print("    Both possibilities need to be checked before continuing.")
     sys.exit(1)
 
 if not hallazgos:
-    print("\n  OK Sin hallazgos nuevos de alta entropia en el historial.")
+    print("\n[INFO]  No new high-entropy findings in the history.")
     sys.exit(0)
 
-print(f"\n  x {len(hallazgos)} cadena(s) de alta entropia sin revisar:\n")
+print(f"\n[ERROR] {len(hallazgos)} high-entropy string(s) not yet reviewed:\n")
 for h, d in sorted(hallazgos.items(), key=lambda kv: kv[1]["fecha"]):
-    print(f"    huella {h}   pasada {d['pasada']}   {d['veces']} aparicion(es)")
-    print(f"      primera vez: {d['commit']}  {d['fecha']}  {d['ruta']}")
+    print(f"    fingerprint {h}   pass {d['pasada']}   {d['veces']} occurrence(s)")
+    print(f"      first seen: {d['commit']}  {d['fecha']}  {d['ruta']}")
     print(f"      {d['linea']}\n")
 
-print(f"""    Cada una hay que mirarla en su commit y decidir:
+print(f"""    Each one has to be looked up in its commit and decided:
 
-      - Es una credencial viva  -> rotarla YA. Esta en el historial y el
-        historial es publico; borrarla del arbol no la quita de ahi.
-      - Es una credencial muerta o un falso positivo -> anadir la huella a
-        {REVISADOS} con el motivo, y este guion deja de avisar de ella.
+      - It's a live credential  -> rotate it NOW. It's in the history, and the
+        history is public; deleting it from the tree doesn't remove it from there.
+      - It's a dead credential or a false positive -> add the fingerprint to
+        {REVISADOS} with the reason, and this script stops flagging it.
 
-    Para verla sin exponerla en un log compartido:
-      git log -p --all -S'<fragmento>' -- <ruta>""")
+    To look at it without exposing it in a shared log:
+      git log -p --all -S'<fragment>' -- <path>""")
 sys.exit(1)
 PY
 )
 
-echo "→ Auditando el historial en busca de credenciales…"
+echo "[INFO]  Auditing git history for credentials..."
 python3 -c "$PROGRAMA" "$RANGO" "$REVISADOS"

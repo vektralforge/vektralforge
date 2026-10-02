@@ -7,6 +7,10 @@
 # Cada paso reporta si tuvo éxito. Un fallo no detiene el resto —los pasos son
 # independientes— pero sí se refleja en el código de salida, para que el
 # problema no pase inadvertido.
+#
+# Log: mismo formato [INFO]/[WARN]/[ERROR] en inglés que el resto de los
+# scripts. step_failed() usa [WARN] porque no detiene el script — solo se
+# cuenta en FAILURES, igual que antes.
 
 set -uo pipefail
 
@@ -14,7 +18,7 @@ ENV_FILE="${1:-infra/docker-compose/.env}"
 FAILURES=0
 
 if [ ! -f "$ENV_FILE" ]; then
-    echo "  ✗ No existe $ENV_FILE" >&2
+    echo "[ERROR] $ENV_FILE not found" >&2
     exit 1
 fi
 
@@ -61,7 +65,7 @@ OB_TOKEN="${OB_TOKEN:-dev-root-token}"
 # Sin valores por defecto: una credencial silenciosamente incorrecta es peor
 # que un error inmediato.
 check_required() {
-    [ -n "$2" ] || { echo "  ✗ Falta $1 en $ENV_FILE" >&2; exit 1; }
+    [ -n "$2" ] || { echo "[ERROR] $1 missing in $ENV_FILE" >&2; exit 1; }
 }
 check_required MINIO_ROOT_USER "$MINIO_USER"
 check_required MINIO_ROOT_PASSWORD "$MINIO_PASS"  # pragma: allowlist secret
@@ -142,7 +146,7 @@ C_AIRFLOW=docker-compose-airflow-webserver-1
 C_SUPERSET=docker-compose-superset-1
 
 step_failed() {
-    echo "  ✗ $1"
+    echo "[WARN]  $1"
     FAILURES=$((FAILURES + 1))
 }
 
@@ -162,16 +166,16 @@ paso_bases() {
     # ── PostgreSQL ───────────────────────────────────────────────────────────────
     # init-multiple-dbs.sh crea las bases al inicializar el volumen. Esto es una
     # red de seguridad para volúmenes creados antes de añadir alguna base.
-    echo "→ Verificando bases de datos PostgreSQL..."
+    echo "[INFO]  Checking PostgreSQL databases..."
     for db in airflow metastore marquez superset; do
         if docker exec "$C_POSTGRES" psql -U "$POSTGRES_USER" -lqt 2>/dev/null \
             | cut -d\| -f1 | grep -qw "$db"; then
-            echo "  · $db"
+            echo "[INFO]  $db already exists"
         else
             if docker exec "$C_POSTGRES" createdb -U "$POSTGRES_USER" "$db" 2>&1; then
-                echo "  + $db (creada)"
+                echo "[INFO]  $db created"
             else
-                step_failed "no se pudo crear la base $db"
+                step_failed "could not create database $db"
             fi
         fi
     done
@@ -179,7 +183,7 @@ paso_bases() {
 
 paso_buckets() {
     # ── MinIO ────────────────────────────────────────────────────────────────────
-    echo "→ Creando buckets en MinIO..."
+    echo "[INFO]  Creating MinIO buckets..."
     if out=$(json_alias_minio | docker exec -i "$C_MINIO" sh -c '
         set -e
         mc alias import vf /dev/stdin --quiet
@@ -231,22 +235,22 @@ crear_cuenta_minio() {
             --access-key "$SVC_KEY" --secret-key "$SVC_SECRET" \
             --policy /tmp/politica-datos.json >/dev/null
         ' 2>&1); then
-        echo "  ✓ $clave"
+        echo "[INFO]  $clave configured"
     else
-        step_failed "cuenta $clave: $(echo "$out" | tail -2)"
+        step_failed "account $clave: $(echo "$out" | tail -2)"
     fi
 }
 
 paso_cuentas() {
-    echo "→ Creando cuentas de servicio en MinIO..."
+    echo "[INFO]  Creating MinIO service accounts..."
     local politica="infra/docker-compose/minio/politica-datos.json"
 
     if [ ! -f "$politica" ]; then
-        step_failed "no se encuentra $politica"
+        step_failed "$politica not found"
         return
     fi
     if ! docker cp "$politica" "$C_MINIO:/tmp/politica-datos.json" >/dev/null 2>&1; then
-        step_failed "no se pudo copiar la política a $C_MINIO"
+        step_failed "could not copy the policy to $C_MINIO"
         return
     fi
 
@@ -263,7 +267,7 @@ paso_usuarios() {
     # En Airflow 3 la gestión de usuarios depende del auth manager configurado:
     # `airflow users` solo existe con el proveedor FAB instalado. Con
     # SimpleAuthManager los usuarios se declaran por configuración.
-    echo "→ Creando usuario admin en Airflow ($AF_USER)..."
+    echo "[INFO]  Creating Airflow admin user ($AF_USER)..."
     if docker exec "$C_AIRFLOW" airflow users list >/dev/null 2>&1; then
         # Sin --password: el CLI llama a getpass dos veces, así que la clave
         # llega por la tubería. `printf` es un builtin de bash, de modo que la
@@ -275,27 +279,27 @@ paso_usuarios() {
                     --firstname Admin --lastname VektralForge \
                     --role Admin --email "$2"
             ' _ "$AF_USER" "$AF_EMAIL" 2>&1); then
-            echo "  ✓ creado"
+            echo "[INFO]  created"
         elif echo "$out" | grep -qi "already exist"; then
-            echo "  · ya existía"
+            echo "[INFO]  already existed"
         else
             step_failed "Airflow: $out"
         fi
     else
-        echo "  · el comando 'airflow users' no está disponible"
-        echo "    (Airflow 3 con SimpleAuthManager: los usuarios se definen por"
-        echo "     configuración; instala apache-airflow-providers-fab para usar CLI)"
+        echo "[INFO]  the 'airflow users' command is not available"
+        echo "    (Airflow 3 with SimpleAuthManager: users are defined via"
+        echo "     configuration; install apache-airflow-providers-fab to use the CLI)"
     fi
 
     # ── Superset ─────────────────────────────────────────────────────────────────
-    echo "→ Inicializando Superset..."
+    echo "[INFO]  Initializing Superset..."
     if out=$(docker exec "$C_SUPERSET" superset db upgrade 2>&1); then
-        echo "  ✓ esquema actualizado"
+        echo "[INFO]  schema upgraded"
     else
         step_failed "superset db upgrade: $(echo "$out" | tail -3)"
     fi
 
-    echo "→ Creando usuario admin en Superset ($SS_USER)..."
+    echo "[INFO]  Creating Superset admin user ($SS_USER)..."
     # Igual que Airflow: @click.password_option() pregunta con confirmación,
     # así que basta con no pasar --password y darle la clave por stdin.
     if out=$(printf '%s\n%s\n' "$SS_PASS" "$SS_PASS" | docker exec -i \
@@ -304,16 +308,16 @@ paso_usuarios() {
                 --username "$1" --firstname Admin --lastname VektralForge \
                 --email "$2"
         ' _ "$SS_USER" "$SS_EMAIL" 2>&1); then
-        echo "  ✓ creado"
+        echo "[INFO]  created"
     elif echo "$out" | grep -qiE "already exists|Error: .*duplicate"; then
-        echo "  · ya existía"
+        echo "[INFO]  already existed"
     else
         step_failed "Superset: $(echo "$out" | tail -3)"
     fi
 
-    echo "→ Inicializando roles de Superset..."
+    echo "[INFO]  Initializing Superset roles..."
     if out=$(docker exec "$C_SUPERSET" superset init 2>&1); then
-        echo "  ✓ roles inicializados"
+        echo "[INFO]  roles initialized"
     else
         step_failed "superset init: $(echo "$out" | tail -3)"
     fi
@@ -323,9 +327,9 @@ paso_resumen() {
     # ── Resumen ──────────────────────────────────────────────────────────────────
     echo ""
     if [ "$FAILURES" -eq 0 ]; then
-        echo "  ✓ Stack inicializado correctamente"
+        echo "[INFO]  Stack initialized successfully"
     else
-        echo "  ⚠ Stack inicializado con $FAILURES paso(s) fallido(s)"
+        echo "[WARN]  Stack initialized with $FAILURES failed step(s)"
     fi
     echo ""
 }
@@ -335,25 +339,25 @@ paso_banner() {
     # exactamente lo que hace fácil filtrarlas: basta pegar la salida de un `make`
     # en un issue, un chat o una captura de pantalla para publicarlas todas. Se
     # muestra el NOMBRE de la variable; el valor lo lee quien lo necesite.
-    printf "  %-10s %-26s %-15s %s\n" "Servicio" "URL" "Usuario" "Contraseña"
+    printf "  %-10s %-26s %-15s %s\n" "Service" "URL" "User" "Password"
     printf "  %-10s %-26s %-15s %s\n" "--------" "-------------------------" "---------------" "-------------------------"
     printf "  %-10s %-26s %-15s %s\n" "Airflow"  "http://localhost:8090" "$AF_USER"    "\$AIRFLOW_ADMIN_PASSWORD"
     printf "  %-10s %-26s %-15s %s\n" "Superset" "http://localhost:8088" "$SS_USER"    "\$SUPERSET_ADMIN_PASSWORD"
     printf "  %-10s %-26s %-15s %s\n" "MinIO"    "http://localhost:9001" "$MINIO_USER" "\$MINIO_ROOT_PASSWORD"
     printf "  %-10s %-26s %-15s %s\n" "OpenBao"  "http://localhost:8200" "token:"      "\$OPENBAO_TOKEN"
-    printf "  %-10s %-26s %-15s %s\n" "Trino"    "http://localhost:8081" "trino"       "sin autenticación"
-    printf "  %-10s %-26s %-15s %s\n" "Spark"    "http://localhost:8082" "-"           "sin autenticación"
-    printf "  %-10s %-26s %-15s %s\n" "Marquez"  "http://localhost:3000" "-"           "sin autenticación"
+    printf "  %-10s %-26s %-15s %s\n" "Trino"    "http://localhost:8081" "trino"       "no authentication"
+    printf "  %-10s %-26s %-15s %s\n" "Spark"    "http://localhost:8082" "-"           "no authentication"
+    printf "  %-10s %-26s %-15s %s\n" "Marquez"  "http://localhost:3000" "-"           "no authentication"
     echo ""
-    echo "  Las contraseñas viven en $ENV_FILE (permisos 600) y no se imprimen."
-    echo "  Para leer una:"
+    echo "  Passwords live in $ENV_FILE (permissions 600) and are never printed."
+    echo "  To read one:"
     echo "      grep '^AIRFLOW_ADMIN_PASSWORD=' $ENV_FILE | cut -d= -f2-"
     echo ""
-    echo "  Trino, Spark y Marquez no piden credenciales: cualquiera que alcance"
-    echo "  esos puertos entra. Por eso el .env fija BIND_HOST=127.0.0.1."
+    echo "  Trino, Spark, and Marquez don't ask for credentials: anyone who reaches"
+    echo "  those ports gets in. That's why .env sets BIND_HOST=127.0.0.1."
     echo ""
-    echo "  Buckets MinIO: raw/ bronze/ silver/ gold/ checkpoints/"
-    echo "  Datos de ejemplo: make dev-load-example"
+    echo "  MinIO buckets: raw/ bronze/ silver/ gold/ checkpoints/"
+    echo "  Sample data: make dev-load-example"
     echo ""
 }
 
@@ -375,8 +379,8 @@ case "${SUBCOMANDO:=${2:-todo}}" in
         paso_banner
         ;;
     *)
-        echo "  ✗ Subcomando desconocido: $SUBCOMANDO" >&2
-        echo "    Usa: bases | buckets | cuentas | usuarios | banner | todo" >&2
+        echo "[ERROR] Unknown subcommand: $SUBCOMANDO" >&2
+        echo "    Use: bases | buckets | cuentas | usuarios | banner | todo" >&2
         exit 1
         ;;
 esac

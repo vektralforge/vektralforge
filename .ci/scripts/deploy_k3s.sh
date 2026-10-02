@@ -21,7 +21,7 @@ set -euo pipefail
 
 ENVIRONMENT="${1:-staging}"
 if [ "$ENVIRONMENT" != "staging" ] && [ "$ENVIRONMENT" != "prod" ]; then
-    echo "ERROR: el ambiente debe ser 'staging' o 'prod'." >&2
+    echo "[ERROR] environment must be 'staging' or 'prod'." >&2
     exit 1
 fi
 
@@ -31,17 +31,17 @@ MANIFIESTOS="infra/k3s/services"
 
 if [ ! -d "$MANIFIESTOS" ]; then
     cat >&2 <<'MENSAJE'
-✗ El despliegue a K3s no está implementado.
+[ERROR] K3s deployment is not implemented yet.
 
-  Falta infra/k3s/services/ y, con él, los manifiestos de los trece servicios.
-  De infra/k3s/ solo existen hoy los namespaces.
+  infra/k3s/services/ is missing, along with the manifests for the thirteen
+  services. Only the namespaces currently exist under infra/k3s/.
 
-  Falta además un prerrequisito anterior: publicar las imágenes del proyecto en
-  un registro. vektralforge/airflow, /spark, /hive-metastore, /trino y
-  /marquez-api solo existen como etiquetas locales.
+  There's also an earlier prerequisite missing: publishing the project's
+  images to a registry. vektralforge/airflow, /spark, /hive-metastore, /trino
+  and /marquez-api currently only exist as local tags.
 
-  Seguimiento: el issue «Despliegue a K3s» del repositorio.
-  Entorno soportado hoy: Docker Compose — `make dev-up`.
+  Tracking: the "K3s deployment" issue in the repository.
+  Supported environment today: Docker Compose — `make dev-up`.
 MENSAJE
     exit 1
 fi
@@ -51,7 +51,7 @@ fi
 # Se comprueba kubectl antes de usarlo: sin él, el error es un «command not
 # found» que no dice qué falta instalar.
 if ! command -v kubectl >/dev/null 2>&1; then
-    echo "ERROR: kubectl no está instalado o no está en el PATH." >&2
+    echo "[ERROR] kubectl is not installed or not in PATH." >&2
     exit 1
 fi
 
@@ -62,4 +62,4 @@ kubectl apply -f infra/k3s/namespaces/
 kubectl apply --dry-run=client -n "$NAMESPACE" -f "$MANIFIESTOS/"
 kubectl apply -n "$NAMESPACE" -f "$MANIFIESTOS/"
 
-echo "✓ Deploy a ${NAMESPACE} completado"
+echo "[INFO]  Deploy to ${NAMESPACE} completed"

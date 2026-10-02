@@ -8,12 +8,22 @@
 # Es idempotente: solo rellena lo que esté vacío o marcado como GENERAR /
 # cambiar-esta-clave. Nunca sobrescribe un valor ya definido, así que puede
 # ejecutarse las veces que haga falta sin perder configuración.
+#
+# Log: mismo formato que check_deps.sh/setup.sh — [INFO]/[WARN]/[ERROR], en
+# inglés — homologado a mano acá porque este script no sourcea check_deps.sh
+# (corre antes de que exista nada que chequear).
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 PLANTILLA=".env.example"
 DESTINO="infra/docker-compose/.env"
+
+# ── Message helpers ──────────────────────────────────────────────────────────
+
+_info() { echo "[INFO]  $1"; }
+_warn() { echo "[WARN]  $1"; }
+_err()  { echo "[ERROR] $1" >&2; }
 
 # Claves criptográficas: se generan siempre sin preguntar. No hay motivo para
 # que una persona elija un valor aquí.
@@ -25,14 +35,14 @@ CLAVES_HEX=(
 
 # Contraseñas de servicio: se ofrece una generada, editable.
 declare -a PASSWORDS=(
-    "POSTGRES_PASSWORD|base de datos PostgreSQL"
-    "MINIO_ROOT_PASSWORD|consola y API de MinIO"
-    "AIRFLOW_ADMIN_PASSWORD|usuario admin de Airflow"
-    "SUPERSET_ADMIN_PASSWORD|usuario admin de Superset"
-    "OPENBAO_TOKEN|token raíz de OpenBao"
-    "MINIO_PIPELINE_SECRET_KEY|cuenta de MinIO de Airflow y Spark"
-    "MINIO_HIVE_SECRET_KEY|cuenta de MinIO del metastore"
-    "MINIO_TRINO_SECRET_KEY|cuenta de MinIO de Trino"
+    "POSTGRES_PASSWORD|PostgreSQL database"
+    "MINIO_ROOT_PASSWORD|MinIO console and API"
+    "AIRFLOW_ADMIN_PASSWORD|Airflow admin user"
+    "SUPERSET_ADMIN_PASSWORD|Superset admin user"
+    "OPENBAO_TOKEN|OpenBao root token"
+    "MINIO_PIPELINE_SECRET_KEY|MinIO account for Airflow and Spark"
+    "MINIO_HIVE_SECRET_KEY|MinIO account for the metastore"
+    "MINIO_TRINO_SECRET_KEY|MinIO account for Trino"
 )
 
 # Valores de la plantilla que cuentan como «sin definir».
@@ -71,7 +81,7 @@ escribir_valor() {
     # el fallo anterior se notara. -x exige línea completa y -F la trata como
     # texto literal, sin interpretar nada del valor.
     if ! grep -qxF "${clave}=${valor}" "$DESTINO"; then
-        echo "  ✗ No se pudo escribir $clave en $DESTINO" >&2
+        _err "Could not write $clave to $DESTINO"
         exit 1
     fi
 }
@@ -87,27 +97,30 @@ generar_password() {
 
 # ── Preparación ───────────────────────────────────────────────────────────────
 
-[ -f "$PLANTILLA" ] || { echo "✗ No existe $PLANTILLA"; exit 1; }
+if [ ! -f "$PLANTILLA" ]; then
+    _err "$PLANTILLA not found"
+    exit 1
+fi
 
 if [ ! -f "$DESTINO" ]; then
     mkdir -p "$(dirname "$DESTINO")"
     cp "$PLANTILLA" "$DESTINO"
-    echo "→ Creado $DESTINO desde $PLANTILLA"
+    _info "Created $DESTINO from $PLANTILLA"
 else
-    echo "→ $DESTINO ya existe: se rellenan solo los valores pendientes"
+    _info "$DESTINO already exists, filling in only the pending values"
 fi
-echo
+echo ""
 
 # ── Claves criptográficas ─────────────────────────────────────────────────────
 
-echo "Claves criptográficas"
+_info "Cryptographic keys"
 for clave in "${CLAVES_HEX[@]}"; do
     actual=$(leer_valor "$clave")
     if es_placeholder "$actual"; then
         escribir_valor "$clave" "$(generar_hex)"
-        echo "  + $clave generada"
+        _info "$clave generated"
     else
-        echo "  · $clave ya definida"
+        _info "$clave already set"
     fi
 done
 
@@ -115,21 +128,21 @@ done
 actual=$(leer_valor AIRFLOW__CORE__FERNET_KEY)
 if es_placeholder "$actual"; then
     fernet=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" 2>/dev/null) || {
-        echo "  ✗ Falta el paquete cryptography. Instálalo con: pip install cryptography"
+        _err "Missing the cryptography package. Install it with: pip install cryptography"
         exit 1
     }
     escribir_valor AIRFLOW__CORE__FERNET_KEY "$fernet"
-    echo "  + AIRFLOW__CORE__FERNET_KEY generada"
+    _info "AIRFLOW__CORE__FERNET_KEY generated"
 else
-    echo "  · AIRFLOW__CORE__FERNET_KEY ya definida"
+    _info "AIRFLOW__CORE__FERNET_KEY already set"
 fi
 
 # ── Contraseñas ───────────────────────────────────────────────────────────────
 
-echo
-echo "Contraseñas de servicio"
-echo "  Pulsa Enter para aceptar la generada, o escribe la tuya."
-echo
+echo ""
+_info "Service passwords"
+echo "  Press Enter to accept the generated value, or type your own."
+echo ""
 
 pendientes=0
 for entrada in "${PASSWORDS[@]}"; do
@@ -138,13 +151,13 @@ for entrada in "${PASSWORDS[@]}"; do
     actual=$(leer_valor "$clave")
 
     if ! es_placeholder "$actual"; then
-        echo "  · $clave ya definida"
+        _info "$clave already set"
         continue
     fi
 
     pendientes=$((pendientes + 1))
     sugerida=$(generar_password)
-    printf '  %s\n    %s\n    [%s]: ' "$clave" "$descripcion" "$sugerida"
+    printf '[INFO]  %s\n    %s\n    [%s]: ' "$clave" "$descripcion" "$sugerida"
 
     # Se lee del terminal para que funcione aunque el script se invoque desde
     # make con la salida redirigida. Comprobar que /dev/tty existe no basta:
@@ -157,39 +170,38 @@ for entrada in "${PASSWORDS[@]}"; do
         read -r respuesta <&3 || respuesta=""
         exec 3<&-
     else
-        echo "(sin terminal: se usa el valor generado)"
+        echo "(no terminal: using the generated value)"
     fi
 
     escribir_valor "$clave" "${respuesta:-$sugerida}"
 done
 
-[ "$pendientes" -eq 0 ] && echo "  (nada pendiente)"
+[ "$pendientes" -eq 0 ] && _info "(nothing pending)"
 
 # ── Comprobación final ────────────────────────────────────────────────────────
 
-echo
+echo ""
 restantes=$(grep -nE "=(GENERAR|cambiar-esta-clave|cambiar-este-token)$" "$DESTINO" || true)
 if [ -n "$restantes" ]; then
-    echo "  ⚠ Quedan valores sin definir:"
+    _warn "Remaining undefined values:"
+    # shellcheck disable=SC2001
     echo "$restantes" | sed 's/^/      /'
 else
-    echo "  ✓ Sin placeholders pendientes"
+    _info "No placeholders left"
 fi
 
 chmod 600 "$DESTINO"
 
-cat <<EOF
-
-  $DESTINO listo (permisos 600).
-
-  Si cambiaste POSTGRES_USER o POSTGRES_PASSWORD, hace falta recrear el
-  volumen: el usuario se fija al inicializar la base y un .env nuevo no lo
-  actualiza.
-
-      make dev-reset
-
-  Si no, basta con:
-
-      make dev-up
-
-EOF
+echo ""
+_info "$DESTINO ready (permissions 600)"
+echo ""
+echo "  If you changed POSTGRES_USER or POSTGRES_PASSWORD, the volume needs to"
+echo "  be recreated: the user is fixed when the database is initialized, and"
+echo "  a new .env doesn't update it."
+echo ""
+echo "    make dev-reset"
+echo ""
+echo "  Otherwise:"
+echo ""
+echo "    make dev-up"
+echo ""
