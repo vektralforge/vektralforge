@@ -12,6 +12,19 @@
 # Log: mismo formato que check_deps.sh/setup.sh — [INFO]/[WARN]/[ERROR], en
 # inglés — homologado a mano acá porque este script no sourcea check_deps.sh
 # (corre antes de que exista nada que chequear).
+#
+# Generación de valores: por `openssl`, no por `python3`. Este script corre
+# ANTES que check_deps.sh — no hay garantía de que exista un Python utilizable
+# todavía. En macOS, además, `python3` es parte de Xcode Command Line Tools:
+# en una Mac recién formateada sin CLT, invocarlo dispara un diálogo pidiendo
+# instalarlas (o directamente falla sin GUI), antes incluso de llegar a
+# chequear nada. `openssl` viene en la instalación base de macOS (no en CLT) y
+# en cualquier Linux con las herramientas mínimas, así que no agrega esa
+# dependencia oculta. La clave Fernet, en particular, usaba el paquete
+# `cryptography` solo para `Fernet.generate_key()`, que por su propio código
+# fuente es `base64.urlsafe_b64encode(os.urandom(32))` — exactamente lo que
+# hace `openssl rand -base64 32 | tr '+/' '-_'` acá abajo. Mismo formato,
+# misma entropía, sin necesitar compilar ni instalar nada.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -87,18 +100,40 @@ escribir_valor() {
 }
 
 generar_hex() {
-    python3 -c "import secrets; print(secrets.token_hex(32))"
+    openssl rand -hex 32
 }
 
 generar_password() {
-    # token_urlsafe evita caracteres que rompen cadenas de conexión y comandos.
-    python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+    # Base64 url-safe sin relleno: evita caracteres que rompen cadenas de
+    # conexión y comandos, igual que hacía secrets.token_urlsafe(24).
+    openssl rand -base64 24 | tr '+/' '-_' | tr -d '=\n'
+}
+
+generar_fernet() {
+    # Formato propio de Fernet: 32 bytes aleatorios en base64 url-safe, CON
+    # el relleno '=' (a diferencia de generar_password, acá no se recorta:
+    # Fernet exige ese formato exacto).
+    openssl rand -base64 32 | tr '+/' '-_' | tr -d '\n'
 }
 
 # ── Preparación ───────────────────────────────────────────────────────────────
 
 if [ ! -f "$PLANTILLA" ]; then
     _err "$PLANTILLA not found"
+    exit 1
+fi
+
+# Garantizado en macOS base y en toda instalación estándar de Debian/Ubuntu,
+# Fedora/RHEL, Arch y openSUSE — pero no en imágenes mínimas de contenedor.
+# Si falta, mejor un error claro acá que un fallo críptico del pipeline dentro
+# de generar_hex/generar_password/generar_fernet.
+if ! command -v openssl >/dev/null 2>&1; then
+    _err "openssl is not installed or not in PATH."
+    echo "  It's required to generate the keys and passwords in $DESTINO." >&2
+    echo "  It ships by default on macOS and on virtually every Linux desktop/server" >&2
+    echo "  install; if it's missing here, install it with your package manager" >&2
+    echo "  (apt-get install openssl / dnf install openssl / pacman -S openssl /" >&2
+    echo "  zypper install openssl) and run this again." >&2
     exit 1
 fi
 
@@ -127,11 +162,7 @@ done
 # Fernet tiene su propio formato: no vale un token_hex.
 actual=$(leer_valor AIRFLOW__CORE__FERNET_KEY)
 if es_placeholder "$actual"; then
-    fernet=$(python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" 2>/dev/null) || {
-        _err "Missing the cryptography package. Install it with: pip install cryptography"
-        exit 1
-    }
-    escribir_valor AIRFLOW__CORE__FERNET_KEY "$fernet"
+    escribir_valor AIRFLOW__CORE__FERNET_KEY "$(generar_fernet)"
     _info "AIRFLOW__CORE__FERNET_KEY generated"
 else
     _info "AIRFLOW__CORE__FERNET_KEY already set"
