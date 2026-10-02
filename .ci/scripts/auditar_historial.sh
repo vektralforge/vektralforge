@@ -38,6 +38,10 @@
 #   .ci/scripts/auditar_historial.sh develop                 # forma antigua: rango
 #
 # Salida: 0 si no hay hallazgos nuevos en ningún modo, 1 si los hay.
+#
+# Log: mismo formato [INFO]/[WARN]/[ERROR] en inglés que el resto de los
+# scripts — homologado también dentro de los dos programas Python embebidos,
+# ya que sus print() son la salida real que ve quien corre esto.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -119,8 +123,8 @@ ASIGNACION = re.compile(
 def enmascarar(linea):
     m = ASIGNACION.match(linea)
     if m:
-        return f"{m.group(1)}<{len(m.group(2))} caracteres ocultos>"[:200]
-    return RACHA.sub(lambda m: f"<{len(m.group(0))} caracteres ocultos>", linea)[:200]
+        return f"{m.group(1)}<{len(m.group(2))} hidden characters>"[:200]
+    return RACHA.sub(lambda m: f"<{len(m.group(0))} hidden characters>", linea)[:200]
 
 
 # Ids de objetos de este repositorio: un SHA que git conoce no es una
@@ -190,45 +194,45 @@ for linea in registro.splitlines():
             )
             hallazgos[h]["veces"] += 1
 
-print(f"  Rango: {RANGO}   lineas anadidas examinadas: {lineas_leidas}")
+print(f"[INFO]  Range: {RANGO}   added lines examined: {lineas_leidas}")
 
 # Control positivo: si un hallazgo ya revisado deja de verse, no es una buena
 # noticia — es que el escaneo dejo de mirar donde miraba. Falla igual.
 perdidos = set(revisados) - vistos_revisados
 if revisados:
-    print(f"  Control positivo: {len(vistos_revisados)}/{len(revisados)} "
-          "hallazgos ya revisados vueltos a encontrar")
+    print(f"[INFO]  Positive control: {len(vistos_revisados)}/{len(revisados)} "
+          "previously reviewed findings found again")
 else:
-    print("  Control positivo: no hay ninguno — "
-          f"{REVISADOS} esta vacio, el escaneo no esta comprobado")
+    print("[WARN]  Positive control: none — "
+          f"{REVISADOS} is empty, the scan is unverified")
 
 if perdidos:
-    print("\n  x No se encontraron hallazgos que si estaban en el historial:")
+    print("\n[ERROR] Findings that used to be in the history were not found again:")
     for h in sorted(perdidos):
         print(f"      {h}  {revisados[h]}")
-    print("\n    O se reescribio el historial, o este guion dejo de detectarlos.")
-    print("    Las dos posibilidades hay que mirarlas antes de seguir.")
+    print("\n    Either the history was rewritten, or this script stopped detecting them.")
+    print("    Both possibilities need to be checked before continuing.")
     sys.exit(1)
 
 if not hallazgos:
-    print("\n  OK Sin hallazgos nuevos de alta entropia en el historial.")
+    print("\n[INFO]  No new high-entropy findings in the history.")
     sys.exit(0)
 
-print(f"\n  x {len(hallazgos)} cadena(s) de alta entropia sin revisar:\n")
+print(f"\n[ERROR] {len(hallazgos)} high-entropy string(s) not yet reviewed:\n")
 for h, d in sorted(hallazgos.items(), key=lambda kv: kv[1]["fecha"]):
-    print(f"    huella {h}   pasada {d['pasada']}   {d['veces']} aparicion(es)")
-    print(f"      primera vez: {d['commit']}  {d['fecha']}  {d['ruta']}")
+    print(f"    fingerprint {h}   pass {d['pasada']}   {d['veces']} occurrence(s)")
+    print(f"      first seen: {d['commit']}  {d['fecha']}  {d['ruta']}")
     print(f"      {d['linea']}\n")
 
-print(f"""    Cada una hay que mirarla en su commit y decidir:
+print(f"""    Each one has to be looked up in its commit and decided:
 
-      - Es una credencial viva  -> rotarla YA. Esta en el historial y el
-        historial es publico; borrarla del arbol no la quita de ahi.
-      - Es una credencial muerta o un falso positivo -> anadir la huella a
-        {REVISADOS} con el motivo, y este guion deja de avisar de ella.
+      - It's a live credential  -> rotate it NOW. It's in the history, and the
+        history is public; deleting it from the tree doesn't remove it from there.
+      - It's a dead credential or a false positive -> add the fingerprint to
+        {REVISADOS} with the reason, and this script stops flagging it.
 
-    Para verla sin exponerla en un log compartido:
-      git log -p --all -S'<fragmento>' -- <ruta>""")
+    To look at it without exposing it in a shared log:
+      git log -p --all -S'<fragment>' -- <path>""")
 sys.exit(1)
 PY
 )
@@ -250,26 +254,26 @@ RANGO, LISTA, REVISADOS = sys.argv[1], sys.argv[2], sys.argv[3]
 # Los rangos reservados para documentacion (RFC 5737) y el loopback quedan
 # fuera a proposito: son los que se DEBEN usar en los ejemplos del repositorio.
 PATRONES = [
-    ("IP privada RFC1918",
+    ("RFC1918 private IP",
      r"\b(?:10\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3}\b",
      "10.14.3.9"),
-    ("IP de enlace local o CGNAT",
+    ("link-local or CGNAT IP",
      r"\b(?:169\.254|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7]))\.\d{1,3}\.\d{1,3}\b",
      "169.254.1.1"),
     # La mirada atras descarta los globs: en `*.env.local` el candidato
     # `env.local` viene precedido de un punto, y un host no. La cadena se
     # consume entera para que `sub.host.internal` coincida de una pieza.
-    ("host de red interna",
+    ("internal network host",
      r"(?<![*\w.-])(?:[a-z0-9][a-z0-9-]{0,62}\.)+"
      r"(?:local|lan|internal|intranet|corp|priv)\b",
      "servidor-ejemplo.internal"),
-    ("registro de contenedores privado",
+    ("private container registry",
      r"\b(?:[a-z0-9-]+\.(?:azurecr\.io|gcr\.io|pkg\.dev)"
      r"|\d{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com)\b",
      "registroejemplo.azurecr.io"),
     # El primer caracter del host debe ser alfanumerico: sin eso, una expresion
     # regular escapada como '\\.secrets\\.baseline' se lee como ruta UNC.
-    ("ruta UNC de Windows",
+    ("Windows UNC path",
      r"\\\\[A-Za-z0-9][A-Za-z0-9._-]{1,}\\[A-Za-z0-9._$-]{1,}",
      r"\\servidor\recurso"),
 ]
@@ -313,13 +317,13 @@ try:
                 rx = re.compile(linea[3:], re.I)
             else:
                 rx = re.compile(r"\b" + re.escape(linea) + r"\b", re.I)
-            compilados.append(("termino de la lista local", rx))
+            compilados.append(("local list term", rx))
             terminos += 1
 except FileNotFoundError:
     pass
 
 if fallos_autoprueba:
-    print("  x El metodo esta roto: estos patrones no reconocen su propia muestra:")
+    print("[ERROR] The method is broken: these patterns don't recognize their own sample:")
     for n in fallos_autoprueba:
         print(f"      {n}")
     sys.exit(1)
@@ -372,7 +376,7 @@ for linea in registro.splitlines():
             # El valor se oculta igual que en el modo de credenciales: el
             # nombre de un cliente en un log compartido es el propio problema.
             oculto = rx.sub(
-                lambda mm: f"<{len(mm.group(0))} caracteres ocultos>", contenido
+                lambda mm: f"<{len(mm.group(0))} hidden characters>", contenido
             )[:200]
             hallazgos.setdefault(
                 h,
@@ -381,44 +385,44 @@ for linea in registro.splitlines():
             )
             hallazgos[h]["veces"] += 1
 
-print(f"  Rango: {RANGO}   lineas anadidas examinadas: {lineas_leidas}")
-print(f"  Patrones estructurales: {len(PATRONES)} (autoprueba superada)"
-      f"   terminos de la lista local: {terminos}")
+print(f"[INFO]  Range: {RANGO}   added lines examined: {lineas_leidas}")
+print(f"[INFO]  Structural patterns: {len(PATRONES)} (self-test passed)"
+      f"   local list terms: {terminos}")
 if terminos == 0:
-    print(f"  Aviso: no hay lista local en {LISTA} — solo corrieron los")
-    print(f"         patrones estructurales. Ver {LISTA}.example")
+    print(f"[WARN]  No local list at {LISTA} — only the structural")
+    print(f"         patterns ran. See {LISTA}.example")
 
 perdidos = set(revisados) - vistos_revisados
 if revisados:
-    print(f"  Control positivo: {len(vistos_revisados)}/{len(revisados)} "
-          "hallazgos ya revisados vueltos a encontrar")
+    print(f"[INFO]  Positive control: {len(vistos_revisados)}/{len(revisados)} "
+          "previously reviewed findings found again")
 if perdidos:
-    print("\n  x No se encontraron hallazgos que si estaban en el historial:")
+    print("\n[ERROR] Findings that used to be in the history were not found again:")
     for h in sorted(perdidos):
         print(f"      {h}  {revisados[h]}")
-    print("\n    O se reescribio el historial, o este guion dejo de detectarlos.")
+    print("\n    Either the history was rewritten, or this script stopped detecting them.")
     sys.exit(1)
 
 if not hallazgos:
-    print("\n  OK Sin rastros de infraestructura ajena en el historial.")
+    print("\n[INFO]  No traces of external infrastructure in the history.")
     sys.exit(0)
 
-print(f"\n  x {len(hallazgos)} identificador(es) sin revisar:\n")
+print(f"\n[ERROR] {len(hallazgos)} identifier(s) not yet reviewed:\n")
 for h, d in sorted(hallazgos.items(), key=lambda kv: kv[1]["fecha"]):
-    print(f"    huella {h}   {d['tipo']}   {d['veces']} aparicion(es)")
-    print(f"      primera vez: {d['commit']}  {d['fecha']}  {d['ruta']}")
+    print(f"    fingerprint {h}   {d['tipo']}   {d['veces']} occurrence(s)")
+    print(f"      first seen: {d['commit']}  {d['fecha']}  {d['ruta']}")
     print(f"      {d['linea']}\n")
 
-print(f"""    Cada uno hay que mirarlo en su commit y decidir:
+print(f"""    Each one has to be looked up in its commit and decided:
 
-      - Es un rastro real de infraestructura ajena -> no basta con borrarlo del
-        arbol. Esta en el historial, y el historial es publico.
-      - Es un ejemplo legitimo o un falso positivo -> anadir la huella a
-        {REVISADOS} con el motivo. Para los ejemplos, usar los rangos de
-        documentacion de la RFC 5737, que este guion no marca.
+      - It's a real trace of external infrastructure -> deleting it from the
+        tree isn't enough. It's in the history, and the history is public.
+      - It's a legitimate example or a false positive -> add the fingerprint to
+        {REVISADOS} with the reason. For examples, use the RFC 5737
+        documentation ranges, which this script doesn't flag.
 
-    Para verlo sin exponerlo en un log compartido:
-      git log -p --all -S'<fragmento>' -- <ruta>""")
+    To look at it without exposing it in a shared log:
+      git log -p --all -S'<fragment>' -- <path>""")
 sys.exit(1)
 PY
 )
@@ -426,13 +430,13 @@ PY
 ESTADO=0
 
 if [ "$MODO" = "credenciales" ] || [ "$MODO" = "todo" ]; then
-    echo "→ Auditando el historial en busca de credenciales…"
+    echo "[INFO]  Auditing git history for credentials..."
     python3 -c "$PROGRAMA" "$RANGO" "$REVISADOS" || ESTADO=1
 fi
 
 if [ "$MODO" = "identificadores" ] || [ "$MODO" = "todo" ]; then
     [ "$MODO" = "todo" ] && echo ""
-    echo "→ Auditando el historial en busca de identificadores de cliente…"
+    echo "[INFO]  Auditing git history for client identifiers..."
     python3 -c "$PROGRAMA_IDS" "$RANGO" "$IDS_LISTA" "$IDS_REVISADOS" || ESTADO=1
 fi
 

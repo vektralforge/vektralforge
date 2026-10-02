@@ -17,8 +17,8 @@ set -e
 
 if [ "$codigo" -eq 5 ]; then
     echo ""
-    echo "  ✗ No se recogió ningún test en airflow/tests/"
-    echo "    Si es intencional, el CI no debería reportar éxito."
+    echo "[ERROR] No tests were collected in airflow/tests/"
+    echo "    If this is intentional, CI shouldn't report success."
     exit 1
 fi
 
