@@ -259,7 +259,7 @@ flowchart LR
         HMS["hive-metastore<br/>thrift :9083"]
     end
 
-    MIN["<b>rustfs</b><br/>API :9000 · consola :9001"]
+    RFS["<b>rustfs</b><br/>API :9000 · consola :9001"]
 
     subgraph vis["Visualización y linaje"]
         direction TB
@@ -278,10 +278,10 @@ flowchart LR
 
     AFS -->|"spark-submit · modo client"| SPM
     SPM --- SPW
-    SPM --> MIN
-    HMS --> MIN
+    SPM --> RFS
+    HMS --> RFS
     TRN --> HMS
-    TRN --> MIN
+    TRN --> RFS
     SUP --> TRN
     MQW --> MQA
     AFS -.->|OpenLineage| MQA
