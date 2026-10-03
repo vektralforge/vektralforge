@@ -19,7 +19,7 @@ ARG RC_VERSION=0.1.34
 # Aquí no se ejecuta `rc` como comprobación a propósito: en una construcción
 # cruzada eso exigiría QEMU y ataría el build multi-arco a tenerlo. La
 # integridad ya la garantiza el sha256.
-FROM alpine:3.22 AS cli
+FROM alpine:3.24 AS cli
 ARG RC_VERSION
 ARG TARGETARCH
 # sha256 de los dos artefactos oficiales, verificados antes de extraer. El
