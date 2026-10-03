@@ -14,12 +14,7 @@ ARG RUSTFS_VERSION=1.0.0-rc.6
 ARG RC_VERSION=0.1.34
 
 # La descarga va en una etapa aparte para que la imagen final no necesite curl
-# ni tar y no arrastre nada del proceso.
-#
-# Se copian dos binarios, y el segundo necesita explicación: busybox de Alpine
-# es estático y lo usa el healthcheck del servicio, porque no está verificado
-# que la imagen de RustFS traiga curl o wget. Es la misma razón por la que el
-# healthcheck de MinIO usaba `mc` en vez de curl.
+# ni tar durante el build y no arrastre nada del proceso.
 #
 # Aquí no se ejecuta `rc` como comprobación a propósito: en una construcción
 # cruzada eso exigiría QEMU y ataría el build multi-arco a tenerlo. La
@@ -43,11 +38,9 @@ RUN set -eu; \
       "https://github.com/rustfs/cli/releases/download/v${RC_VERSION}/rustfs-cli-linux-${TARGETARCH}-v${RC_VERSION}.tar.gz"; \
     printf '%s  /tmp/rc.tgz\n' "$sha" | sha256sum -c -; \
     tar xzf /tmp/rc.tgz -C /tmp; \
-    install -D -m 0755 /tmp/rc /out/rc; \
-    install -D -m 0755 /bin/busybox /out/busybox
+    install -D -m 0755 /tmp/rc /out/rc
 
 FROM rustfs/rustfs:${RUSTFS_VERSION}
 # `rc` es un binario estático (static-pie), así que no depende de la libc de la
 # imagen base.
 COPY --from=cli /out/rc /usr/local/bin/rc
-COPY --from=cli /out/busybox /usr/local/bin/busybox

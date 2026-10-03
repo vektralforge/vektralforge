@@ -14,12 +14,11 @@ and it is why it can be part of the stack without affecting the licence of
 VektralForge's own code. It does **not** relieve you of assessing your own
 obligations for your deployment.
 
-**There is one exception, and it is not a detail.** Since October 2026 the
-`vektralforge/rustfs` image copies two binaries in at build time, so those two
-*are* redistributed by this project rather than merely orchestrated. They have
-their own section below — [Binaries vendored into VektralForge
-images](#binaries-vendored-into-vektralforge-images) — and one of them is under
-the GPL.
+**There is one exception.** Since October 2026 the `vektralforge/rustfs` image
+copies one binary in at build time, so that binary *is* redistributed by this
+project rather than merely orchestrated. It has its own section below —
+[Binaries vendored into VektralForge
+images](#binaries-vendored-into-vektralforge-images).
 
 ---
 
@@ -144,26 +143,25 @@ versions of the same one.
 
 ## Binaries vendored into VektralForge images
 
-Everything above is orchestrated. These two are **redistributed**: the
+Everything above is orchestrated. This one is **redistributed**: the
 `vektralforge/rustfs` image is built from the upstream `rustfs/rustfs` image with
-both copied in at build time (`infra/docker-compose/s3/Dockerfile`), so whoever
-pulls that image receives them and their terms travel with it.
+the binary copied in at build time (`infra/docker-compose/s3/Dockerfile`), so
+whoever pulls that image receives it and its terms travel with it.
 
 | Binary | Licence | Source | Why it is in the image |
 | ------ | ------- | ------ | ---------------------- |
 | `rc` — RustFS CLI | Apache-2.0 OR MIT | https://github.com/rustfs/cli | Upstream publishes the CLI as a separate artefact; unlike MinIO's `mc`, it does not ship inside the server image. `init_users.sh` needs it *inside* the container so the root credential can arrive over a pipe instead of through argv or the environment. |
-| `busybox` — from `alpine:3.22` | **GPL-2.0-only** | https://git.busybox.net/busybox | The container healthcheck (`busybox wget` against `/health`). It is there because it is not verified that the RustFS image carries curl or wget. |
 
-**busybox is the only copyleft binary VektralForge redistributes.** It is copied
-unmodified from the Alpine image; the corresponding source is published by the
-BusyBox project at the link above and packaged by Alpine at
-https://git.alpinelinux.org/aports/tree/main/busybox. If a GPLv2 binary in your
-image inventory is a problem, note that the healthcheck is the only thing that
-needs it: replace that one line in the Dockerfile and the binary goes away.
+This entry is different in kind from the rest of the document — the binary is
+dual-licensed Apache-2.0 OR MIT and raises no obligation beyond attribution,
+which is what this table is — but it is listed because redistribution is a
+different relationship from orchestration, and the distinction should be visible
+rather than assumed.
 
-The `rc` entry is different in kind from the rest of this document: the project
-is Apache 2.0, and the binary is dual-licensed Apache-2.0 OR MIT, so it raises no
-obligation beyond attribution — which is what this table is.
+An earlier revision of this section also listed busybox (GPL-2.0-only), copied
+from Alpine for the container healthcheck. It was removed once it was verified
+that the RustFS image already carries curl: **VektralForge redistributes no
+copyleft binary.**
 
 ## Container images
 

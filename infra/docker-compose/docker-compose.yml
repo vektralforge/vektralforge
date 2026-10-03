@@ -163,11 +163,12 @@ services:
       - "${BIND_HOST:-127.0.0.1}:9000:9000"
       - "${BIND_HOST:-127.0.0.1}:9001:9001"
     healthcheck:
-      # El endpoint HTTP y no `rc ready`: `ready` exige un alias configurado en
-      # el contenedor, y montar uno con la credencial raíz dentro de la imagen
-      # es exactamente lo que este diseño evita. Un alias anónimo se importa,
-      # pero que `ready` funcione sin credenciales no está comprobado.
-      test: ["CMD", "busybox", "wget", "-q", "-O", "-", "http://127.0.0.1:9000/health"]
+      # El endpoint HTTP y no `rc ready` ni `rc ping`: los dos exigen un alias
+      # configurado —comprobado: «Alias not found: local»— y montar uno con la
+      # credencial raíz dentro de la imagen es lo que este diseño evita.
+      # curl viene en la imagen de RustFS (/usr/bin/curl, comprobado), así que
+      # tampoco hace falta meter un cliente HTTP propio.
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:9000/health"]
       interval: 30s
       timeout: 10s
       retries: 5
