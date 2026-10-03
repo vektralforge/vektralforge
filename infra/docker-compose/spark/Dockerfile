@@ -89,7 +89,7 @@ COPY --from=jars /jars/ /opt/spark/jars/
 # el provider de OpenLineage de Airflow en cada spark-submit.
 COPY infra/docker-compose/spark/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
-# ── Credenciales de MinIO: archivos, no variables de entorno ─────────────────
+# ── Credenciales del object store: archivos, no variables de entorno ────────────────
 #
 # Antes llegaban como AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY, que es lo que
 # resuelve EnvironmentVariableCredentialsProvider. Funcionaba, pero un
@@ -102,7 +102,7 @@ COPY infra/docker-compose/spark/spark-defaults.conf /opt/spark/conf/spark-defaul
 # cliente boto3 a nivel de módulo, y ese módulo se importa en los executors al
 # deserializar cualquier función definida en él.
 COPY infra/docker-compose/comun/core-site.xml.base /opt/vektralforge/conf/core-site.xml.base
-COPY infra/docker-compose/comun/credenciales_minio.sh /opt/vektralforge/bin/credenciales_minio.sh
+COPY infra/docker-compose/comun/credenciales_s3.sh /opt/vektralforge/bin/credenciales_s3.sh
 COPY infra/docker-compose/spark/docker-entrypoint.sh /opt/vektralforge/bin/docker-entrypoint.sh
 
 # /opt/spark/conf es de root en la imagen base y el contenedor corre como
@@ -114,7 +114,7 @@ COPY infra/docker-compose/spark/docker-entrypoint.sh /opt/vektralforge/bin/docke
 # permisos 700, y `+x` sobre 700 deja 711: el kernel ejecuta el archivo, pero
 # el intérprete del shebang necesita LEERLO, y sin o+r falla con un
 # «bash: ...: Permission denied» que parece un problema de ejecución y no lo es.
-RUN chmod 755 /opt/vektralforge/bin/credenciales_minio.sh \
+RUN chmod 755 /opt/vektralforge/bin/credenciales_s3.sh \
               /opt/vektralforge/bin/docker-entrypoint.sh && \
     chmod 644 /opt/vektralforge/conf/core-site.xml.base && \
     mkdir -p /opt/vektralforge/aws && \
@@ -161,12 +161,12 @@ RUN test -x /opt/entrypoint.sh || { \
 # El generador de credenciales, ejecutado con una clave falsa y con el usuario
 # con el que va a correr de verdad. También se escribe donde va a escribir.
 RUN printf 'clave-de-prueba' > /tmp/s && \
-    MINIO_ACCESS_KEY=prueba MINIO_SECRET_KEY_FILE=/tmp/s \
-      /opt/vektralforge/bin/credenciales_minio.sh && \
+    S3_ACCESS_KEY=prueba S3_SECRET_KEY_FILE=/tmp/s \
+      /opt/vektralforge/bin/credenciales_s3.sh && \
     rm -f /tmp/s && \
     grep -q "<name>fs.s3a.secret.key</name>" /opt/spark/conf/core-site.xml && \
     grep -q "^\\[default\\]$" /opt/vektralforge/aws/credentials && \
     rm -f /opt/spark/conf/core-site.xml /opt/vektralforge/aws/credentials && \
-    echo "credenciales_minio.sh genera core-site.xml y el INI del SDK"
+    echo "credenciales_s3.sh genera core-site.xml y el INI del SDK"
 
 ENTRYPOINT ["/opt/vektralforge/bin/docker-entrypoint.sh"]

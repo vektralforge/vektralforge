@@ -5,19 +5,19 @@
 
 set -euo pipefail
 
-# ── core-site.xml: acceso a MinIO ────────────────────────────────────────────
+# ── core-site.xml: acceso al object store ───────────────────────────────────────────
 #
 # Lo escribe el script común, el mismo que usan las imágenes de Airflow y de
 # Spark: los tres consumidores de S3A necesitan exactamente las mismas
 # propiedades y antes solo el metastore las tenía en un archivo.
 #
-# La clave llega como archivo montado, no como MINIO_SECRET_KEY. Es la cuenta
-# de servicio vf-hive, NO la raíz de MinIO: antes aquí llegaban MINIO_ROOT_USER
-# y MINIO_ROOT_PASSWORD y el metastore podía borrar todos los buckets para
+# La clave llega como archivo montado, no como S3_SECRET_KEY. Es la cuenta
+# de servicio vf-hive, NO la raíz del object store: antes aquí llegaban S3_ROOT_USER
+# y S3_ROOT_PASSWORD y el metastore podía borrar todos los buckets para
 # hacer un trabajo que solo necesita leer y escribir objetos.
 VF_CORE_SITE="${HIVE_CORE_SITE:-/opt/hadoop/etc/hadoop/core-site.xml}" \
 VF_CORE_SITE_BASE="${HIVE_CORE_SITE_BASE:-/opt/hadoop/etc/hadoop/core-site.xml.base}" \
-  /opt/vektralforge/bin/credenciales_minio.sh
+  /opt/vektralforge/bin/credenciales_s3.sh
 
 # ── hive-site.xml: conexión al metastore ─────────────────────────────────────
 #

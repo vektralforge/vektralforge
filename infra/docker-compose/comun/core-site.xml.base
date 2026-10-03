@@ -6,7 +6,7 @@
   executors de spark-worker y el Hive Metastore.
 
   Esto es la BASE: solo lleva lo que no depende del entorno. El endpoint, el
-  identificador de la cuenta y la clave los añade credenciales_minio.sh en el
+  identificador de la cuenta y la clave los añade credenciales_s3.sh en el
   arranque, insertándolos antes de </configuration>. El core-site.xml
   resultante no se versiona; esta base sí.
 
@@ -38,7 +38,7 @@
     <value>org.apache.hadoop.fs.s3a.S3A</value>
   </property>
 
-  <!-- MinIO no publica los buckets como subdominios. -->
+  <!-- El object store no publica los buckets como subdominios. -->
   <property>
     <name>fs.s3a.path.style.access</name>
     <value>true</value>
@@ -48,7 +48,7 @@
     <value>false</value>
   </property>
 
-  <!-- MinIO no usa regiones, pero el SDK exige una. -->
+  <!-- El object store no usa regiones, pero el SDK exige una. -->
   <property>
     <name>fs.s3a.endpoint.region</name>
     <value>us-east-1</value>

@@ -89,7 +89,7 @@ ENV SPARK_CONF_DIR=/opt/vektralforge/spark-conf
 # vía AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD. Ver el docstring del script.
 COPY infra/docker-compose/airflow/cadena_de_conexion.py /opt/vektralforge/bin/cadena_de_conexion.py
 
-# ── Credenciales de MinIO: archivos, no variables de entorno ─────────────────
+# ── Credenciales del object store: archivos, no variables de entorno ────────────────
 #
 # En este contenedor hay dos consumidores y cada uno lee un formato distinto:
 # el driver de Spark —SparkSubmitOperator usa modo client, así que corre AQUÍ—
@@ -99,7 +99,7 @@ COPY infra/docker-compose/airflow/cadena_de_conexion.py /opt/vektralforge/bin/ca
 # Antes las dos rutas se resolvían con AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY
 # en el entorno de los cuatro contenedores, donde las enseñaba `docker inspect`.
 COPY infra/docker-compose/comun/core-site.xml.base /opt/vektralforge/conf/core-site.xml.base
-COPY infra/docker-compose/comun/credenciales_minio.sh /opt/vektralforge/bin/credenciales_minio.sh
+COPY infra/docker-compose/comun/credenciales_s3.sh /opt/vektralforge/bin/credenciales_s3.sh
 COPY infra/docker-compose/airflow/docker-entrypoint.sh /opt/vektralforge/bin/docker-entrypoint.sh
 
 # COPY crea los directorios intermedios como root aunque el USER sea airflow, y
@@ -112,7 +112,7 @@ USER root
 # el intérprete del shebang necesita LEERLO, y sin o+r falla con un
 # «bash: ...: Permission denied» que parece un problema de ejecución y no lo es.
 RUN chmod 755 /opt/vektralforge/bin/cadena_de_conexion.py \
-              /opt/vektralforge/bin/credenciales_minio.sh \
+              /opt/vektralforge/bin/credenciales_s3.sh \
               /opt/vektralforge/bin/docker-entrypoint.sh && \
     chmod 644 /opt/vektralforge/conf/core-site.xml.base && \
     mkdir -p /opt/vektralforge/aws && \
@@ -172,12 +172,12 @@ RUN test -x /entrypoint || { \
 # va a correr y escribiendo en el destino real: así comprueba de paso que los
 # dos directorios son escribibles por `airflow`.
 RUN printf 'clave-de-prueba' > /tmp/s && \
-    MINIO_ACCESS_KEY=prueba MINIO_SECRET_KEY_FILE=/tmp/s \
-      /opt/vektralforge/bin/credenciales_minio.sh && \
+    S3_ACCESS_KEY=prueba S3_SECRET_KEY_FILE=/tmp/s \
+      /opt/vektralforge/bin/credenciales_s3.sh && \
     rm -f /tmp/s && \
     grep -q "<name>fs.s3a.secret.key</name>" /opt/vektralforge/spark-conf/core-site.xml && \
     grep -q "^\\[default\\]$" /opt/vektralforge/aws/credentials && \
     rm -f /opt/vektralforge/spark-conf/core-site.xml /opt/vektralforge/aws/credentials && \
-    echo "credenciales_minio.sh genera core-site.xml y el INI del SDK"
+    echo "credenciales_s3.sh genera core-site.xml y el INI del SDK"
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--", "/opt/vektralforge/bin/docker-entrypoint.sh"]

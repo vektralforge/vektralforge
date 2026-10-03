@@ -14,11 +14,37 @@ under **Upgrading**.
 
 ### Changed
 
+- **MinIO queda sustituido por RustFS `1.0.0-rc.6`.** MinIO se archivó en 2026 y
+  ninguna imagen pública lleva el parche de `CVE-2025-62506`, así que no había
+  versión a la que subir. RustFS es Apache 2.0 —el stack pierde su única
+  dependencia AGPLv3— y habla la misma política de IAM de AWS, de modo que
+  `politica-datos.json` se reutiliza sin cambios. La imagen se construye en
+  `infra/docker-compose/s3/Dockerfile` para hornear dentro el CLI `rc`, que
+  upstream publica como artefacto separado: sin él la credencial raíz tendría
+  que viajar por argv o por el entorno, deshaciendo el #54 y el #55.
+- **La configuración del object store deja de llamarse MinIO.** `MINIO_*` pasa a
+  `S3_*`, `credenciales_minio.sh` a `credenciales_s3.sh` y la política a
+  `infra/docker-compose/s3/`. Va en un commit propio: es renombrado, sin cambio
+  de comportamiento.
+
 - **Branch protection is now enforced on `develop` and `main`.** Merging needs a
   pull request, one approving review from somebody other than the author, and
   the `CI` and DCO checks green. Direct pushes, force pushes and branch deletion
   are refused — with an empty bypass list, so the rule applies to repository
   admins too.
+
+### Upgrading
+
+- **Hay que renombrar las claves del `.env`.** Compose interpola `${S3_ROOT_USER}`
+  directamente, así que un `.env` con nombres `MINIO_*` deja el stack sin
+  arrancar. Con `sed -i -E 's/^MINIO_/S3_/' infra/docker-compose/.env` se
+  conservan los valores; `make init-env` genera uno nuevo.
+- **El volumen de datos cambia de nombre** (`minio-data` → `s3-data`) y el
+  backend es otro, así que los objetos del volumen anterior no se reutilizan:
+  `make dev-reset` y `make dev-load-example` los recrean. El volumen viejo queda
+  huérfano y se borra con `docker volume rm docker-compose_minio-data`.
+- **El servicio pasa a llamarse `rustfs`**: cualquier guion propio con
+  `docker exec docker-compose-minio-1` hay que ajustarlo.
 
 ## [0.1.0] — 2026-09-03
 

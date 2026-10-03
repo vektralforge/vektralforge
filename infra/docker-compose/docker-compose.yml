@@ -12,7 +12,7 @@ x-airflow-common: &airflow-common
     dockerfile: infra/docker-compose/airflow/Dockerfile
   # Aquí había `env_file: .env`, que entregaba el archivo ENTERO como variables
   # de entorno a los cuatro contenedores de Airflow: no solo la clave de
-  # Postgres, también la de MinIO, las de admin de Airflow y Superset, y el
+  # Postgres, también la del object store, las de admin de Airflow y Superset, y el
   # token de OpenBao. Un `docker inspect` sobre cualquiera las enseñaba todas.
   #
   # Ahora la lista es explícita. Si Airflow necesita una variable nueva del
@@ -34,22 +34,22 @@ x-airflow-common: &airflow-common
     # dos runs aparecerían como grafos separados.
     AIRFLOW__OPENLINEAGE__SPARK_INJECT_PARENT_JOB_INFO: "true"
     AIRFLOW__OPENLINEAGE__SPARK_INJECT_TRANSPORT_INFO: "true"
-    # Credenciales de MinIO para S3A y boto3. Aquí viaja solo el
+    # Credenciales del object store para S3A y boto3. Aquí viaja solo el
     # IDENTIFICADOR de la cuenta, que no es un secreto; la clave la entrega
     # compose como archivo y el entrypoint la materializa en dos sitios que sí
     # sabe leer cada consumidor: core-site.xml para S3A y el INI del SDK para
-    # boto3. Ver infra/docker-compose/comun/credenciales_minio.sh.
+    # boto3. Ver infra/docker-compose/comun/credenciales_s3.sh.
     #
     # Nunca como propiedad de Spark: ahí acabaría en la línea de comandos de
     # spark-submit y en la UI del driver.
     #
     # Es la cuenta de servicio vf-pipeline, NO la raíz. Antes aquí iban
-    # MINIO_ROOT_USER y MINIO_ROOT_PASSWORD, con lo que estos contenedores
+    # S3_ROOT_USER y S3_ROOT_PASSWORD, con lo que estos contenedores
     # podían borrar todos los buckets y administrar el servidor. La política que
-    # las acota está en infra/docker-compose/minio/politica-datos.json y la
+    # las acota está en infra/docker-compose/s3/politica-datos.json y la
     # aplica `init_users.sh cuentas`.
-    MINIO_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
-    MINIO_SECRET_KEY_FILE: /run/secrets/minio_pipeline_secret_key
+    S3_ACCESS_KEY: ${S3_PIPELINE_ACCESS_KEY:-vf-pipeline}
+    S3_SECRET_KEY_FILE: /run/secrets/s3_pipeline_secret_key
     # Catálogo compartido con Trino. El driver de Spark corre en este
     # contenedor, así que es aquí donde se resuelve.
     HIVE_METASTORE_URIS: thrift://hive-metastore:9083
@@ -58,16 +58,16 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
     # Las cuatro que antes llegaban de rebote por el env_file. Airflow lee las
-    # AIRFLOW__* y AIRFLOW_CONN_* directamente del entorno; MINIO_ENDPOINT la
+    # AIRFLOW__* y AIRFLOW_CONN_* directamente del entorno; S3_ENDPOINT la
     # leen los DAGs con os.environ.
     AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
     AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
     AIRFLOW_CONN_SPARK_DEFAULT: ${AIRFLOW_CONN_SPARK_DEFAULT}
-    MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+    S3_ENDPOINT: ${S3_ENDPOINT}
   secrets:
     - postgres_password
-    - minio_pipeline_secret_key
+    - s3_pipeline_secret_key
   volumes:
     - ../../airflow/dags:/opt/airflow/dags
     - ../../airflow/plugins:/opt/airflow/plugins
@@ -113,7 +113,7 @@ services:
       retries: 5
     # Todos los puertos publicados se atan a la interfaz de loopback. Compose,
     # si no se le dice nada, escucha en 0.0.0.0: en una red compartida eso deja
-    # accesibles Postgres con su contraseña, Redis sin ninguna, MinIO con las
+    # accesibles Postgres con su contraseña, Redis sin ninguna, el object store con las
     # credenciales root, OpenBao en modo dev y —lo más serio— el puerto 7077 de
     # spark-master, que acepta el envío de jobs sin autenticación.
     #
@@ -123,46 +123,52 @@ services:
     ports:
       - "${BIND_HOST:-127.0.0.1}:5432:5432"
 
-  # ── MinIO ─────────────────────────────────────────────────────────────────
+  # ── RustFS ────────────────────────────────────────────────────────────────
   #
-  # ESTA VERSIÓN ES DELIBERADA Y ES UN CALLEJÓN SIN SALIDA. Léelo antes de
-  # subirla, porque «actualizar a la última» aquí empeora las cosas.
+  # Sustituye a MinIO, que era un callejón sin salida: consola recortada en
+  # RELEASE.2025-05-24, última imagen pública en septiembre de 2025, repositorio
+  # archivado en 2026 y CVE-2025-62506 —escalada de privilegios, severidad
+  # alta— corregido solo en una release que nunca se publicó como imagen. No
+  # había etiqueta a la que ir, así que la salida era cambiar de backend.
   #
-  # MinIO retiró de la edición comunitaria la consola de administración y el
-  # login LDAP/OIDC en RELEASE.2025-05-24. Esta, del 8 de abril de 2025, es la
-  # última que conserva la consola íntegra, y trae doce meses de correcciones
-  # sobre la 2024-04 en la que estaba el proyecto.
+  # RustFS es Apache 2.0, con lo que el stack pierde su única dependencia
+  # AGPLv3, y habla la misma política de IAM de AWS: politica-datos.json se
+  # reutiliza tal cual. PyIceberg, Polaris y Apache Gravitino ya lo usan como
+  # backend S3 de sus pruebas de integración.
   #
-  # Después el proyecto se apagó: última imagen pública el 2025-09-07, última
-  # release —solo código fuente— en octubre de 2025, «maintenance mode» en
-  # diciembre, y el repositorio archivado en 2026. No hay ninguna versión
-  # posterior a la que ir.
+  # LA ETIQUETA ESTÁ FIJA Y NO ES CASUAL. 1.0.0-rc.6 no es GA: el Object Lock
+  # falló abierto dos veces en 2026 —issue #1509 y CVE-2026-73288, este último
+  # corregido justo en rc.1— y por eso está en los `ignore` de Dependabot hasta
+  # que exista una 1.0.0 estable. Subir de etiqueta aquí no es rutina.
   #
-  # Y ninguna imagen pública, tampoco la más nueva, lleva el parche de
-  # CVE-2025-62506 (escalada de privilegios, severidad alta): se corrigió solo
-  # en esa última release que nunca llegó a publicarse como imagen. Aquí se
-  # asume conscientemente, con el stack en loopback y en desarrollo local; en
-  # cualquier otro escenario no es asumible.
-  #
-  # La salida no es otra versión de MinIO sino otro backend. El almacenamiento
-  # de VektralForge habla S3 y nada depende de MinIO en particular: ver la nota
-  # de THIRD-PARTY-NOTICES.md, que ya nombra Garage, SeaweedFS y Ceph RGW.
-  minio:
-    image: minio/minio:RELEASE.2025-04-08T15-41-24Z
+  # La credencial raíz sigue llegando por el entorno de ESTE servicio, igual que
+  # con MinIO: no está verificado que RustFS acepte el sufijo _FILE. Es el mismo
+  # residual que dejó el #55, ni mejor ni peor, y queda anotado como tal.
+  rustfs:
+    image: vektralforge/rustfs:1.0.0-rc.6
+    build:
+      context: ../..
+      dockerfile: infra/docker-compose/s3/Dockerfile
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: ["/data"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      RUSTFS_ACCESS_KEY: ${S3_ROOT_USER}
+      RUSTFS_SECRET_KEY: ${S3_ROOT_PASSWORD}
+      RUSTFS_ADDRESS: ":9000"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
+      RUSTFS_CONSOLE_ENABLE: "true"
     volumes:
-      - minio-data:/data
+      - s3-data:/data
     ports:
       - "${BIND_HOST:-127.0.0.1}:9000:9000"
       - "${BIND_HOST:-127.0.0.1}:9001:9001"
     healthcheck:
-      # `mc ready` en vez de curl: la imagen de MinIO no siempre incluye curl,
-      # y sin él el healthcheck falla aunque el servicio esté sano.
-      test: ["CMD", "mc", "ready", "local"]
+      # El endpoint HTTP y no `rc ready` ni `rc ping`: los dos exigen un alias
+      # configurado —comprobado: «Alias not found: local»— y montar uno con la
+      # credencial raíz dentro de la imagen es lo que este diseño evita.
+      # curl viene en la imagen de RustFS (/usr/bin/curl, comprobado), así que
+      # tampoco hace falta meter un cliente HTTP propio.
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:9000/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -188,12 +194,12 @@ services:
       SERVICE_OPTS: ""
       METASTORE_DB_URL: jdbc:postgresql://postgres:5432/metastore
       METASTORE_DB_USER: ${POSTGRES_USER}
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${MINIO_HIVE_ACCESS_KEY:-vf-hive}
-      MINIO_SECRET_KEY_FILE: /run/secrets/minio_hive_secret_key
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_HIVE_ACCESS_KEY:-vf-hive}
+      S3_SECRET_KEY_FILE: /run/secrets/s3_hive_secret_key
     secrets:
       - postgres_password
-      - minio_hive_secret_key
+      - s3_hive_secret_key
     ports:
       - "${BIND_HOST:-127.0.0.1}:9083:9083"
     depends_on:
@@ -218,12 +224,12 @@ services:
       OPENLINEAGE_NAMESPACE: vektralforge
       # Solo el identificador. La clave llega como archivo y el entrypoint la
       # escribe en el core-site.xml de SPARK_CONF_DIR, que es donde S3A la busca.
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
-      MINIO_SECRET_KEY_FILE: /run/secrets/minio_pipeline_secret_key
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_PIPELINE_ACCESS_KEY:-vf-pipeline}
+      S3_SECRET_KEY_FILE: /run/secrets/s3_pipeline_secret_key
       HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     secrets:
-      - minio_pipeline_secret_key
+      - s3_pipeline_secret_key
     ports:
       - "${BIND_HOST:-127.0.0.1}:7077:7077"
       - "${BIND_HOST:-127.0.0.1}:8082:8082"
@@ -246,12 +252,12 @@ services:
       # Los executors resuelven las credenciales de S3A desde el
       # core-site.xml que el entrypoint escribe en el arranque. Antes las leían
       # del entorno, con EnvironmentVariableCredentialsProvider.
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${MINIO_PIPELINE_ACCESS_KEY:-vf-pipeline}
-      MINIO_SECRET_KEY_FILE: /run/secrets/minio_pipeline_secret_key
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_PIPELINE_ACCESS_KEY:-vf-pipeline}
+      S3_SECRET_KEY_FILE: /run/secrets/s3_pipeline_secret_key
       HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     secrets:
-      - minio_pipeline_secret_key
+      - s3_pipeline_secret_key
     ports:
       - "${BIND_HOST:-127.0.0.1}:8083:8083"
     depends_on:
@@ -266,11 +272,11 @@ services:
     restart: unless-stopped
     mem_limit: 768m
     environment:
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${MINIO_TRINO_ACCESS_KEY:-vf-trino}
-      MINIO_SECRET_KEY_FILE: /run/secrets/minio_trino_secret_key
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_ACCESS_KEY: ${S3_TRINO_ACCESS_KEY:-vf-trino}
+      S3_SECRET_KEY_FILE: /run/secrets/s3_trino_secret_key
     secrets:
-      - minio_trino_secret_key
+      - s3_trino_secret_key
     volumes:
       # De solo lectura y como PLANTILLA: Trino no sabe leer un secreto de un
       # archivo, solo resolver ${ENV:...}, así que el entrypoint renderiza el
@@ -280,7 +286,7 @@ services:
       - "${BIND_HOST:-127.0.0.1}:8081:8080"
     depends_on:
       - hive-metastore
-      - minio
+      - rustfs
 
   # ── Kafka ─────────────────────────────────────────────────────────────────
   # Kafka y ZooKeeper quedan detrás del perfil "streaming": `docker compose up`
@@ -329,7 +335,7 @@ services:
   # ── Marquez API (backend de OpenLineage) ──────────────────────────────────
   # Configuración vía marquez.yml embebido en la imagen: Marquez no lee la
   # conexión a la BD desde variables de entorno.
-  # Puerto 9000 interno → 9100 externo (evita AirPlay :5000 y MinIO :9000 en macOS)
+  # Puerto 9000 interno → 9100 externo (evita AirPlay :5000 y RustFS :9000 en macOS)
   marquez-api:
     # Con nombre y versión propios, como el resto de las imágenes construidas:
     # así `docker images` dice qué versión de Marquez hay sin abrir nada. La
@@ -391,11 +397,11 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: /opt/vektralforge/bin/cadena_de_conexion.py
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
       POSTGRES_USER: ${POSTGRES_USER}
-      # No habla con MinIO, así que no recibe ni la cuenta ni el secreto. El
+      # No habla con el object store, así que no recibe ni la cuenta ni el secreto. El
       # entrypoint exige los dos salvo que se le diga que no aquí: preferimos
       # que un servicio nuevo al que se le olvide la cuenta no arranque, a que
       # arranque y falle con un 403 media hora después.
-      VF_CREDENCIALES_MINIO: "no"
+      VF_CREDENCIALES_S3: "no"
     secrets:
       - postgres_password
     command: db migrate
@@ -502,15 +508,15 @@ secrets:
   # secretos y llevan valor por defecto para que un .env anterior siga
   # funcionando. Los secretos, a propósito, no llevan defecto: sin ellos el
   # arranque debe fallar y no continuar con una credencial vacía.
-  minio_pipeline_secret_key:
-    environment: MINIO_PIPELINE_SECRET_KEY
-  minio_hive_secret_key:
-    environment: MINIO_HIVE_SECRET_KEY
-  minio_trino_secret_key:
-    environment: MINIO_TRINO_SECRET_KEY
+  s3_pipeline_secret_key:
+    environment: S3_PIPELINE_SECRET_KEY
+  s3_hive_secret_key:
+    environment: S3_HIVE_SECRET_KEY
+  s3_trino_secret_key:
+    environment: S3_TRINO_SECRET_KEY
 
 volumes:
   postgres-data:
-  minio-data:
+  s3-data:
   airflow-logs:
   ivy-cache:

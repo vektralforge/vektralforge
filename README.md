@@ -48,7 +48,7 @@ project without controlling it — see [SPONSORS.md](SPONSORS.md) and
 | Delta Lake | 4.1.0 | Transactional table format |
 | Apache Hive Metastore | 4.0.0 | Catalogue shared by Spark and Trino |
 | Trino | 448 | SQL query engine |
-| MinIO | 2025-04 | S3 object storage · see note |
+| RustFS | 1.0.0-rc.6 | S3 object storage · see note |
 | Apache Superset | 6.1.0 | Visualisation |
 | OpenLineage | 1.52.0 | Lineage in Airflow and Spark |
 | Marquez | 0.51.1 | Lineage store and UI |
@@ -61,20 +61,26 @@ project without controlling it — see [SPONSORS.md](SPONSORS.md) and
 **Python 3.12 everywhere**: the Spark driver and its executors must agree on the
 minor version or PySpark refuses to run.
 
-**About MinIO.** The version is pinned on purpose to `RELEASE.2025-04-08`: it is
-the last one that keeps the full administration console, which MinIO removed
-from the community edition in the following release. The project then shut down
-— last published image in September 2025, repository archived in 2026 — so
-**there is no later version to move to**, and no published image carries the fix
-for `CVE-2025-62506` (privilege escalation, high severity). That is an accepted
-risk for a local development stack bound to loopback, and it is not acceptable
-for anything else. The way out is not another MinIO release but another backend:
-the storage layer speaks S3 and nothing in the project depends on MinIO in
-particular — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+**About the object store.** The backend was MinIO and no longer is. MinIO
+removed the administration console from the community edition in
+`RELEASE.2025-05-24`, published its last image in September 2025 and archived the
+repository in 2026; `CVE-2025-62506` (privilege escalation, high severity) was
+fixed only in a release that never shipped as an image. There was no tag to move
+to, so the way out was a different backend rather than a different version.
 
-Third-party licences, including the two that are not permissive — MinIO (AGPLv3)
-and Graylog (SSPL) — are listed in
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+**RustFS** is Apache 2.0, which removes the stack's only AGPLv3 dependency, and
+it speaks the same AWS IAM policy language, so `politica-datos.json` is reused
+unchanged. PyIceberg, Polaris and Apache Gravitino already use it as the S3
+backend for their integration tests.
+
+The `1.0.0-rc.6` tag is pinned and listed in Dependabot's `ignore`: it is not
+GA, release candidates land several times a month, and RustFS Object Lock
+**failed open** twice in 2026 — issue #1509 and `CVE-2026-73288`, fixed in
+`rc.1`, which this tag already includes. A lock that breaks by allowing deletion
+gives no symptom, so moving this tag is reviewed by hand.
+
+Third-party licences, including the one that is not permissive — Graylog
+(SSPL) — are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
 
@@ -119,7 +125,7 @@ appear.
 | Airflow | http://localhost:8090 |
 | Superset | http://localhost:8088 |
 | Trino | http://localhost:8081 |
-| MinIO | http://localhost:9001 |
+| RustFS | http://localhost:9001 |
 | Marquez (lineage) | http://localhost:3000 |
 | Spark Master | http://localhost:8082 |
 | OpenBao | http://localhost:8200 |
@@ -149,7 +155,7 @@ writes it and Trino sees it without a second registration step. Adding a pipelin
 does not mean touching a registration script: writing to `bronze` is enough.
 
 ```
-public API → Airflow → Spark → Delta Lake → MinIO
+public API → Airflow → Spark → Delta Lake → RustFS
                                     ↓
                         Hive Metastore (shared)
                                     ↓
@@ -311,16 +317,16 @@ No file in the repository contains credentials. The ones that need them —
 and the Trino catalogues — are generated when the container starts, from the
 secrets Compose delivers as files under `/run/secrets/`.
 
-MinIO credentials **do not travel as environment variables**. Each consumer signs
+Object store credentials **do not travel as environment variables**. Each consumer signs
 in with its own service account — `vf-pipeline`, `vf-hive`, `vf-trino`; none of
 them root — scoped by
-`infra/docker-compose/minio/politica-datos.json` to object operations on the five
+`infra/docker-compose/s3/politica-datos.json` to object operations on the five
 buckets. Its key arrives as a mounted file, out of reach of `docker inspect`,
 `docker compose config` and `/proc/<pid>/environ`, and the entrypoint
 materialises it in whatever form each consumer knows how to read: S3A in
 `core-site.xml` with `SimpleAWSCredentialsProvider`, boto3 in the INI pointed at
 by `AWS_SHARED_CREDENTIALS_FILE`, and Trino in the catalogue it renders at
-startup. Only the `minio` service and `init_users.sh` — which legitimately create
+startup. Only the `rustfs` service and `init_users.sh` — which legitimately create
 buckets and accounts — receive the root credentials.
 
 They are not passed as Spark properties either: a `--conf` ends up on the
@@ -392,7 +398,7 @@ proposing infrastructure changes.
 - **Trino writes `s3://`, Spark writes `s3a://`.** The metastore maps both
   schemes onto the S3A connector.
 - **`apache-airflow-providers-amazon` is excluded** because of incompatibility
-  with SQLAlchemy 2.x. MinIO access goes through `boto3` directly.
+  with SQLAlchemy 2.x. Object store access goes through `boto3` directly.
 
 ---
 

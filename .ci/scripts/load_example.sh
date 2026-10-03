@@ -89,7 +89,7 @@ wait_dag() {
 # ── 1. Verificar stack ────────────────────────────────────────────────────────
 log "Verificando stack..."
 stack_ok=true
-for s in airflow-webserver airflow-scheduler spark-master minio trino superset postgres; do
+for s in airflow-webserver airflow-scheduler spark-master rustfs trino superset postgres; do
     st=$(docker inspect --format='{{.State.Status}}' "docker-compose-${s}-1" 2>/dev/null || echo "missing")
     if [ "$st" != "running" ]; then
         fail_msg "Servicio $s no está corriendo. Ejecuta: make dev-up"
@@ -100,18 +100,23 @@ done
 ok "Stack operativo"
 
 # ── 2. Verificar buckets ──────────────────────────────────────────────────────
-log "Verificando buckets MinIO..."
-for b in raw bronze silver gold checkpoints; do
-    if ! docker exec docker-compose-minio-1 mc ls "local/$b" &>/dev/null; then
-        warn "Buckets faltantes — creándolos..."
-        # Solo los buckets. Antes se llamaba a init_users.sh entero, que además
-        # recreaba los usuarios admin y reinicializaba los roles de Superset:
-        # efectos que nadie pide al cargar datos de ejemplo.
-        bash .ci/scripts/init_users.sh "$ENV_FILE" buckets
-        break
-    fi
-done
-ok "Buckets MinIO disponibles"
+log "Asegurando buckets..."
+# Antes se sondeaba cada bucket con `mc ls local/$b` y solo se creaban si
+# faltaba alguno. Ese sondeo usaba el alias `local`, que la imagen de MinIO traía
+# preconfigurado con la credencial raíz; `rc` no tiene equivalente y montarle un
+# alias aquí significaría traer la raíz a este guion, que hasta ahora no la
+# necesitaba.
+#
+# Así que se llama directamente al paso, que es idempotente —`rc bucket create
+# --ignore-existing`— y que ya tiene resuelto el camino de la credencial. Se
+# pierde una condición que solo servía para ahorrar cinco llamadas y se gana no
+# repartir la raíz por un guion más.
+#
+# Sigue siendo solo el paso de buckets: antes se llamaba a init_users.sh entero,
+# que además recreaba los usuarios admin y reinicializaba los roles de Superset,
+# efectos que nadie pide al cargar datos de ejemplo.
+bash .ci/scripts/init_users.sh "$ENV_FILE" buckets
+ok "Buckets disponibles"
 
 # Aquí había un bloque que descargaba antlr4-runtime-4.9.3.jar desde
 # repo1.maven.org, sin hash ni firma, y lo metía como root en /opt/spark/jars de
@@ -318,7 +323,7 @@ done
 echo ""
 echo "  Airflow   → http://localhost:8090"
 echo "  Trino     → http://localhost:8081"
-echo "  MinIO     → http://localhost:9001"
+echo "  RustFS    → http://localhost:9001"
 echo "  Marquez   → http://localhost:3000"
 echo "  Dashboard → http://localhost:8088/superset/dashboard/indicadores-financieros-chile/"
 echo ""

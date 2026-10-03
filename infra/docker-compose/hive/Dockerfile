@@ -57,16 +57,16 @@ RUN chmod 644 /opt/hadoop/share/hadoop/common/lib/*.jar
 # al Configuration de Hadoop, que lee de core-site.xml.
 #
 # La base y el generador son los mismos que usan las imágenes de Airflow y de
-# Spark: los tres hablan con MinIO por S3A y necesitan las mismas propiedades.
+# Spark: los tres hablan con el object store por S3A y necesitan las mismas propiedades.
 COPY infra/docker-compose/comun/core-site.xml.base /opt/hadoop/etc/hadoop/core-site.xml.base
-COPY infra/docker-compose/comun/credenciales_minio.sh /opt/vektralforge/bin/credenciales_minio.sh
+COPY infra/docker-compose/comun/credenciales_s3.sh /opt/vektralforge/bin/credenciales_s3.sh
 COPY infra/docker-compose/hive/docker-entrypoint.sh /opt/hive/docker-entrypoint.sh
 # chmod 755 y no `chmod +x`. Estos archivos llegan al contexto de build con
 # permisos 700, y `+x` sobre 700 deja 711: el kernel ejecuta el archivo, pero
 # el intérprete del shebang necesita LEERLO, y sin o+r falla con un
 # «bash: ...: Permission denied» que parece un problema de ejecución y no lo es.
 RUN chmod 755 /opt/hive/docker-entrypoint.sh \
-              /opt/vektralforge/bin/credenciales_minio.sh && \
+              /opt/vektralforge/bin/credenciales_s3.sh && \
     chmod 644 /opt/hadoop/etc/hadoop/core-site.xml.base && \
     chown hive:hive /opt/hadoop/etc/hadoop
 
@@ -110,15 +110,15 @@ USER hive
 # comprueben que el directorio es escribible por ese usuario.
 
 RUN printf 'clave-de-prueba' > /tmp/s && \
-    MINIO_ACCESS_KEY=prueba MINIO_ENDPOINT=http://minio:9000 \
-    MINIO_SECRET_KEY_FILE=/tmp/s \
+    S3_ACCESS_KEY=prueba S3_ENDPOINT=http://rustfs:9000 \
+    S3_SECRET_KEY_FILE=/tmp/s \
     VF_CORE_SITE=/opt/hadoop/etc/hadoop/core-site.xml \
     VF_CORE_SITE_BASE=/opt/hadoop/etc/hadoop/core-site.xml.base \
-      /opt/vektralforge/bin/credenciales_minio.sh && \
+      /opt/vektralforge/bin/credenciales_s3.sh && \
     rm -f /tmp/s && \
     grep -q "<name>fs.s3a.secret.key</name>" /opt/hadoop/etc/hadoop/core-site.xml && \
     grep -q "<name>fs.s3a.impl</name>" /opt/hadoop/etc/hadoop/core-site.xml && \
     rm -f /opt/hadoop/etc/hadoop/core-site.xml && \
-    echo "credenciales_minio.sh genera un core-site.xml completo"
+    echo "credenciales_s3.sh genera un core-site.xml completo"
 
 ENTRYPOINT ["/opt/hive/docker-entrypoint.sh"]

@@ -4,43 +4,33 @@ VektralForge itself is licensed under the [Apache License 2.0](LICENSE). This
 document lists the third-party components the project orchestrates, together with
 their copyright holders and licence terms.
 
-**How to read this.** VektralForge does not fork, embed, or statically link any of
-these components. It composes them: they run as separate services and processes,
-and the project ships configuration, DAGs, Spark jobs and glue code that make them
-work together. Most are pulled at runtime as container images or installed as
-declared dependencies.
+**How to read this.** VektralForge composes third-party components rather than
+forking them: they run as separate services and processes, and the project ships
+configuration, DAGs, Spark jobs and glue code that make them work together. Most
+are pulled at runtime as container images or installed as declared dependencies.
 
-That distinction matters for the two components below whose licences are not
-Apache 2.0, and it is why they can be part of the stack without affecting the
-licence of VektralForge's own code. It does **not** relieve you of assessing your
-own obligations for your deployment.
+That distinction matters for the component below whose licence is not Apache 2.0,
+and it is why it can be part of the stack without affecting the licence of
+VektralForge's own code. It does **not** relieve you of assessing your own
+obligations for your deployment.
+
+**There is one exception.** Since October 2026 the `vektralforge/rustfs` image
+copies one binary in at build time, so that binary *is* redistributed by this
+project rather than merely orchestrated. It has its own section below —
+[Binaries vendored into VektralForge
+images](#binaries-vendored-into-vektralforge-images).
 
 ---
 
 ## Components requiring attention
 
-These two do not share the permissive terms of the rest of the stack. If you plan
+This one does not share the permissive terms of the rest of the stack. If you plan
 to deploy VektralForge commercially, offer it as a hosted service, or embed it in
-a proprietary product, review them with counsel before you do.
+a proprietary product, review it with counsel before you do.
 
-### MinIO — GNU AGPL v3.0
-
-Copyright © MinIO, Inc. — https://github.com/minio/minio
-
-The MinIO server, client and gateway are licensed under AGPLv3; the client SDKs
-remain under Apache 2.0. AGPLv3's network clause requires that users who interact
-with a modified version over a network be able to obtain the corresponding source
-code. MinIO states that any commercial or proprietary use of the AGPLv3 software —
-including repackaging or reselling features or services — is undertaken at the
-user's own risk, and that determining compliance is the user's responsibility, not
-MinIO's. MinIO offers a separate commercial licence for cases where the AGPLv3
-obligations are triggered.
-
-**If this is a problem for your deployment,** VektralForge's storage layer speaks
-the S3 API. Any S3-compatible backend works — AWS S3, Ceph RADOS Gateway,
-Garage (AGPLv3), SeaweedFS (Apache 2.0), or a managed provider. MinIO is the
-default because it is the most convenient for local development, not because the
-project depends on it.
+Until October 2026 this section also covered MinIO (AGPLv3), the former storage
+backend. It was replaced by RustFS, which is Apache 2.0, so the storage layer no
+longer carries copyleft obligations.
 
 ### Graylog Open — Server Side Public License v1
 
@@ -79,7 +69,7 @@ Logging is the most loosely coupled part of the stack and the easiest to swap.
 | PostgreSQL              | PostgreSQL Licence      | https://www.postgresql.org/about/licence/   |
 | Redis                   | BSD-3-Clause (see note) | https://github.com/redis/redis              |
 | Apache ZooKeeper        | Apache-2.0              | https://github.com/apache/zookeeper         |
-| MinIO                   | **AGPL-3.0**            | https://github.com/minio/minio              |
+| RustFS                  | Apache-2.0              | https://github.com/rustfs/rustfs            |
 | Graylog Open            | **SSPL-1.0**            | https://github.com/Graylog2/graylog2-server |
 
 A note on **OpenBao**: it is the Linux Foundation fork of HashiCorp Vault, created
@@ -151,10 +141,33 @@ All are permissive and compatible with Apache 2.0. Note that Spark 4 (Hadoop
 uses **v1** — they are different artefacts under different group IDs, not
 versions of the same one.
 
+## Binaries vendored into VektralForge images
+
+Everything above is orchestrated. This one is **redistributed**: the
+`vektralforge/rustfs` image is built from the upstream `rustfs/rustfs` image with
+the binary copied in at build time (`infra/docker-compose/s3/Dockerfile`), so
+whoever pulls that image receives it and its terms travel with it.
+
+| Binary | Licence | Source | Why it is in the image |
+| ------ | ------- | ------ | ---------------------- |
+| `rc` — RustFS CLI | Apache-2.0 OR MIT | https://github.com/rustfs/cli | Upstream publishes the CLI as a separate artefact; unlike MinIO's `mc`, it does not ship inside the server image. `init_users.sh` needs it *inside* the container so the root credential can arrive over a pipe instead of through argv or the environment. |
+
+This entry is different in kind from the rest of the document — the binary is
+dual-licensed Apache-2.0 OR MIT and raises no obligation beyond attribution,
+which is what this table is — but it is listed because redistribution is a
+different relationship from orchestration, and the distinction should be visible
+rather than assumed.
+
+An earlier revision of this section also listed busybox (GPL-2.0-only), copied
+from Alpine for the container healthcheck. It was removed once it was verified
+that the RustFS image already carries curl: **VektralForge redistributes no
+copyleft binary.**
+
 ## Container images
 
 The `docker-compose` and Kubernetes manifests reference upstream images published
-by each project. VektralForge does not republish or modify them. Each image
+by each project. Except for `vektralforge/rustfs`, described in the section
+above, VektralForge does not republish or modify them. Each image
 carries the licence of its upstream project, plus the licences of the base image
 and system packages it contains. Run a scanner such as `syft` or `trivy` against
 the images if you need a component-level inventory for your own compliance

@@ -22,3 +22,7 @@ limitations under the License.
 VektralForge bundles and depends on third-party software distributed under
 their own licenses. See THIRD-PARTY-NOTICES.md for the full list of
 components, their copyright holders and their license terms.
+
+The vektralforge/rustfs container image redistributes one binary copied in at
+build time: the RustFS CLI `rc` (Apache-2.0 OR MIT). See the "Binaries vendored
+into VektralForge images" section of THIRD-PARTY-NOTICES.md.

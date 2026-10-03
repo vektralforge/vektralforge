@@ -171,12 +171,12 @@ def test_fecha_ejecucion_sin_ds(modulos_dag, modulo):
 def test_configuracion_desde_el_entorno(modulos_dag, modulo):
     """El endpoint viene del entorno y no hay defaults en el código.
 
-    Un default como 'minioadmin' hace que el DAG se conecte con credenciales
+    Un default como 'rustfsadmin' hace que el DAG se conecte con credenciales
     equivocadas y falle mucho después, con un error de S3 que no señala la
     causa.
     """
     m = modulos_dag[modulo]
-    assert m.MINIO_ENDPOINT == "http://minio-test:9000"
+    assert m.S3_ENDPOINT == "http://rustfs-test:9000"
 
 
 @pytest.mark.parametrize(
@@ -190,7 +190,7 @@ def test_credenciales_no_se_leen_a_variables_de_modulo(modulos_dag, modulo):
     SparkSubmitOperator, que es exactamente lo que hay que evitar.
     """
     m = modulos_dag[modulo]
-    leidas = [n for n in ("MINIO_ACCESS", "MINIO_SECRET") if hasattr(m, n)]
+    leidas = [n for n in ("S3_ACCESS_KEY", "S3_SECRET_KEY") if hasattr(m, n)]
     assert not leidas, f"{modulo} lee credenciales a nivel de módulo: {leidas}"
 
 

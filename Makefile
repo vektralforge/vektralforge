@@ -6,6 +6,7 @@
 .PHONY: help check-env check-python \
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
+        dev-verificar-permisos \
         lint-dags test-dags lint-spark test-spark lint-sql \
         lint-all test-all detect-secrets auditar-historial \
         deploy-staging deploy-prod
@@ -17,7 +18,7 @@ ENV_FILE = infra/docker-compose/.env
 PYTHON   = python3.12
 
 # Variables que deben existir y tener valor en el .env
-REQUIRED_VARS = POSTGRES_USER POSTGRES_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD
+REQUIRED_VARS = POSTGRES_USER POSTGRES_PASSWORD S3_ROOT_USER S3_ROOT_PASSWORD
 
 # ── Verificaciones ────────────────────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ dev-up: check-env dev-build
 	@echo "  ✓ Stack disponible en:"
 	@echo "    Airflow  → http://localhost:8090"
 	@echo "    Trino    → http://localhost:8081"
-	@echo "    MinIO    → http://localhost:9001"
+	@echo "    RustFS   → http://localhost:9001"
 	@echo "    Superset → http://localhost:8088"
 	@echo "    Marquez  → http://localhost:9100"
 	@echo "    OpenBao  → http://localhost:8200"
@@ -164,6 +165,13 @@ dev-load-example: check-env
 	@echo "  Salida: tablas Delta en Trino + dashboards en Superset"
 	@echo ""
 	@bash .ci/scripts/load_example.sh $(ENV_FILE)
+
+# El §2.9 dio a cada consumidor una cuenta acotada en vez de la raíz. Un permiso
+# de más no da síntomas —el stack funciona igual—, así que la única forma de
+# saberlo es intentarlo. Necesita el stack levantado.
+dev-verificar-permisos: check-env
+	@echo "→ Verificando que la cuenta del pipeline esté acotada..."
+	@bash .ci/scripts/verificar_permisos.sh
 
 # ── Lint y tests ──────────────────────────────────────────────────────────────
 
@@ -227,6 +235,7 @@ help:
 	@echo "    make dev-reset            Reset completo (borra volúmenes, recrea usuarios)"
 	@echo "    make dev-reset-hard       Reset extremo (borra volúmenes y reconstruye imágenes)"
 	@echo "    make dev-load-example     Carga los pipelines de ejemplo y los dashboards"
+	@echo "    make dev-verificar-permisos  Comprueba que la cuenta del pipeline esté acotada"
 	@echo ""
 	@echo "  Calidad de código:"
 	@echo "    make lint-all             Lint completo (Ruff + sqlfluff)"

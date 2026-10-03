@@ -32,12 +32,12 @@ log = logging.getLogger(__name__)
 # ─── Configuración ────────────────────────────────────────────────────────────
 MINDICADOR_BASE = "https://mindicador.cl/api"
 TIMEOUT = 30  # segundos por request
-MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
+S3_ENDPOINT = os.environ["S3_ENDPOINT"]
 # Las credenciales NO están en el entorno. El entrypoint del contenedor las
 # materializa al arrancar en dos archivos, uno por consumidor: boto3 lee el INI
 # que le indica AWS_SHARED_CREDENTIALS_FILE, y el driver de Spark —que corre en
 # este mismo contenedor, porque SparkSubmitOperator usa modo client— lee
-# core-site.xml desde SPARK_CONF_DIR. Ver credenciales_minio.sh.
+# core-site.xml desde SPARK_CONF_DIR. Ver credenciales_s3.sh.
 #
 # Tampoco se pasan por `conf` al SparkSubmitOperator: ahí acabarían en la línea
 # de comandos del proceso y en la UI del driver.
@@ -48,8 +48,8 @@ MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
 _ARCHIVO_CREDENCIALES = os.environ.get("AWS_SHARED_CREDENTIALS_FILE", "")
 if not _ARCHIVO_CREDENCIALES or not os.path.isfile(_ARCHIVO_CREDENCIALES):
     raise RuntimeError(
-        "No hay credenciales de MinIO para boto3: AWS_SHARED_CREDENTIALS_FILE="
-        f"{_ARCHIVO_CREDENCIALES!r}. Las escribe credenciales_minio.sh en el "
+        "No hay credenciales del object store para boto3: AWS_SHARED_CREDENTIALS_FILE="
+        f"{_ARCHIVO_CREDENCIALES!r}. Las escribe credenciales_s3.sh en el "
         "arranque del contenedor, a partir del secreto que monta compose."
     )
 # Indicadores diarios (se actualizan cada día hábil)
@@ -104,7 +104,7 @@ def _existe_en_raw(s3, key: str) -> bool:
 def _s3_client():
     import boto3
 
-    return boto3.client("s3", endpoint_url=MINIO_ENDPOINT)
+    return boto3.client("s3", endpoint_url=S3_ENDPOINT)
 
 
 def _subir_json(s3, key: str, data: dict) -> None:
@@ -129,7 +129,7 @@ def _fecha_ejecucion(context) -> str:
 def extract_indicadores(**context):
     """
     Descarga todos los indicadores desde mindicador.cl
-    y los guarda en MinIO raw/indicadores/fecha={ds}/*.json
+    y los guarda en raw/indicadores/fecha={ds}/*.json del object store
 
     raw/ hace de cache: resumen.json se escribe al final, así que su presencia
     significa que la extracción de esa fecha ya terminó y no hay nada que pedir.
@@ -301,7 +301,7 @@ with DAG(
         conf={
             "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
             "spark.sql.catalog.spark_catalog": "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-            "spark.hadoop.fs.s3a.endpoint": MINIO_ENDPOINT,
+            "spark.hadoop.fs.s3a.endpoint": S3_ENDPOINT,
             # Las credenciales no van aquí, y tampoco en el job: las declara
             # el core-site.xml que el entrypoint escribe en SPARK_CONF_DIR, y
             # el driver lo lee desde el classpath. Un --conf acabaría en la

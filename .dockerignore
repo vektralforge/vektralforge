@@ -12,7 +12,7 @@ venv
 .ruff_cache
 
 # Datos y estado local
-infra/docker-compose/minio-data
+infra/docker-compose/s3-data
 infra/docker-compose/.env
 **/spark-warehouse
 **/derby.log

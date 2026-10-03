@@ -11,7 +11,7 @@
 > file to use where.
 
 **Versión 1.0 · Concepto elegido: "Vektor Slash"** (Concepto B: geometría y rampa terracota originales; sistema tipográfico y neutros del informe)
-Proyecto: vektralforge.org · Lakehouse Open Source Stack (Airflow · Spark · Delta Lake · MinIO · Trino)
+Proyecto: vektralforge.org · Lakehouse Open Source Stack (Airflow · Spark · Delta Lake · RustFS · Trino)
 
 Este documento es la referencia canónica de la identidad visual del proyecto. Se publica junto a los archivos SVG en el repositorio para que la comunidad pueda usar la marca de forma consistente.
 
@@ -24,7 +24,7 @@ El imagotipo de VektralForge se compone de un **isotipo** (el símbolo) y un **l
 **Isotipo "Vektor Slash":** tres paralelogramos inclinados 15° sobre un eje horizontal común, de altura ascendente y separados por rendijas iguales. La lectura es triple:
 
 - **Vector**: la inclinación y el crecimiento de izquierda a derecha expresan dirección, flujo y progreso del dato.
-- **Capas**: las tres barras son los tres estratos del lakehouse: almacenamiento (MinIO/Delta), cómputo (Spark/Trino) y servicio/orquestación (Airflow, con OpenBao como base transversal de secretos).
+- **Capas**: las tres barras son los tres estratos del lakehouse: almacenamiento (RustFS/Delta), cómputo (Spark/Trino) y servicio/orquestación (Airflow, con OpenBao como base transversal de secretos).
 - **Forja**: el color, no la forma, aporta la fragua: la rampa terracota (óxido oscuro → cobre → arcilla incandescente) es metal templándose de la base a la punta.
 
 El **eje base** en Slate Steel es la plataforma común (K3s) sobre la que se apoya todo el stack.
