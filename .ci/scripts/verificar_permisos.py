@@ -188,6 +188,12 @@ def control_listallmybuckets():
 
     Para que la distinción sea medible tiene que existir un bucket fuera de la
     política. Si no existe ninguno, el control lo dice en vez de fingir que pasó.
+
+    MEDIDO el 2026-10-03 contra RustFS 1.0.0-rc.6: con un bucket fuera de la
+    política creado con la raíz, la lista devuelta a vf-pipeline seguía trayendo
+    solo los cinco. RustFS FILTRA, no revela. La divergencia es de forma
+    —autoriza y filtra, en vez de denegar— y la propiedad que importa se
+    sostiene. El aviso se queda para que una regresión se vea.
     """
     etiqueta = "ListAllMyBuckets"
     try:
@@ -216,7 +222,8 @@ def control_listallmybuckets():
     elif sorted(nombres) == sorted(BUCKETS):
         avisar(
             etiqueta,
-            "permitido, pero la lista viene filtrada a los cinco buckets de la política",
+            "permitido; la lista trae solo los cinco de la política. Medido el "
+            "2026-10-03 con un bucket fuera de ella presente: RustFS filtra",
         )
     else:
         avisar(
