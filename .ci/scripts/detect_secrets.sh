@@ -14,7 +14,23 @@ cd "$(dirname "$0")/../.."
 
 if [ ! -f .secrets.baseline ]; then
     echo "  ✗ No existe .secrets.baseline"
-    echo "    Generarlo con: detect-secrets scan > .secrets.baseline"
+    echo "    Generarlo con:"
+    echo "        detect-secrets scan --exclude-files '\\.secrets\\.baseline\$' \\"
+    echo "            > .secrets.baseline"
+    exit 1
+fi
+
+# El baseline guarda DENTRO los filtros con los que se generó, y de ahí los lee
+# todo lo que lo consume después, incluido el hook de pre-commit. Regenerarlo
+# sin --exclude-files no solo omite la exclusión en esa ejecución: la borra del
+# archivo para siempre. Con el baseline vacío no se nota —es lo que pasó el
+# 2026-10-02— pero en cuanto tenga una entrada real, sus propios hashes de alta
+# entropía hacen que el archivo se delate a sí mismo en el siguiente escaneo.
+if ! grep -q 'should_exclude_file' .secrets.baseline; then
+    echo "  ✗ .secrets.baseline no lleva el filtro que lo excluye a sí mismo."
+    echo "    Se perdió al regenerarlo sin --exclude-files. Rehazlo con:"
+    echo "        detect-secrets scan --exclude-files '\\.secrets\\.baseline\$' \\"
+    echo "            > .secrets.baseline"
     exit 1
 fi
 
