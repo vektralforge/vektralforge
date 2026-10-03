@@ -105,7 +105,7 @@ dev-up: check-env dev-build
 	@echo "  ✓ Stack disponible en:"
 	@echo "    Airflow  → http://localhost:8090"
 	@echo "    Trino    → http://localhost:8081"
-	@echo "    MinIO    → http://localhost:9001"
+	@echo "    RustFS   → http://localhost:9001"
 	@echo "    Superset → http://localhost:8088"
 	@echo "    Marquez  → http://localhost:9100"
 	@echo "    OpenBao  → http://localhost:8200"

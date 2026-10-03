@@ -2,7 +2,7 @@
 #
 # VektralForge — arranque de los cuatro contenedores de Airflow
 #
-# Materializa las credenciales de MinIO en dos archivos y cede el control al
+# Materializa las credenciales del object store en dos archivos y cede el control al
 # entrypoint de la imagen de Airflow, que prepara el entorno antes del comando.
 #
 # Aquí hacen falta los dos formatos, porque en este contenedor conviven dos
@@ -15,12 +15,12 @@
 
 set -euo pipefail
 
-# airflow-init solo hace `db migrate` y no habla con MinIO, así que no recibe
+# airflow-init solo hace `db migrate` y no habla con el object store, así que no recibe
 # ni la cuenta ni el secreto. La exclusión es EXPLÍCITA y no un «si falta la
 # variable, no pasa nada»: con esa forma, un servicio al que se le olvidara la
 # cuenta arrancaría en silencio y fallaría media hora después con un 403.
 if [ "${VF_CREDENCIALES_S3:-si}" = "no" ]; then
-  echo "→ credenciales de MinIO omitidas a propósito (VF_CREDENCIALES_S3=no)"
+  echo "→ credenciales del object store omitidas a propósito (VF_CREDENCIALES_S3=no)"
 else
   /opt/vektralforge/bin/credenciales_s3.sh
 fi

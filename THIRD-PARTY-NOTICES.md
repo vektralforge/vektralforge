@@ -19,28 +19,13 @@ own obligations for your deployment.
 
 ## Components requiring attention
 
-These two do not share the permissive terms of the rest of the stack. If you plan
+This one does not share the permissive terms of the rest of the stack. If you plan
 to deploy VektralForge commercially, offer it as a hosted service, or embed it in
-a proprietary product, review them with counsel before you do.
+a proprietary product, review it with counsel before you do.
 
-### MinIO — GNU AGPL v3.0
-
-Copyright © MinIO, Inc. — https://github.com/minio/minio
-
-The MinIO server, client and gateway are licensed under AGPLv3; the client SDKs
-remain under Apache 2.0. AGPLv3's network clause requires that users who interact
-with a modified version over a network be able to obtain the corresponding source
-code. MinIO states that any commercial or proprietary use of the AGPLv3 software —
-including repackaging or reselling features or services — is undertaken at the
-user's own risk, and that determining compliance is the user's responsibility, not
-MinIO's. MinIO offers a separate commercial licence for cases where the AGPLv3
-obligations are triggered.
-
-**If this is a problem for your deployment,** VektralForge's storage layer speaks
-the S3 API. Any S3-compatible backend works — AWS S3, Ceph RADOS Gateway,
-Garage (AGPLv3), SeaweedFS (Apache 2.0), or a managed provider. MinIO is the
-default because it is the most convenient for local development, not because the
-project depends on it.
+Until October 2026 this section also covered MinIO (AGPLv3), the former storage
+backend. It was replaced by RustFS, which is Apache 2.0, so the storage layer no
+longer carries copyleft obligations.
 
 ### Graylog Open — Server Side Public License v1
 
@@ -79,7 +64,8 @@ Logging is the most loosely coupled part of the stack and the easiest to swap.
 | PostgreSQL              | PostgreSQL Licence      | https://www.postgresql.org/about/licence/   |
 | Redis                   | BSD-3-Clause (see note) | https://github.com/redis/redis              |
 | Apache ZooKeeper        | Apache-2.0              | https://github.com/apache/zookeeper         |
-| MinIO                   | **AGPL-3.0**            | https://github.com/minio/minio              |
+| RustFS                  | Apache-2.0              | https://github.com/rustfs/rustfs            |
+| RustFS CLI (`rc`)       | Apache-2.0 OR MIT       | https://github.com/rustfs/cli               |
 | Graylog Open            | **SSPL-1.0**            | https://github.com/Graylog2/graylog2-server |
 
 A note on **OpenBao**: it is the Linux Foundation fork of HashiCorp Vault, created

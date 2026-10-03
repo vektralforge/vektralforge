@@ -60,7 +60,7 @@ except KeyError as e:
 _ARCHIVO_CREDENCIALES = os.environ.get("AWS_SHARED_CREDENTIALS_FILE", "")
 if not _ARCHIVO_CREDENCIALES or not os.path.isfile(_ARCHIVO_CREDENCIALES):
     print(
-        "✗ No hay credenciales de MinIO para boto3: "
+        "✗ No hay credenciales del object store para boto3: "
         f"AWS_SHARED_CREDENTIALS_FILE={_ARCHIVO_CREDENCIALES!r}"
     )
     sys.exit(1)
@@ -104,7 +104,7 @@ spark = (
     .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
     .config("spark.sql.shuffle.partitions", "2")
     # El catálogo compartido con Trino: sin esto las tablas quedan como rutas
-    # sueltas en MinIO y hay que registrarlas a mano en Trino.
+    # sueltas en el object store y hay que registrarlas a mano en Trino.
     .config("spark.hadoop.hive.metastore.uris", HIVE_METASTORE_URIS)
     .enableHiveSupport()
     .getOrCreate()
@@ -125,7 +125,7 @@ _s3 = boto3.client("s3", endpoint_url=S3_ENDPOINT)
 
 
 def _leer_json(bucket, key):
-    """Lee un JSON pequeño desde MinIO. No usa Spark a propósito."""
+    """Lee un JSON pequeño desde el object store. No usa Spark a propósito."""
     obj = _s3.get_object(Bucket=bucket, Key=key)
     return json.loads(obj["Body"].read().decode("utf-8"))
 

@@ -2,7 +2,7 @@
 #
 # VektralForge — arranque de spark-master y spark-worker
 #
-# Materializa las credenciales de MinIO en core-site.xml y en el INI del SDK
+# Materializa las credenciales del object store en core-site.xml y en el INI del SDK
 # (ver credenciales_s3.sh) y luego cede el control al entrypoint de la
 # imagen base, que es quien sabe interpretar los modos `driver` y `executor`.
 #

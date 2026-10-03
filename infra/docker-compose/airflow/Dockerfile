@@ -89,7 +89,7 @@ ENV SPARK_CONF_DIR=/opt/vektralforge/spark-conf
 # vía AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD. Ver el docstring del script.
 COPY infra/docker-compose/airflow/cadena_de_conexion.py /opt/vektralforge/bin/cadena_de_conexion.py
 
-# ── Credenciales de MinIO: archivos, no variables de entorno ─────────────────
+# ── Credenciales del object store: archivos, no variables de entorno ────────────────
 #
 # En este contenedor hay dos consumidores y cada uno lee un formato distinto:
 # el driver de Spark —SparkSubmitOperator usa modo client, así que corre AQUÍ—

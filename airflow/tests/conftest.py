@@ -44,7 +44,7 @@ ARCHIVO_CREDENCIALES.write_text(
 # Valores de prueba: los tests no se conectan a ningún servicio, solo necesitan
 # que las variables existan para que los módulos se importen.
 ENTORNO_PRUEBA = {
-    "S3_ENDPOINT": "http://minio-test:9000",
+    "S3_ENDPOINT": "http://rustfs-test:9000",
     "AWS_SHARED_CREDENTIALS_FILE": str(ARCHIVO_CREDENCIALES),
     "AIRFLOW__CORE__LOAD_EXAMPLES": "False",
     "AIRFLOW__CORE__UNIT_TEST_MODE": "True",

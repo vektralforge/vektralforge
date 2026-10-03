@@ -44,12 +44,12 @@ automático. **No es una configuración de producción** y hoy no lo usa nadie.
 ## Crear un Sealed Secret para staging
 
 ```bash
-kubectl create secret generic minio-pipeline \
+kubectl create secret generic s3-pipeline \
   --from-literal=secret-key="$(grep '^S3_PIPELINE_SECRET_KEY=' infra/docker-compose/.env | cut -d= -f2-)" \
   --dry-run=client -o yaml > /tmp/secret.yaml
-kubeseal --format yaml < /tmp/secret.yaml > infra/k3s/secrets/minio-pipeline-sealed.yaml
+kubeseal --format yaml < /tmp/secret.yaml > infra/k3s/secrets/s3-pipeline-sealed.yaml
 rm /tmp/secret.yaml
-git add infra/k3s/secrets/minio-pipeline-sealed.yaml
+git add infra/k3s/secrets/s3-pipeline-sealed.yaml
 ```
 
 El `rm` no es cosmético: `/tmp/secret.yaml` lleva la clave en claro.
@@ -58,5 +58,5 @@ El `rm` no es cosmético: `/tmp/secret.yaml` lleva la clave en claro.
 
 ```bash
 bao status
-bao kv get secret/minio/pipeline
+bao kv get secret/s3/pipeline
 ```

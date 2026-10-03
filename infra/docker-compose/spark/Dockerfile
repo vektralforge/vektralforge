@@ -89,7 +89,7 @@ COPY --from=jars /jars/ /opt/spark/jars/
 # el provider de OpenLineage de Airflow en cada spark-submit.
 COPY infra/docker-compose/spark/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
-# ── Credenciales de MinIO: archivos, no variables de entorno ─────────────────
+# ── Credenciales del object store: archivos, no variables de entorno ────────────────
 #
 # Antes llegaban como AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY, que es lo que
 # resuelve EnvironmentVariableCredentialsProvider. Funcionaba, pero un

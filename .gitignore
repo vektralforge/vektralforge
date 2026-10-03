@@ -30,7 +30,7 @@ htmlcov/
 .mypy_cache/
 *.log
 logs/
-infra/docker-compose/minio-data/
+infra/docker-compose/s3-data/
 .ruff_cache/
 
 # Airflow (generados en runtime)

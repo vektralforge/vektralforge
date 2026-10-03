@@ -33,7 +33,7 @@
 
 set -euo pipefail
 
-: "${S3_ENDPOINT:=http://minio:9000}"
+: "${S3_ENDPOINT:=http://rustfs:9000}"
 : "${S3_SECRET_KEY_FILE:=/run/secrets/s3_secret_key}"
 : "${VF_CORE_SITE:=}"
 : "${VF_CORE_SITE_BASE:=/opt/vektralforge/conf/core-site.xml.base}"
@@ -49,7 +49,7 @@ fi
 if [ ! -r "$S3_SECRET_KEY_FILE" ]; then
   echo "ERROR: no se puede leer el secreto en $S3_SECRET_KEY_FILE" >&2
   echo "       Lo monta docker-compose.yml desde el bloque secrets:, que lo" >&2
-  echo "       toma de MINIO_*_SECRET_KEY del .env. El origen environment:" >&2
+  echo "       toma de S3_*_SECRET_KEY del .env. El origen environment:" >&2
   echo "       requiere Compose 2.20 o superior." >&2
   exit 1
 fi

@@ -6,7 +6,7 @@
 # la imagen base.
 #
 # Por qué hace falta renderizar: Trino solo sabe resolver `${ENV:VARIABLE}` en
-# sus archivos de configuración, así que la clave de MinIO tenía que estar en el
+# sus archivos de configuración, así que la clave del object store tenía que estar en el
 # entorno del contenedor —y por tanto en `docker inspect`, en `docker compose
 # config` y en el /proc/<pid>/environ de cualquier proceso de dentro—. Aquí
 # llega como archivo montado y solo aparece en el catálogo renderizado, 600, en

@@ -57,7 +57,7 @@ RUN chmod 644 /opt/hadoop/share/hadoop/common/lib/*.jar
 # al Configuration de Hadoop, que lee de core-site.xml.
 #
 # La base y el generador son los mismos que usan las imágenes de Airflow y de
-# Spark: los tres hablan con MinIO por S3A y necesitan las mismas propiedades.
+# Spark: los tres hablan con el object store por S3A y necesitan las mismas propiedades.
 COPY infra/docker-compose/comun/core-site.xml.base /opt/hadoop/etc/hadoop/core-site.xml.base
 COPY infra/docker-compose/comun/credenciales_s3.sh /opt/vektralforge/bin/credenciales_s3.sh
 COPY infra/docker-compose/hive/docker-entrypoint.sh /opt/hive/docker-entrypoint.sh
@@ -110,7 +110,7 @@ USER hive
 # comprueben que el directorio es escribible por ese usuario.
 
 RUN printf 'clave-de-prueba' > /tmp/s && \
-    S3_ACCESS_KEY=prueba S3_ENDPOINT=http://minio:9000 \
+    S3_ACCESS_KEY=prueba S3_ENDPOINT=http://rustfs:9000 \
     S3_SECRET_KEY_FILE=/tmp/s \
     VF_CORE_SITE=/opt/hadoop/etc/hadoop/core-site.xml \
     VF_CORE_SITE_BASE=/opt/hadoop/etc/hadoop/core-site.xml.base \

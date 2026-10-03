@@ -38,7 +38,7 @@
     <value>org.apache.hadoop.fs.s3a.S3A</value>
   </property>
 
-  <!-- MinIO no publica los buckets como subdominios. -->
+  <!-- El object store no publica los buckets como subdominios. -->
   <property>
     <name>fs.s3a.path.style.access</name>
     <value>true</value>
@@ -48,7 +48,7 @@
     <value>false</value>
   </property>
 
-  <!-- MinIO no usa regiones, pero el SDK exige una. -->
+  <!-- El object store no usa regiones, pero el SDK exige una. -->
   <property>
     <name>fs.s3a.endpoint.region</name>
     <value>us-east-1</value>

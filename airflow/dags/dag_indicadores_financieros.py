@@ -48,7 +48,7 @@ S3_ENDPOINT = os.environ["S3_ENDPOINT"]
 _ARCHIVO_CREDENCIALES = os.environ.get("AWS_SHARED_CREDENTIALS_FILE", "")
 if not _ARCHIVO_CREDENCIALES or not os.path.isfile(_ARCHIVO_CREDENCIALES):
     raise RuntimeError(
-        "No hay credenciales de MinIO para boto3: AWS_SHARED_CREDENTIALS_FILE="
+        "No hay credenciales del object store para boto3: AWS_SHARED_CREDENTIALS_FILE="
         f"{_ARCHIVO_CREDENCIALES!r}. Las escribe credenciales_s3.sh en el "
         "arranque del contenedor, a partir del secreto que monta compose."
     )
@@ -129,7 +129,7 @@ def _fecha_ejecucion(context) -> str:
 def extract_indicadores(**context):
     """
     Descarga todos los indicadores desde mindicador.cl
-    y los guarda en MinIO raw/indicadores/fecha={ds}/*.json
+    y los guarda en raw/indicadores/fecha={ds}/*.json del object store
 
     raw/ hace de cache: resumen.json se escribe al final, así que su presencia
     significa que la extracción de esa fecha ya terminó y no hay nada que pedir.
