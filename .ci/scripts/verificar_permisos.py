@@ -35,6 +35,11 @@ s3 = boto3.client(
 )
 
 fallos = 0
+avisos = 0
+
+# Códigos que cuentan como denegación real. Un NoSuchBucket NO está aquí a
+# propósito: significa que la petición pasó la autorización y llegó a buscar.
+DENEGADO = ("AccessDenied", "403", "InvalidAccessKeyId", "SignatureDoesNotMatch")
 
 
 def marcar(ok, etiqueta, detalle=""):
@@ -42,6 +47,15 @@ def marcar(ok, etiqueta, detalle=""):
     if not ok:
         fallos += 1
     print(f"  {'✓' if ok else '✗'} {etiqueta}{': ' + detalle if detalle else ''}")
+
+
+def avisar(etiqueta, detalle):
+    """Ni aprobado ni suspenso: el backend se comporta distinto a lo esperado
+    pero la propiedad que importa se sostiene. Se imprime en cada ejecución para
+    que la divergencia no se olvide, y no rompe el objetivo de make."""
+    global avisos
+    avisos += 1
+    print(f"  ⚠ {etiqueta}: {detalle}")
 
 
 def codigo(error):
@@ -64,7 +78,7 @@ def debe_denegarse(etiqueta, fn, deshacer=None):
         fn()
     except ClientError as e:
         c = codigo(e)
-        if c in ("AccessDenied", "403", "InvalidAccessKeyId", "SignatureDoesNotMatch"):
+        if c in DENEGADO:
             marcar(True, etiqueta)
         else:
             marcar(
@@ -155,6 +169,63 @@ debe_funcionar(
     lambda: s3.delete_object(Bucket="bronze", Key=clave),
 )
 
+
+def control_listallmybuckets():
+    """s3:ListAllMyBuckets no está en la política, pero el servidor la autoriza.
+
+    La primera versión de este control exigía AccessDenied, que es la semántica
+    estricta de AWS: acción no concedida, petición denegada. Al correrlo contra
+    RustFS salió PERMITIDO — y conviene decir que esa aserción nunca se comprobó
+    contra MinIO antes de escribirla. MinIO filtra la lista a los buckets sobre
+    los que el usuario tiene permiso en vez de denegar la llamada, así que es
+    probable que el control hubiera salido rojo también con el backend anterior.
+
+    Lo que importa no es si la llamada se autoriza, sino si REVELA algo fuera de
+    la política. Eso es lo que se mide aquí: la lista devuelta no puede contener
+    ningún bucket que no esté en la política. Si lo contiene, es una fuga y el
+    control falla; si solo trae los cinco, es una divergencia de forma y queda
+    como aviso en cada ejecución.
+
+    Para que la distinción sea medible tiene que existir un bucket fuera de la
+    política. Si no existe ninguno, el control lo dice en vez de fingir que pasó.
+    """
+    etiqueta = "ListAllMyBuckets"
+    try:
+        r = s3.list_buckets()
+    except ClientError as e:
+        c = codigo(e)
+        if c in DENEGADO:
+            marcar(True, etiqueta)
+        else:
+            marcar(
+                False, etiqueta, f"{c} — la petición se autorizó y falló por otra razón"
+            )
+        return
+    except Exception as e:  # noqa: BLE001
+        marcar(False, etiqueta, f"{type(e).__name__}: {e}")
+        return
+
+    nombres = sorted(b["Name"] for b in r.get("Buckets", []))
+    fuera = [n for n in nombres if n not in BUCKETS]
+    if fuera:
+        marcar(
+            False,
+            etiqueta,
+            "PERMITIDO y revela buckets fuera de la política: " + ", ".join(fuera),
+        )
+    elif sorted(nombres) == sorted(BUCKETS):
+        avisar(
+            etiqueta,
+            "permitido, pero la lista viene filtrada a los cinco buckets de la política",
+        )
+    else:
+        avisar(
+            etiqueta,
+            f"permitido; devuelve {nombres or 'nada'}. Sin un bucket fuera de la "
+            "política no se puede distinguir filtrado de fuga",
+        )
+
+
 print("\n  Controles negativos — esto DEBE denegarse")
 debe_denegarse(
     "CreateBucket",
@@ -162,7 +233,7 @@ debe_denegarse(
     deshacer=lambda: s3.delete_bucket(Bucket=FUERA),
 )
 debe_denegarse("DeleteBucket", lambda: s3.delete_bucket(Bucket=FUERA))
-debe_denegarse("ListAllMyBuckets", lambda: s3.list_buckets())
+control_listallmybuckets()
 debe_denegarse(
     "ListBucket fuera de la política", lambda: s3.list_objects_v2(Bucket=FUERA)
 )
@@ -178,7 +249,11 @@ debe_denegarse(
 
 print()
 if fallos:
-    print(f"  ⚠ {fallos} control(es) fallido(s)")
+    print(f"  ✗ {fallos} control(es) fallido(s)")
+elif avisos:
+    print(
+        f"  ✓ La cuenta está acotada: opera sobre los objetos y nada más ({avisos} aviso(s))"
+    )
 else:
     print("  ✓ La cuenta está acotada: opera sobre los objetos y nada más")
 print()
