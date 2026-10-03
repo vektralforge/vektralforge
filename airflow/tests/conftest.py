@@ -7,7 +7,7 @@ import falla. Es deliberado —evita que un despliegue arranque con credenciales
 silenciosamente incorrectas— pero implica que los tests deben proveerlo.
 
 Las credenciales ya no viajan en AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY. En
-el contenedor las escribe credenciales_minio.sh en un INI del SDK que boto3
+el contenedor las escribe credenciales_s3.sh en un INI del SDK que boto3
 encuentra por AWS_SHARED_CREDENTIALS_FILE; aquí se genera uno equivalente en un
 temporal para que los tests se parezcan a lo que hay en ejecución.
 """
@@ -44,7 +44,7 @@ ARCHIVO_CREDENCIALES.write_text(
 # Valores de prueba: los tests no se conectan a ningún servicio, solo necesitan
 # que las variables existan para que los módulos se importen.
 ENTORNO_PRUEBA = {
-    "MINIO_ENDPOINT": "http://minio-test:9000",
+    "S3_ENDPOINT": "http://minio-test:9000",
     "AWS_SHARED_CREDENTIALS_FILE": str(ARCHIVO_CREDENCIALES),
     "AIRFLOW__CORE__LOAD_EXAMPLES": "False",
     "AIRFLOW__CORE__UNIT_TEST_MODE": "True",

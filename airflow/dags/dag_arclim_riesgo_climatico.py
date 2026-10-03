@@ -42,12 +42,12 @@ log = logging.getLogger(__name__)
 ARCLIM_BASE = "https://arclim.mma.gob.cl/api"
 # Sin valores por defecto: unas credenciales silenciosamente incorrectas
 # fallan mucho después y con un error de S3 que no señala la causa.
-MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
+S3_ENDPOINT = os.environ["S3_ENDPOINT"]
 # Las credenciales NO están en el entorno. El entrypoint del contenedor las
 # materializa al arrancar en dos archivos, uno por consumidor: boto3 lee el INI
 # que le indica AWS_SHARED_CREDENTIALS_FILE, y el driver de Spark —que corre en
 # este mismo contenedor, porque SparkSubmitOperator usa modo client— lee
-# core-site.xml desde SPARK_CONF_DIR. Ver credenciales_minio.sh.
+# core-site.xml desde SPARK_CONF_DIR. Ver credenciales_s3.sh.
 #
 # Tampoco se pasan por `conf` al SparkSubmitOperator: ahí acabarían en la línea
 # de comandos del proceso y en la UI del driver.
@@ -59,7 +59,7 @@ _ARCHIVO_CREDENCIALES = os.environ.get("AWS_SHARED_CREDENTIALS_FILE", "")
 if not _ARCHIVO_CREDENCIALES or not os.path.isfile(_ARCHIVO_CREDENCIALES):
     raise RuntimeError(
         "No hay credenciales de MinIO para boto3: AWS_SHARED_CREDENTIALS_FILE="
-        f"{_ARCHIVO_CREDENCIALES!r}. Las escribe credenciales_minio.sh en el "
+        f"{_ARCHIVO_CREDENCIALES!r}. Las escribe credenciales_s3.sh en el "
         "arranque del contenedor, a partir del secreto que monta compose."
     )
 TIMEOUT = 60  # segundos por request
@@ -167,7 +167,7 @@ def extract_arclim(**context):
 
     s3 = boto3.client(
         "s3",
-        endpoint_url=MINIO_ENDPOINT,
+        endpoint_url=S3_ENDPOINT,
         config=Config(signature_version="s3v4"),
     )
     sesion = crear_sesion()
@@ -307,7 +307,7 @@ def validar_arclim(**context):
 
     s3 = boto3.client(
         "s3",
-        endpoint_url=MINIO_ENDPOINT,
+        endpoint_url=S3_ENDPOINT,
         config=Config(signature_version="s3v4"),
     )
 
@@ -402,7 +402,7 @@ with DAG(
         conf={
             "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
             "spark.sql.catalog.spark_catalog": ("org.apache.spark.sql.delta.catalog.DeltaCatalog"),
-            "spark.hadoop.fs.s3a.endpoint": MINIO_ENDPOINT,
+            "spark.hadoop.fs.s3a.endpoint": S3_ENDPOINT,
             # Las credenciales no van aquí, y tampoco en el job: las declara
             # el core-site.xml que el entrypoint escribe en SPARK_CONF_DIR, y
             # el driver lo lee desde el classpath. Un --conf acabaría en la

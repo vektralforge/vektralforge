@@ -29,8 +29,8 @@ get_var() {
 }
 
 POSTGRES_USER=$(get_var POSTGRES_USER)
-MINIO_USER=$(get_var MINIO_ROOT_USER)
-MINIO_PASS=$(get_var MINIO_ROOT_PASSWORD)
+S3_ROOT_USER_VAL=$(get_var S3_ROOT_USER)
+S3_ROOT_PASS_VAL=$(get_var S3_ROOT_PASSWORD)
 AF_USER=$(get_var AIRFLOW_ADMIN_USER)
 AF_PASS=$(get_var AIRFLOW_ADMIN_PASSWORD)
 AF_EMAIL=$(get_var AIRFLOW_ADMIN_EMAIL)
@@ -41,12 +41,12 @@ OB_TOKEN=$(get_var OPENBAO_TOKEN)
 
 # Cuentas de servicio de MinIO. Los identificadores no son secretos; llevan
 # valor por defecto para que un .env antiguo no rompa el arranque.
-PIPELINE_KEY=$(get_var MINIO_PIPELINE_ACCESS_KEY)
-PIPELINE_SECRET=$(get_var MINIO_PIPELINE_SECRET_KEY)
-HIVE_KEY=$(get_var MINIO_HIVE_ACCESS_KEY)
-HIVE_SECRET=$(get_var MINIO_HIVE_SECRET_KEY)
-TRINO_KEY=$(get_var MINIO_TRINO_ACCESS_KEY)
-TRINO_SECRET=$(get_var MINIO_TRINO_SECRET_KEY)
+PIPELINE_KEY=$(get_var S3_PIPELINE_ACCESS_KEY)
+PIPELINE_SECRET=$(get_var S3_PIPELINE_SECRET_KEY)
+HIVE_KEY=$(get_var S3_HIVE_ACCESS_KEY)
+HIVE_SECRET=$(get_var S3_HIVE_SECRET_KEY)
+TRINO_KEY=$(get_var S3_TRINO_ACCESS_KEY)
+TRINO_SECRET=$(get_var S3_TRINO_SECRET_KEY)
 PIPELINE_KEY="${PIPELINE_KEY:-vf-pipeline}"
 HIVE_KEY="${HIVE_KEY:-vf-hive}"
 TRINO_KEY="${TRINO_KEY:-vf-trino}"
@@ -63,13 +63,13 @@ OB_TOKEN="${OB_TOKEN:-dev-root-token}"
 check_required() {
     [ -n "$2" ] || { echo "  ✗ Falta $1 en $ENV_FILE" >&2; exit 1; }
 }
-check_required MINIO_ROOT_USER "$MINIO_USER"
-check_required MINIO_ROOT_PASSWORD "$MINIO_PASS"  # pragma: allowlist secret
+check_required S3_ROOT_USER "$S3_ROOT_USER_VAL"
+check_required S3_ROOT_PASSWORD "$S3_ROOT_PASS_VAL"  # pragma: allowlist secret
 check_required AIRFLOW_ADMIN_PASSWORD "$AF_PASS"  # pragma: allowlist secret
 check_required SUPERSET_ADMIN_PASSWORD "$SS_PASS"  # pragma: allowlist secret
-check_required MINIO_PIPELINE_SECRET_KEY "$PIPELINE_SECRET"  # pragma: allowlist secret
-check_required MINIO_HIVE_SECRET_KEY "$HIVE_SECRET"  # pragma: allowlist secret
-check_required MINIO_TRINO_SECRET_KEY "$TRINO_SECRET"  # pragma: allowlist secret
+check_required S3_PIPELINE_SECRET_KEY "$PIPELINE_SECRET"  # pragma: allowlist secret
+check_required S3_HIVE_SECRET_KEY "$HIVE_SECRET"  # pragma: allowlist secret
+check_required S3_TRINO_SECRET_KEY "$TRINO_SECRET"  # pragma: allowlist secret
 
 # ── Paso de secretos a los contenedores ──────────────────────────────────────
 #
@@ -133,7 +133,7 @@ escapar_json() {
 
 json_alias_minio() {
     printf '{"url":"http://localhost:9000","accessKey":"%s","secretKey":"%s","api":"s3v4","path":"auto"}\n' \
-        "$(escapar_json "$MINIO_USER")" "$(escapar_json "$MINIO_PASS")"
+        "$(escapar_json "$S3_ROOT_USER_VAL")" "$(escapar_json "$S3_ROOT_PASS_VAL")"
 }
 
 C_POSTGRES=docker-compose-postgres-1
@@ -218,7 +218,7 @@ crear_cuenta_minio() {
     # del contenedor y de ahí a argv. Es el residual del §2.10.
     if out=$(json_alias_minio | docker exec -i \
         --env-file "$(archivo_env "svcacct-$nombre" \
-              "MC_USER=$MINIO_USER" \
+              "MC_USER=$S3_ROOT_USER_VAL" \
               "SVC_KEY=$clave" "SVC_SECRET=$secreto")" \
         "$C_MINIO" sh -c '
         set -e
@@ -239,7 +239,7 @@ crear_cuenta_minio() {
 
 paso_cuentas() {
     echo "→ Creando cuentas de servicio en MinIO..."
-    local politica="infra/docker-compose/minio/politica-datos.json"
+    local politica="infra/docker-compose/s3/politica-datos.json"
 
     if [ ! -f "$politica" ]; then
         step_failed "no se encuentra $politica"
@@ -339,7 +339,7 @@ paso_banner() {
     printf "  %-10s %-26s %-15s %s\n" "--------" "-------------------------" "---------------" "-------------------------"
     printf "  %-10s %-26s %-15s %s\n" "Airflow"  "http://localhost:8090" "$AF_USER"    "\$AIRFLOW_ADMIN_PASSWORD"
     printf "  %-10s %-26s %-15s %s\n" "Superset" "http://localhost:8088" "$SS_USER"    "\$SUPERSET_ADMIN_PASSWORD"
-    printf "  %-10s %-26s %-15s %s\n" "MinIO"    "http://localhost:9001" "$MINIO_USER" "\$MINIO_ROOT_PASSWORD"
+    printf "  %-10s %-26s %-15s %s\n" "MinIO"    "http://localhost:9001" "$S3_ROOT_USER_VAL" "\$S3_ROOT_PASSWORD"
     printf "  %-10s %-26s %-15s %s\n" "OpenBao"  "http://localhost:8200" "token:"      "\$OPENBAO_TOKEN"
     printf "  %-10s %-26s %-15s %s\n" "Trino"    "http://localhost:8081" "trino"       "sin autenticación"
     printf "  %-10s %-26s %-15s %s\n" "Spark"    "http://localhost:8082" "-"           "sin autenticación"

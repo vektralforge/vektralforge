@@ -75,3 +75,7 @@ data/
 # Configuración generada en el arranque del contenedor (contiene credenciales)
 infra/docker-compose/marquez/marquez.yml
 infra/docker-compose/hive/core-site.xml
+
+# Respaldos del .env creados al renombrar claves: nunca se versionan.
+.env.bak-*
+*/.env.bak-*

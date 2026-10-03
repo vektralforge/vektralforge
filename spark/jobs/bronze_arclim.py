@@ -47,7 +47,7 @@ mes = fecha[5:7]
 # Sin valores por defecto: una credencial silenciosamente incorrecta produce un
 # error de S3 confuso mucho después. Es preferible fallar aquí.
 try:
-    MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
+    S3_ENDPOINT = os.environ["S3_ENDPOINT"]
 except KeyError as e:
     print(f"✗ Falta la variable de entorno {e}")
     sys.exit(1)
@@ -87,7 +87,7 @@ spark = (
         "spark.sql.catalog.spark_catalog",
         "org.apache.spark.sql.delta.catalog.DeltaCatalog",
     )
-    .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
+    .config("spark.hadoop.fs.s3a.endpoint", S3_ENDPOINT)
     # Aquí se fijaba fs.s3a.aws.credentials.provider a
     # EnvironmentVariableCredentialsProvider. Ya no: el proveedor lo declara
     # core-site.xml, que es también donde están las credenciales. Declararlo en
@@ -113,7 +113,7 @@ print(f"→ Spark {spark.version} — procesando ARClim para fecha: {fecha}")
 
 # Sin claves explícitas: boto3 las lee del INI que le indica
 # AWS_SHARED_CREDENTIALS_FILE, el segundo eslabón de su cadena por defecto.
-_s3 = boto3.client("s3", endpoint_url=MINIO_ENDPOINT)
+_s3 = boto3.client("s3", endpoint_url=S3_ENDPOINT)
 
 escritos = {}
 vacios = []

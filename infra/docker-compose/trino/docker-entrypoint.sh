@@ -19,9 +19,9 @@ set -euo pipefail
 
 PLANTILLAS="${VF_TRINO_PLANTILLAS:-/etc/trino/catalog-plantilla}"
 DESTINO="${VF_TRINO_CATALOGO:-/etc/trino/catalog}"
-MARCA="__MINIO_SECRET__"
+MARCA="__S3_SECRET__"
 
-: "${MINIO_SECRET_KEY_FILE:=/run/secrets/minio_trino_secret_key}"
+: "${S3_SECRET_KEY_FILE:=/run/secrets/s3_trino_secret_key}"
 
 if [ ! -d "$PLANTILLAS" ]; then
   echo "ERROR: no se encuentra el directorio de plantillas en $PLANTILLAS" >&2
@@ -29,17 +29,17 @@ if [ ! -d "$PLANTILLAS" ]; then
   exit 1
 fi
 
-if [ ! -r "$MINIO_SECRET_KEY_FILE" ]; then
-  echo "ERROR: no se puede leer el secreto en $MINIO_SECRET_KEY_FILE" >&2
+if [ ! -r "$S3_SECRET_KEY_FILE" ]; then
+  echo "ERROR: no se puede leer el secreto en $S3_SECRET_KEY_FILE" >&2
   echo "       Lo monta docker-compose.yml desde el bloque secrets:, que lo" >&2
-  echo "       toma de MINIO_TRINO_SECRET_KEY del .env." >&2
+  echo "       toma de S3_TRINO_SECRET_KEY del .env." >&2
   exit 1
 fi
 
-MINIO_SECRET_KEY="$(cat "$MINIO_SECRET_KEY_FILE")"
+S3_SECRET_KEY="$(cat "$S3_SECRET_KEY_FILE")"
 
-if [ -z "$MINIO_SECRET_KEY" ]; then
-  echo "ERROR: el secreto en $MINIO_SECRET_KEY_FILE está vacío." >&2
+if [ -z "$S3_SECRET_KEY" ]; then
+  echo "ERROR: el secreto en $S3_SECRET_KEY_FILE está vacío." >&2
   exit 1
 fi
 
@@ -63,7 +63,7 @@ for plantilla in "$PLANTILLAS"/*.properties; do
   while IFS= read -r linea || [ -n "$linea" ]; do
     case "$linea" in
       *"$MARCA"*)
-        printf 's3.aws-secret-key=%s\n' "$MINIO_SECRET_KEY"
+        printf 's3.aws-secret-key=%s\n' "$S3_SECRET_KEY"
         sustituciones=$((sustituciones + 1))
         ;;
       *)

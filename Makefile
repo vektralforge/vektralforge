@@ -17,7 +17,7 @@ ENV_FILE = infra/docker-compose/.env
 PYTHON   = python3.12
 
 # Variables que deben existir y tener valor en el .env
-REQUIRED_VARS = POSTGRES_USER POSTGRES_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD
+REQUIRED_VARS = POSTGRES_USER POSTGRES_PASSWORD S3_ROOT_USER S3_ROOT_PASSWORD
 
 # ── Verificaciones ────────────────────────────────────────────────────────────
 

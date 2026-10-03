@@ -23,9 +23,9 @@ Los cuatro secretos del stack:
 | Secreto | Lo consume |
 |---|---|
 | `postgres_password` | Airflow, metastore, Marquez, Superset |
-| `minio_pipeline_secret_key` | Airflow y Spark, cuenta `vf-pipeline` |
-| `minio_hive_secret_key` | Metastore, cuenta `vf-hive` |
-| `minio_trino_secret_key` | Trino, cuenta `vf-trino` |
+| `s3_pipeline_secret_key` | Airflow y Spark, cuenta `vf-pipeline` |
+| `s3_hive_secret_key` | Metastore, cuenta `vf-hive` |
+| `s3_trino_secret_key` | Trino, cuenta `vf-trino` |
 
 Más las contraseñas de administración de Airflow y Superset y las claves de
 Airflow (`FERNET_KEY`, `API__SECRET_KEY`, `JWT_SECRET`), que hoy viven en el
@@ -45,7 +45,7 @@ automático. **No es una configuración de producción** y hoy no lo usa nadie.
 
 ```bash
 kubectl create secret generic minio-pipeline \
-  --from-literal=secret-key="$(grep '^MINIO_PIPELINE_SECRET_KEY=' infra/docker-compose/.env | cut -d= -f2-)" \
+  --from-literal=secret-key="$(grep '^S3_PIPELINE_SECRET_KEY=' infra/docker-compose/.env | cut -d= -f2-)" \
   --dry-run=client -o yaml > /tmp/secret.yaml
 kubeseal --format yaml < /tmp/secret.yaml > infra/k3s/secrets/minio-pipeline-sealed.yaml
 rm /tmp/secret.yaml

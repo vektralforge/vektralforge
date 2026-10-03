@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# VektralForge — materializa en archivos las credenciales de MinIO
+# VektralForge — materializa en archivos las credenciales del object store
 #
 # Se ejecuta al arrancar el contenedor, antes de ceder el control al proceso
 # real. Lee el secreto que docker-compose monta bajo /run/secrets/ y escribe,
@@ -24,30 +24,30 @@
 # Entrada, toda por entorno. Ninguna de estas variables es un secreto: la única
 # que lo es viaja como el CONTENIDO del archivo al que apunta la tercera.
 #
-#   MINIO_ACCESS_KEY       identificador de la cuenta de servicio
-#   MINIO_ENDPOINT         URL de MinIO
-#   MINIO_SECRET_KEY_FILE  ruta del secreto montado
+#   S3_ACCESS_KEY       identificador de la cuenta de servicio
+#   S3_ENDPOINT         URL del endpoint S3
+#   S3_SECRET_KEY_FILE  ruta del secreto montado
 #   VF_CORE_SITE           destino del core-site.xml   (vacío: no se genera)
 #   VF_CORE_SITE_BASE      plantilla con las propiedades fijas
 #   VF_AWS_CREDENTIALS     destino del archivo INI     (vacío: no se genera)
 
 set -euo pipefail
 
-: "${MINIO_ENDPOINT:=http://minio:9000}"
-: "${MINIO_SECRET_KEY_FILE:=/run/secrets/minio_secret_key}"
+: "${S3_ENDPOINT:=http://minio:9000}"
+: "${S3_SECRET_KEY_FILE:=/run/secrets/s3_secret_key}"
 : "${VF_CORE_SITE:=}"
 : "${VF_CORE_SITE_BASE:=/opt/vektralforge/conf/core-site.xml.base}"
 : "${VF_AWS_CREDENTIALS:=}"
 
-if [ -z "${MINIO_ACCESS_KEY:-}" ]; then
-  echo "ERROR: falta MINIO_ACCESS_KEY." >&2
+if [ -z "${S3_ACCESS_KEY:-}" ]; then
+  echo "ERROR: falta S3_ACCESS_KEY." >&2
   echo "       Es el identificador de la cuenta, no un secreto, y lleva valor" >&2
   echo "       por defecto en docker-compose.yml: si falta es que se borró." >&2
   exit 1
 fi
 
-if [ ! -r "$MINIO_SECRET_KEY_FILE" ]; then
-  echo "ERROR: no se puede leer el secreto en $MINIO_SECRET_KEY_FILE" >&2
+if [ ! -r "$S3_SECRET_KEY_FILE" ]; then
+  echo "ERROR: no se puede leer el secreto en $S3_SECRET_KEY_FILE" >&2
   echo "       Lo monta docker-compose.yml desde el bloque secrets:, que lo" >&2
   echo "       toma de MINIO_*_SECRET_KEY del .env. El origen environment:" >&2
   echo "       requiere Compose 2.20 o superior." >&2
@@ -55,18 +55,18 @@ if [ ! -r "$MINIO_SECRET_KEY_FILE" ]; then
 fi
 
 # La sustitución de comando ya se come los saltos de línea finales.
-MINIO_SECRET_KEY="$(cat "$MINIO_SECRET_KEY_FILE")"
+S3_SECRET_KEY="$(cat "$S3_SECRET_KEY_FILE")"
 
-if [ -z "$MINIO_SECRET_KEY" ]; then
-  echo "ERROR: el secreto en $MINIO_SECRET_KEY_FILE está vacío." >&2
-  echo "       Arrancar con una credencial vacía da un 403 de MinIO en medio" >&2
+if [ -z "$S3_SECRET_KEY" ]; then
+  echo "ERROR: el secreto en $S3_SECRET_KEY_FILE está vacío." >&2
+  echo "       Arrancar con una credencial vacía da un 403 del object store en medio" >&2
   echo "       de un DAG, a media hora de distancia de la causa." >&2
   exit 1
 fi
 
 # Un espacio interior o un salto de línea no sobreviven al formato INI: el
 # parser del SDK recorta y parte. Mejor rechazarlo aquí que depurar un 403.
-case "$MINIO_SECRET_KEY" in
+case "$S3_SECRET_KEY" in
   *[[:space:]]*)
     echo "ERROR: el secreto contiene espacios o saltos de línea." >&2
     echo "       El archivo INI de credenciales no puede representarlos." >&2
@@ -103,16 +103,16 @@ if [ -n "$VF_CORE_SITE" ]; then
   {
     sed '/<\/configuration>/d' "$VF_CORE_SITE_BASE"
     echo
-    echo "  <!-- Generado en el arranque por credenciales_minio.sh. No editar. -->"
-    propiedad fs.s3a.endpoint   "$MINIO_ENDPOINT"
-    propiedad fs.s3a.access.key "$MINIO_ACCESS_KEY"
-    propiedad fs.s3a.secret.key "$MINIO_SECRET_KEY"
+    echo "  <!-- Generado en el arranque por credenciales_s3.sh. No editar. -->"
+    propiedad fs.s3a.endpoint   "$S3_ENDPOINT"
+    propiedad fs.s3a.access.key "$S3_ACCESS_KEY"
+    propiedad fs.s3a.secret.key "$S3_SECRET_KEY"
     echo '</configuration>'
   } > "$TMP"
   chmod 600 "$TMP"
   mv -f "$TMP" "$VF_CORE_SITE"
 
-  echo "→ core-site.xml: ${MINIO_ACCESS_KEY}@${MINIO_ENDPOINT} en $VF_CORE_SITE"
+  echo "→ core-site.xml: ${S3_ACCESS_KEY}@${S3_ENDPOINT} en $VF_CORE_SITE"
 fi
 
 # ── credentials (INI del SDK de AWS) ─────────────────────────────────────────
@@ -122,8 +122,8 @@ if [ -n "$VF_AWS_CREDENTIALS" ]; then
   chmod 700 "$DIRECTORIO"
 
   TMP="${VF_AWS_CREDENTIALS}.tmp.$$"
-  printf '# Generado en el arranque por credenciales_minio.sh. No editar.\n[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
-    "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY" > "$TMP"
+  printf '# Generado en el arranque por credenciales_s3.sh. No editar.\n[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
+    "$S3_ACCESS_KEY" "$S3_SECRET_KEY" > "$TMP"
   chmod 600 "$TMP"
   mv -f "$TMP" "$VF_AWS_CREDENTIALS"
 

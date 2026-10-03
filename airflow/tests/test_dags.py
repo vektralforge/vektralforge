@@ -176,7 +176,7 @@ def test_configuracion_desde_el_entorno(modulos_dag, modulo):
     causa.
     """
     m = modulos_dag[modulo]
-    assert m.MINIO_ENDPOINT == "http://minio-test:9000"
+    assert m.S3_ENDPOINT == "http://minio-test:9000"
 
 
 @pytest.mark.parametrize(

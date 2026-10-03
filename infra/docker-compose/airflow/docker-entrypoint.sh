@@ -19,10 +19,10 @@ set -euo pipefail
 # ni la cuenta ni el secreto. La exclusión es EXPLÍCITA y no un «si falta la
 # variable, no pasa nada»: con esa forma, un servicio al que se le olvidara la
 # cuenta arrancaría en silencio y fallaría media hora después con un 403.
-if [ "${VF_CREDENCIALES_MINIO:-si}" = "no" ]; then
-  echo "→ credenciales de MinIO omitidas a propósito (VF_CREDENCIALES_MINIO=no)"
+if [ "${VF_CREDENCIALES_S3:-si}" = "no" ]; then
+  echo "→ credenciales de MinIO omitidas a propósito (VF_CREDENCIALES_S3=no)"
 else
-  /opt/vektralforge/bin/credenciales_minio.sh
+  /opt/vektralforge/bin/credenciales_s3.sh
 fi
 
 if [ -x /entrypoint ]; then
