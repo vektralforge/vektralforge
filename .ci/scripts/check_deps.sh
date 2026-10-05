@@ -269,8 +269,15 @@ run_install_step() {
     echo "[INFO]  [$step/$total] $label — installing..."
   fi
 
+  # `local` is deliberately NOT used here: an EXIT trap doesn't run inside a
+  # real function call frame even when `trap` was registered inside one, and
+  # macOS's stock /bin/bash (3.2 — still bash's license-driven default there,
+  # and the one active during THIS step, since Homebrew hasn't installed a
+  # newer one yet) rejects `local` in that position with "can only be used
+  # in a function". A bare assignment leaks `__status` into the global
+  # scope, but it's used once, right here, and never read again.
   # shellcheck disable=SC2064,SC2154
-  trap "local __status=\$?; exec 1>&5 2>&6; exec 5>&- 6>&-; _finish_install_step '$step' '$total' '$label' '$buf' '$start_ts' '$spinner_pid' \"\$__status\"" EXIT
+  trap "__status=\$?; exec 1>&5 2>&6; exec 5>&- 6>&-; _finish_install_step '$step' '$total' '$label' '$buf' '$start_ts' '$spinner_pid' \"\$__status\"" EXIT
 
   exec 5>&1 6>&2
   exec 1>>"$buf" 2>&1
