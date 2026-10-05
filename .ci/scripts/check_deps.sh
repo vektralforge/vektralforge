@@ -437,6 +437,56 @@ require_privilege_linux() {
   exit 1
 }
 
+# ── Privileges (macOS) ────────────────────────────────────────────────────────
+# Only called when Homebrew itself is missing. A first attempt here primed a
+# `sudo -v` credential before calling Homebrew's installer, assuming its own
+# NONINTERACTIVE sudo check would reuse it — it doesn't. Homebrew's own
+# have_sudo_access() opens with `sudo -n -k -l`, and that `-k` UNCONDITIONALLY
+# invalidates any cached credential, ours included, before checking anything.
+# In NONINTERACTIVE mode everything after that uses `-n` too, so it can never
+# fall back to prompting — by design, non-interactive means non-interactive,
+# no matter what credential already exists.
+#
+# What Homebrew actually aborts on (its install.sh, `prefix_parent` check) is
+# simpler: it only needs sudo at all if the nearest EXISTING ancestor of
+# /opt/homebrew isn't writable by this user. /opt/homebrew doesn't exist on a
+# fresh Mac, /opt usually doesn't either, so that ancestor is "/" — never
+# writable — and it falls to the broken sudo check above and aborts. If
+# /opt/homebrew already exists and is OWNED by this user, Homebrew finds it
+# directly, sees it's writable, and never calls have_sudo_access for this at
+# all. So instead of fighting its non-interactive sudo check, this creates
+# that one directory ourselves, with our OWN genuinely interactive sudo call
+# (no `-n`, so it can actually prompt) — while the terminal is still fully
+# interactive, before install_missing redirects stdout/stderr into the
+# per-step buffer. Homebrew's installer then has nothing left to ask sudo for.
+
+require_privilege_macos() {
+  local prefix="/opt/homebrew"
+
+  if [ -d "$prefix" ] && [ -w "$prefix" ]; then
+    return 0   # ya es nuestro de una corrida anterior — nada que hacer
+  fi
+  if [ ! -d "$prefix" ] && [ -w "$(dirname "$prefix")" ]; then
+    return 0   # /opt ya es escribible por este usuario — Homebrew no va a necesitar sudo
+  fi
+
+  _info "Administrator password required to create $prefix"
+  if ! sudo mkdir -p "$prefix" || ! sudo chown "$(id -un):$(id -gn)" "$prefix"; then
+    echo ""
+    _err "Could not prepare $prefix"
+    echo ""
+    echo "  This account either isn't an administrator, or the password"
+    echo "  entered didn't work."
+    echo ""
+    echo "  Run this script from an account with administrator privileges, or"
+    echo "  have one create $prefix (owned by this user: $(id -un)) and run it"
+    echo "  again."
+    echo ""
+    exit 1
+  fi
+  _ok "$prefix ready"
+}
+
 # ── Package manager (first dependency checked on every OS) ────────────────────
 # The rest of the checks/fixes assume this is present: on macOS everything
 # installable goes through Homebrew, on Linux through $PKG_MANAGER_BIN. Only
@@ -881,6 +931,13 @@ report_and_confirm() {
 
   if [ "$OS_FAMILY" = "linux" ]; then
     require_privilege_linux
+  elif [ "$OS_FAMILY" = "macos" ]; then
+    for dep in "${MISSING_INSTALLABLE[@]+"${MISSING_INSTALLABLE[@]}"}"; do
+      if [ "$dep" = "homebrew" ]; then
+        require_privilege_macos
+        break
+      fi
+    done
   fi
 
   install_missing
