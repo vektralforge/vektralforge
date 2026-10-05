@@ -514,24 +514,71 @@ check_pkg_manager_linux() {
 
 # ── macOS: Homebrew + Xcode CLT ───────────────────────────────────────────────
 
+# `brew shellenv` only changes PATH for the current process — it was being
+# `eval`uated here and nowhere else, so the NEXT shell (a new terminal, or
+# the next `make` invocation, which is a fresh process every time) never saw
+# it: `command -v brew` failed again, and with it python3.12/venv/pip, even
+# though Homebrew had already installed all of them. Persisting the same
+# line Homebrew's own installer tells a human to add by hand, into the
+# shell's own profile, is what makes it survive past this one process.
+# Idempotent: checked before appending, so re-running this doesn't duplicate it.
+persist_homebrew_shellenv_macos() {
+  local brew_bin="$1"
+  local profile="$HOME/.zprofile"   # zsh has been macOS's default shell since Catalina
+  case "${SHELL:-}" in
+    */bash) profile="$HOME/.bash_profile" ;;
+  esac
+  local line="eval \"\$(${brew_bin} shellenv)\""
+
+  if [ -f "$profile" ] && grep -qF "$line" "$profile" 2>/dev/null; then
+    return 0
+  fi
+  if printf '\n%s\n' "$line" >> "$profile" 2>/dev/null; then
+    _info "Added Homebrew to PATH in $profile (new terminals will have it automatically)"
+  else
+    _warn "Could not write to $profile — add this line yourself: $line"
+  fi
+}
+
 ensure_homebrew_macos() {
   if command -v brew >/dev/null 2>&1; then
     return
   fi
-  _info "Homebrew not found, installing (non-interactive)..."
-  if ! NONINTERACTIVE=1 /bin/bash -c \
-      "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-    echo ""
-    _err "Could not install Homebrew automatically"
-    echo ""
-    echo "  Install it manually from https://brew.sh and run this script again."
-    echo ""
-    exit 1
-  fi
+
+  # Known fixed locations, checked directly before assuming it's missing: if
+  # a previous run already installed it but this is a new shell that never
+  # got the PATH change, re-running the whole installer would be wasteful
+  # (and re-downloads+re-checks everything for nothing) — fixing PATH is enough.
+  local brew_bin=""
   if [ -x /opt/homebrew/bin/brew ]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
+    brew_bin="/opt/homebrew/bin/brew"
   elif [ -x /usr/local/bin/brew ]; then
-    eval "$(/usr/local/bin/brew shellenv)"
+    brew_bin="/usr/local/bin/brew"
+  fi
+
+  if [ -z "$brew_bin" ]; then
+    _info "Homebrew not found, installing (non-interactive)..."
+    if ! NONINTERACTIVE=1 /bin/bash -c \
+        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+      echo ""
+      _err "Could not install Homebrew automatically"
+      echo ""
+      echo "  Install it manually from https://brew.sh and run this script again."
+      echo ""
+      exit 1
+    fi
+    if [ -x /opt/homebrew/bin/brew ]; then
+      brew_bin="/opt/homebrew/bin/brew"
+    elif [ -x /usr/local/bin/brew ]; then
+      brew_bin="/usr/local/bin/brew"
+    fi
+  else
+    _info "Homebrew already installed at $brew_bin, just missing from PATH — fixing that"
+  fi
+
+  if [ -n "$brew_bin" ]; then
+    eval "$("$brew_bin" shellenv)"
+    persist_homebrew_shellenv_macos "$brew_bin"
   fi
 }
 
