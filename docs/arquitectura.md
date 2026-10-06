@@ -56,7 +56,7 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | OpenLineage | 1.52.0 | `Operativo` | Linaje en Airflow y Spark |
 | Marquez | 0.51.1 | `Operativo` | Almacén y UI de linaje |
 | PostgreSQL | 15 | `Operativo` | Metadatos de Airflow, Hive, Marquez y Superset |
-| Redis | 7.2 | `Operativo` | Caché de Superset: metadatos y resultados de los gráficos |
+| Valkey | 9.1 | `Operativo` | Caché de Superset: metadatos y resultados de los gráficos |
 | OpenBao | 2.1.0 | `Parcial` | Secretos; en local corre en modo dev |
 | Apache Kafka | 7.6.1 (CP) | `Opcional` | Perfil `streaming`; sin pipeline aún |
 | Apache ZooKeeper | 7.6.1 (CP) | `Opcional` | Perfil `streaming`; solo sirve a Kafka |
@@ -271,7 +271,7 @@ flowchart LR
     subgraph apoyo["Servicios de apoyo"]
         direction TB
         PG["postgres 15 · :5432<br/>airflow · metastore · marquez"]
-        RDS["redis 7.2 · :6379<br/>caché de Superset"]
+        RDS["valkey 9.1 · :6379<br/>caché de Superset"]
         OB["openbao 2.1.0 · :8200<br/>modo -dev, sin consumidores"]
         KFK["kafka 7.6.1 · :9092 + zookeeper<br/>perfil streaming, no arranca"]
     end

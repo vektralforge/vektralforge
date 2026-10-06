@@ -53,7 +53,7 @@ project without controlling it — see [SPONSORS.md](SPONSORS.md) and
 | OpenLineage | 1.52.0 | Lineage in Airflow and Spark |
 | Marquez | 0.51.1 | Lineage store and UI |
 | PostgreSQL | 15 | Metadata |
-| Redis | 7.2 | Superset cache (metadata and chart data) |
+| Valkey | 9.1 | Superset cache (metadata and chart data) |
 | OpenBao | 2.1.0 | Secrets (dev mode locally) |
 | Apache Kafka | 7.6.1 (CP) | Optional `streaming` profile; no pipeline yet |
 | Apache ZooKeeper | 7.6.1 (CP) | Optional `streaming` profile; serves Kafka only |

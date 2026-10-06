@@ -62,7 +62,9 @@ SQLALCHEMY_DATABASE_URI = (
     f"/{os.environ.get('DATABASE_DB', 'superset')}"
 )
 
-REDIS_HOST = os.environ.get("REDIS_HOST", "redis")
+# Valkey (fork BSD de Redis 7.2) atiende el protocolo de Redis, así que la
+# caché sigue siendo `RedisCache` de Flask-Caching.
+REDIS_HOST = os.environ.get("REDIS_HOST", "valkey")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
 
 # Metadatos de la aplicación: listas de dashboards, permisos, miniaturas.

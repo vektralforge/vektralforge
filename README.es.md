@@ -53,7 +53,7 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
 | Marquez | 0.51.1 | Almacén y UI de linaje |
 | PostgreSQL | 15 | Metadatos |
-| Redis | 7.2 | Caché de Superset (metadatos y datos de los gráficos) |
+| Valkey | 9.1 | Caché de Superset (metadatos y datos de los gráficos) |
 | OpenBao | 2.1.0 | Secretos (modo dev en local) |
 | Apache Kafka | 7.6.1 (CP) | Perfil opcional `streaming`; sin pipeline aún |
 | Apache ZooKeeper | 7.6.1 (CP) | Perfil opcional `streaming`; solo sirve a Kafka |

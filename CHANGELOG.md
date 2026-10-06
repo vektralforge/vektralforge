@@ -14,6 +14,13 @@ under **Upgrading**.
 
 ### Changed
 
+- **Valkey `9.1` sustituye a Redis como caché de Superset.** El #72 había subido
+  Redis de 7.2 a 8.0 como un bump de Dependabot más, y con él la licencia pasó
+  de BSD-3-Clause a RSALv2/SSPLv1/AGPLv3 mientras la documentación seguía
+  diciendo 7.2. Valkey es el fork de la Linux Foundation, BSD-3-Clause y
+  compatible a nivel de protocolo: Superset no cambia de cliente. Dependabot
+  deja de proponer saltos mayores de Valkey.
+
 - **MinIO queda sustituido por RustFS `1.0.0-rc.6`.** MinIO se archivó en 2026 y
   ninguna imagen pública lleva el parche de `CVE-2025-62506`, así que no había
   versión a la que subir. RustFS es Apache 2.0 —el stack pierde su única
@@ -45,6 +52,11 @@ under **Upgrading**.
   huérfano y se borra con `docker volume rm docker-compose_minio-data`.
 - **El servicio pasa a llamarse `rustfs`**: cualquier guion propio con
   `docker exec docker-compose-minio-1` hay que ajustarlo.
+- **El servicio `redis` pasa a llamarse `valkey`.** El contenedor anterior queda
+  huérfano y sigue escuchando en el 6379, así que el nuevo no puede publicar el
+  puerto: levantar con `docker compose up -d --remove-orphans` (o `make
+  dev-reset`). La caché no se migra: son datos regenerables. `REDIS_URL` sale
+  de `.env.example` porque no la leía nadie; si está en tu `.env`, no estorba.
 
 ## [0.1.0] — 2026-09-03
 
