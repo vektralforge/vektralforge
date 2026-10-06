@@ -1,0 +1,10 @@
+# Identificadores del historial ya mirados uno por uno y descartados.
+#
+# Formato:  <huella>  <motivo>
+# La huella son los 12 primeros hex del SHA-256 del término en minúsculas; la
+# calcula `.ci/scripts/auditar_historial.sh identificadores` y no revela el
+# valor, que es el punto: este archivo se versiona en un repositorio público.
+#
+# Un hallazgo registrado aquí hace además de control positivo: si deja de
+# encontrarse, el guion falla, porque lo más probable no es que se arreglara
+# solo sino que el escaneo dejó de mirar donde miraba.

@@ -8,7 +8,7 @@
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
         dev-verificar-permisos \
         lint-dags test-dags lint-spark test-spark lint-sql \
-        lint-all test-all detect-secrets auditar-historial \
+        lint-all test-all detect-secrets auditar-historial auditar-identificadores \
         deploy-staging deploy-prod
 
 .DEFAULT_GOAL := help
@@ -205,6 +205,12 @@ detect-secrets:
 auditar-historial:
 	@bash .ci/scripts/auditar_historial.sh
 
+# Segundo modo del mismo guion. La lista de términos vive en
+# .ci/identificadores-cliente.txt, que no se versiona; sin ella corren igual los
+# patrones estructurales (IPs privadas, hosts internos, registros privados).
+auditar-identificadores:
+	@bash .ci/scripts/auditar_historial.sh identificadores
+
 # ── Deploy ────────────────────────────────────────────────────────────────────
 
 deploy-staging:
@@ -241,7 +247,8 @@ help:
 	@echo "    make lint-all             Lint completo (Ruff + sqlfluff)"
 	@echo "    make test-all             Tests completos"
 	@echo "    make detect-secrets       Escaneo de credenciales (árbol de trabajo)"
-	@echo "    make auditar-historial    Escaneo de credenciales (historial de git)"
+	@echo "    make auditar-historial    Credenciales e identificadores (historial de git)"
+	@echo "    make auditar-identificadores  Solo identificadores de infraestructura ajena"
 	@echo ""
 	@echo "  Deploy — PLANIFICADO, no implementado:"
 	@echo "    make deploy-staging       Falla explicando qué falta"
