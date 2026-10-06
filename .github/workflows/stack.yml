@@ -85,11 +85,23 @@ jobs:
       # _imagenes.yml: así lo que se prueba es lo que `make dev-up` construye.
       # La caché se lee de las mismas entradas que escribe la publicación, de
       # modo que un PR sin cambios en Dockerfiles no recompila nada.
+      #
+      # Bake corre DESDE infra/docker-compose, por dos motivos:
+      #  - Los `context: ../..` del Compose se resuelven respecto del directorio
+      #    de trabajo. Desde la raíz del repo, `../..` apuntaba a
+      #    /home/runner/work —fuera del checkout— y Buildx (≥0.20) se niega a
+      #    leer fuera sin un permiso explícito.
+      #  - Lee el .env de ese directorio, igual que `docker compose`: sin él,
+      #    cada variable del Compose salía como «not set» en el log.
+      # El permiso se concede solo sobre el workspace, que es la raíz del repo:
+      # el contexto real de las imágenes que construyen desde ahí.
       - name: Construir imágenes
+        working-directory: infra/docker-compose
         run: |
           c() { echo "type=registry,ref=${REGISTRO}/$1:buildcache-amd64"; }
           docker buildx bake \
-            -f infra/docker-compose/docker-compose.yml \
+            -f docker-compose.yml \
+            --allow "fs.read=${GITHUB_WORKSPACE}" \
             --load \
             --set "airflow-*.cache-from=$(c airflow)" \
             --set "spark-*.cache-from=$(c spark)" \
