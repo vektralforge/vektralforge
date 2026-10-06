@@ -65,7 +65,6 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Sealed Secrets | — | `En evaluación` | Alternativa a OpenBao para K3s |
 | Great Expectations | — | `Planificado` | Calidad de datos |
 | Prometheus + Grafana | — | `Planificado` | Métricas |
-| Graylog | — | `En evaluación` | Logs; su licencia SSPL es un factor en la decisión |
 
 El linaje se emite en dos niveles: el provider de OpenLineage de Airflow publica
 el run de cada tarea, y el `OpenLineageSparkListener` publica los datasets que
@@ -107,8 +106,18 @@ permitiendo el borrado no da ningún síntoma, así que subir de etiqueta aquí 
 revisa a mano. Para el módulo de evidencia con retención WORM, comprobar primero
 que un borrado bajo COMPLIANCE devuelve `AccessDenied`.
 
-Las licencias de terceros, incluida Graylog (SSPL), están en
-[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+**Sobre los logs.** No hay logging centralizado y es un hueco conocido: cada
+servicio escribe a stdout y se lee con `docker compose logs`. Graylog figuró como
+candidato «en evaluación» durante meses sin estar jamás en el Compose, y queda
+descartado: su licencia SSPL no está aprobada por la OSI y su sección 13 alcanza
+a quien ofrezca el software como servicio, que es justo lo que un stack pensado
+para consultoría no puede arrastrar. Los candidatos vivos son Grafana Loki
+(AGPLv3), OpenSearch (Apache 2.0) y Vector (MPL 2.0); el logging es la pieza más
+desacoplada del stack y la más fácil de cambiar.
+
+Las licencias de terceros están en
+[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md): desde octubre de 2026,
+todas permisivas.
 
 Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
 versión menor o PySpark rechaza la ejecución.

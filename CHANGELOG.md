@@ -33,6 +33,17 @@ under **Upgrading**.
   are refused — with an empty bypass list, so the rule applies to repository
   admins too.
 
+### Removed
+
+- **Graylog sale del inventario de licencias y de la documentación.** Figuraba
+  como componente del stack y como la única dependencia no permisiva (SSPL-1.0),
+  pero nunca estuvo: no hay servicio en el Compose, ningún contenedor declara un
+  driver de logging que apunte a él y no existe manifiesto de K3s que lo
+  despliegue. Estaba «en evaluación» para logging centralizado y la evaluación
+  queda cerrada; `docs/arquitectura.md` recoge el hueco que deja y los
+  candidatos vivos (Loki, OpenSearch, Vector). Con esto, y con la salida de
+  MinIO, **todos los componentes del stack son de licencia permisiva**.
+
 ### Upgrading
 
 - **Hay que renombrar las claves del `.env`.** Compose interpola `${S3_ROOT_USER}`
