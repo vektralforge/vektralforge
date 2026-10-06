@@ -79,8 +79,10 @@ GA, release candidates land several times a month, and RustFS Object Lock
 `rc.1`, which this tag already includes. A lock that breaks by allowing deletion
 gives no symptom, so moving this tag is reviewed by hand.
 
-Third-party licences, including the one that is not permissive — Graylog
-(SSPL) — are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Third-party licences are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Since October 2026 every one of
+them is permissive: MinIO (AGPLv3) was replaced, and Graylog (SSPL) was dropped
+from the inventory because it had never actually been part of the stack.
 
 ---
 

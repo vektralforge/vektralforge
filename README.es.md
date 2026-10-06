@@ -80,8 +80,9 @@ corregido en `rc.1`, que esta etiqueta ya incluye—. Un candado que se rompe
 permitiendo el borrado no da ningún síntoma, así que subir esta etiqueta se
 revisa a mano.
 
-Licencias de terceros, incluida la única que no es permisiva —Graylog (SSPL)—
-en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Licencias de terceros en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Desde octubre de 2026 todas son permisivas: MinIO (AGPLv3) quedó reemplazado y
+Graylog (SSPL) salió del inventario porque nunca llegó a estar en el stack.
 
 ---
 

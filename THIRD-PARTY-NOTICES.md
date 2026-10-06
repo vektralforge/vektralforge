@@ -22,33 +22,21 @@ images](#binaries-vendored-into-vektralforge-images).
 
 ---
 
-## Components requiring attention
+## Every component is permissively licensed
 
-This one does not share the permissive terms of the rest of the stack. If you plan
-to deploy VektralForge commercially, offer it as a hosted service, or embed it in
-a proprietary product, review it with counsel before you do.
+As of October 2026 nothing in the stack carries copyleft or a source-available
+licence, and the project redistributes no copyleft binary. Two entries in the
+tables below still carry a note worth reading — Redis, whose permissive terms
+depend on the version pin, and OpenBao, which exists because Vault's did not
+survive — but neither constrains how you deploy, offer or embed VektralForge.
 
-Until October 2026 this section also covered MinIO (AGPLv3), the former storage
-backend. It was replaced by RustFS, which is Apache 2.0, so the storage layer no
-longer carries copyleft obligations.
-
-### Graylog Open — Server Side Public License v1
-
-Copyright © Graylog, Inc. — https://github.com/Graylog2/graylog2-server
-
-Releases before Graylog 4.0 were GPLv3; from 4.0 onward, including the free
-Graylog Open tier, the licence is SSPL v1. The SSPL is based on the GPL but was
-authored by MongoDB and **has not been approved by the Open Source Initiative**.
-Its section 13 sets out obligations for anyone offering the software as a service:
-in that case the management, interface, API, automation, monitoring, backup,
-storage and hosting software must all be released under SSPL terms.
-
-Self-hosting Graylog for your own log management does not trigger section 13.
-Offering it as part of a service to third parties may.
-
-**Alternatives** if SSPL is unacceptable in your context: Grafana Loki (AGPLv3),
-OpenSearch (Apache 2.0), or Vector (MPL 2.0) with a backend of your choice.
-Logging is the most loosely coupled part of the stack and the easiest to swap.
+Getting here took two removals. **MinIO** (AGPLv3) was the storage backend until
+October 2026 and was replaced by RustFS (Apache 2.0). **Graylog Open** (SSPL-1.0)
+was listed as a stack component but was never one: it had no service in the
+Compose file, no logging driver pointed at it and no Kubernetes manifest declared
+it. It was under evaluation for centralised logging and the evaluation is closed
+— see the architecture document for what logging is still missing and why the
+SSPL ruled this candidate out.
 
 ---
 
@@ -70,7 +58,6 @@ Logging is the most loosely coupled part of the stack and the easiest to swap.
 | Redis                   | BSD-3-Clause (see note) | https://github.com/redis/redis              |
 | Apache ZooKeeper        | Apache-2.0              | https://github.com/apache/zookeeper         |
 | RustFS                  | Apache-2.0              | https://github.com/rustfs/rustfs            |
-| Graylog Open            | **SSPL-1.0**            | https://github.com/Graylog2/graylog2-server |
 
 A note on **OpenBao**: it is the Linux Foundation fork of HashiCorp Vault, created
 after Vault moved to the Business Source Licence. OpenBao remains under MPL 2.0,
@@ -178,10 +165,11 @@ process.
 ## Maintaining this file
 
 This inventory is reviewed when a component is added, removed, or upgraded across
-a major version, and at least once a year. Licences change: Vault, Elastic, Redis
-and Graylog itself all illustrate the point. If you notice an entry that has gone
-stale, please open a pull request or an issue — corrections are welcome and
-useful.
+a major version, and at least once a year. Licences change — Vault, Elastic,
+Redis and Graylog all illustrate the point — and so does the inventory itself:
+Graylog sat in this file as a stack component for months without ever being one.
+If you notice an entry that has gone stale, please open a pull request or an
+issue; corrections are welcome and useful.
 
 ## Disclaimer
 
