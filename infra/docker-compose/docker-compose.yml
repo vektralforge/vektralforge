@@ -113,7 +113,7 @@ services:
       retries: 5
     # Todos los puertos publicados se atan a la interfaz de loopback. Compose,
     # si no se le dice nada, escucha en 0.0.0.0: en una red compartida eso deja
-    # accesibles Postgres con su contraseña, Redis sin ninguna, el object store con las
+    # accesibles Postgres con su contraseña, Valkey sin ninguna, el object store con las
     # credenciales root, OpenBao en modo dev y —lo más serio— el puerto 7077 de
     # spark-master, que acepta el envío de jobs sin autenticación.
     #
@@ -450,16 +450,24 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # ── Redis ─────────────────────────────────────────────────────────────────
+  # ── Valkey ────────────────────────────────────────────────────────────────
   # Caché de Superset. Lo configura infra/docker-compose/superset/superset_config.py;
   # sin ese archivo las cachés de Superset son NullCache y esto no recibe nada.
-  redis:
-    image: redis:8.0
+  #
+  # Valkey y no Redis: desde la 7.4 Redis es RSALv2/SSPLv1 y desde la 8.0 suma
+  # AGPLv3 como tercera opción; ninguna es permisiva. Valkey es el fork de la
+  # Linux Foundation desde Redis 7.2.4, BSD-3-Clause, y habla el mismo
+  # protocolo: el cliente `redis` de Superset se conecta sin cambios.
+  #
+  # Solo los saltos MAYORES quedan fuera de Dependabot (ver dependabot.yml):
+  # son donde históricamente cambian licencias y comportamiento.
+  valkey:
+    image: valkey/valkey:9.1
     restart: unless-stopped
     ports:
       - "${BIND_HOST:-127.0.0.1}:6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -483,7 +491,9 @@ services:
       DATABASE_DB: superset
       DATABASE_USER: ${POSTGRES_USER}
       DATABASE_PASSWORD_FILE: /run/secrets/postgres_password
-      REDIS_HOST: redis
+      # Las variables conservan el nombre REDIS_*: es el del protocolo y el de
+      # las claves de Flask-Caching (CACHE_REDIS_HOST), no el del producto.
+      REDIS_HOST: valkey
       REDIS_PORT: 6379
     secrets:
       - postgres_password
@@ -492,7 +502,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      valkey:
         condition: service_healthy
 
 # El origen `environment` toma el valor de POSTGRES_PASSWORD del .env y lo

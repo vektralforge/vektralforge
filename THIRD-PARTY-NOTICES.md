@@ -55,7 +55,7 @@ SSPL ruled this candidate out.
 | Marquez                 | Apache-2.0              | https://github.com/MarquezProject/marquez   |
 | OpenBao                 | MPL-2.0                 | https://github.com/openbao/openbao          |
 | PostgreSQL              | PostgreSQL Licence      | https://www.postgresql.org/about/licence/   |
-| Redis                   | BSD-3-Clause (see note) | https://github.com/redis/redis              |
+| Valkey                  | BSD-3-Clause (see note) | https://github.com/valkey-io/valkey         |
 | Apache ZooKeeper        | Apache-2.0              | https://github.com/apache/zookeeper         |
 | RustFS                  | Apache-2.0              | https://github.com/rustfs/rustfs            |
 
@@ -63,11 +63,13 @@ A note on **OpenBao**: it is the Linux Foundation fork of HashiCorp Vault, creat
 after Vault moved to the Business Source Licence. OpenBao remains under MPL 2.0,
 which is why VektralForge uses it rather than Vault.
 
-A note on **Redis**: the image is pinned to 7.2, which is BSD-3-Clause. From 7.4
-onward Redis moved to a dual RSALv2 / SSPLv1 licence that is not OSI-approved.
-The pin is what preserves the permissive terms, so an automated version bump
-would silently change them. Valkey, the Linux Foundation fork, stays under
-BSD-3-Clause if you prefer a version that keeps receiving updates on those terms.
+A note on **Valkey**: it replaces Redis as Superset's cache. Redis moved to a
+dual RSALv2 / SSPLv1 licence from 7.4 and added AGPLv3 as a third option from
+8.0; none of the three is permissive. Valkey is the Linux Foundation fork of
+Redis 7.2.4 and remains under BSD-3-Clause. Being hosted by a foundation means
+the trademark is not held by a single vendor, which is what allowed the Redis
+relicensing in the first place. Major-version bumps are excluded from
+Dependabot and reviewed by hand.
 
 A note on **Kafka**: the images come from `confluentinc/cp-kafka` and
 `confluentinc/cp-zookeeper`, which package Apache Kafka under Apache 2.0. Other
