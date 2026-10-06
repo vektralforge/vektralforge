@@ -136,10 +136,15 @@ RUN mkdir -p /home/spark/.ivy2/cache /home/spark/.ivy2/jars && \
 # aquí y no en medio de un DAG.
 RUN python3.12 --version && \
     python3.12 -c "import pyspark, delta; print('pyspark', pyspark.__version__)" && \
-    ls /opt/spark/jars | grep -q "^hadoop-aws-" && \
-    ls /opt/spark/jars | grep -q "delta-spark_4.1_2.13" && \
-    ls /opt/spark/jars | grep -q "^bundle-" && \
-    ls /opt/spark/jars | grep -q "^openlineage-spark_2.13-" && \
+    # Globs y no `ls | grep -q`: grep -q sale con la primera coincidencia y ls
+    # recibe SIGPIPE si sigue escribiendo. Aquí el shell no tiene `pipefail` y
+    # no fallaba, pero en la imagen de Airflow sí, con exit 141 según quién
+    # ganara la carrera. Se corrige en los dos sitios para que no reaparezca
+    # el día que esta imagen cambie de base o de SHELL.
+    ls /opt/spark/jars/hadoop-aws-* >/dev/null && \
+    ls /opt/spark/jars/*delta-spark_4.1_2.13* >/dev/null && \
+    ls /opt/spark/jars/bundle-* >/dev/null && \
+    ls /opt/spark/jars/openlineage-spark_2.13-* >/dev/null && \
     echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
 
 USER spark
