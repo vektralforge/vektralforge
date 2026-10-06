@@ -34,7 +34,7 @@ scheduler_ok()    { docker exec "$P-airflow-scheduler-1" airflow jobs check --jo
 COMPROBACIONES=(
     "postgres|sano postgres"
     "rustfs|sano rustfs"
-    "redis|sano redis"
+    "valkey|sano valkey"
     "airflow-init|airflow_init_ok"
     "airflow-webserver|sano airflow-webserver"
     "airflow-scheduler|scheduler_ok"
