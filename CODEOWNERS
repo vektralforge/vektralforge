@@ -25,7 +25,11 @@
 /SECURITY.md                @vektralforge/security @vektralforge/tsc
 /.github/workflows/         @vektralforge/security @vektralforge/tsc
 /.pre-commit-config.yaml    @vektralforge/security @vektralforge/maintainers
-/.secrets.baseline          @vektralforge/security
+# Ruta crítica: el baseline decide qué cuenta como falso positivo. Lleva a tsc
+# además de security porque security tiene rol Triage en el repositorio, y
+# GitHub solo acepta como code owner a quien tiene Write. Con security sola,
+# este archivo quedaba sin ningún dueño válido.
+/.secrets.baseline          @vektralforge/security @vektralforge/tsc
 
 # Release and packaging
 /pyproject.toml             @vektralforge/tsc
