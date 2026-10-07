@@ -19,6 +19,10 @@ from botocore.exceptions import ClientError
 ENDPOINT = os.environ.get("S3_ENDPOINT", "http://rustfs:9000")
 ESPERADA = os.environ["CUENTA_ESPERADA"]
 BUCKETS = ("raw", "bronze", "silver", "gold", "checkpoints")
+# Solo vf-pipeline tiene este: politica-logs-airflow.json, que init_users.sh une
+# a la de datos para esta cuenta y no para las otras dos.
+LOGS = "airflow-logs"
+PERMITIDOS = (*BUCKETS, LOGS)
 # Un nombre que no existe: los negativos que necesitan un bucket lo usan para no
 # poder destruir nada aunque la política esté mal y la operación se autorice.
 FUERA = "vf-control-negativo-inexistente"
@@ -169,6 +173,23 @@ debe_funcionar(
     lambda: s3.delete_object(Bucket="bronze", Key=clave),
 )
 
+# Logs de Airflow: leer, escribir y listar, que es lo que hace el S3TaskHandler.
+# La clave es FIJA y se sobrescribe en cada ejecución: la cuenta no puede borrar
+# en este bucket, así que una clave aleatoria dejaría un objeto huérfano por
+# cada pasada.
+CLAVE_LOGS = "_control_permisos/ultimo.txt"
+debe_funcionar(
+    f"PutObject en {LOGS}",
+    lambda: s3.put_object(Bucket=LOGS, Key=CLAVE_LOGS, Body=b"control"),
+)
+debe_funcionar(
+    f"GetObject en {LOGS}", lambda: s3.get_object(Bucket=LOGS, Key=CLAVE_LOGS)
+)
+debe_funcionar(
+    f"ListBucket en {LOGS}",
+    lambda: s3.list_objects_v2(Bucket=LOGS, Prefix="_control_permisos/"),
+)
+
 
 def control_listallmybuckets():
     """s3:ListAllMyBuckets no está en la política, pero el servidor la autoriza.
@@ -183,7 +204,7 @@ def control_listallmybuckets():
     Lo que importa no es si la llamada se autoriza, sino si REVELA algo fuera de
     la política. Eso es lo que se mide aquí: la lista devuelta no puede contener
     ningún bucket que no esté en la política. Si lo contiene, es una fuga y el
-    control falla; si solo trae los cinco, es una divergencia de forma y queda
+    control falla; si solo trae los de la política, es una divergencia de forma y queda
     como aviso en cada ejecución.
 
     Para que la distinción sea medible tiene que existir un bucket fuera de la
@@ -212,17 +233,17 @@ def control_listallmybuckets():
         return
 
     nombres = sorted(b["Name"] for b in r.get("Buckets", []))
-    fuera = [n for n in nombres if n not in BUCKETS]
+    fuera = [n for n in nombres if n not in PERMITIDOS]
     if fuera:
         marcar(
             False,
             etiqueta,
             "PERMITIDO y revela buckets fuera de la política: " + ", ".join(fuera),
         )
-    elif sorted(nombres) == sorted(BUCKETS):
+    elif sorted(nombres) == sorted(PERMITIDOS):
         avisar(
             etiqueta,
-            "permitido; la lista trae solo los cinco de la política. Medido el "
+            "permitido; la lista trae solo los de la política. Medido el "
             "2026-10-03 con un bucket fuera de ella presente: RustFS filtra",
         )
     else:
@@ -246,6 +267,13 @@ debe_denegarse(
 )
 debe_denegarse(
     "GetObject fuera de la política", lambda: s3.get_object(Bucket=FUERA, Key="x")
+)
+# Contra una clave que no existe: si la política lo permitiera, S3 respondería
+# 204 sin borrar nada, y si lo deniega, AccessDenied. Así el negativo no puede
+# destruir un log real aunque la política esté mal.
+debe_denegarse(
+    f"DeleteObject en {LOGS}",
+    lambda: s3.delete_object(Bucket=LOGS, Key="_control_permisos/no-existe.txt"),
 )
 debe_denegarse(
     "PutBucketPolicy en bronze",

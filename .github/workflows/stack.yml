@@ -145,6 +145,12 @@ jobs:
           VF_TIMEOUT_TAREA: "1200"
         run: bash .ci/scripts/load_example.sh "$ENV_FILE"
 
+      # El logging remoto falla en silencio: las tareas corren igual aunque su
+      # log no llegue al bucket. Solo tiene sentido después de ejecutar DAGs.
+      - name: Verificar logs de tareas en el object store
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.ejemplos)
+        run: bash .ci/scripts/verificar_logs_remotos.sh
+
       # ── Diagnóstico ──────────────────────────────────────────────────────
       - name: Volcar estado y logs
         if: failure()

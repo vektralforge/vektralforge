@@ -140,6 +140,12 @@ RUN airflow version && \
     test -f "$SPARK_CONF_DIR/spark-defaults.conf" && \
     echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
 
+# El logging remoto depende del provider amazon. Si una versión futura de la
+# imagen base deja de traerlo y el constraints no lo resuelve, que lo diga el
+# build: en ejecución, Airflow seguiría escribiendo logs en local sin avisar de
+# que no los sube a ningún sitio.
+RUN python -c "from airflow.providers.amazon.aws.log.s3_task_handler import S3RemoteLogIO; print('S3RemoteLogIO disponible')"
+
 # El script de la cadena de conexión NO debe terminar en salto de línea: Airflow
 # no lo recorta y Postgres acaba buscando una base llamada "airflow\n". Costó un
 # arranque fallido descubrirlo; que falle aquí y no en el `db migrate`.

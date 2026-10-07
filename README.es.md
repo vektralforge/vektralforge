@@ -327,6 +327,10 @@ indica `AWS_SHARED_CREDENTIALS_FILE`, y Trino en el catálogo que renderiza al
 arrancar. Solo el servicio `rustfs` y `init_users.sh` —que legítimamente crean
 buckets y cuentas— reciben la raíz.
 
+`vf-pipeline` tiene además acceso al bucket `airflow-logs`, donde Airflow sube
+el log de cada tarea, por `politica-logs-airflow.json`: puede leer, escribir y
+listar, pero no borrar. Las otras dos cuentas no lo ven.
+
 Tampoco se pasan como propiedades de Spark: un `--conf` acaba en la línea de
 comandos de `spark-submit` y en el `ps` del contenedor, aunque el hook lo
 enmascare en el log. Un test del CI verifica que ninguna tarea las reintroduzca
