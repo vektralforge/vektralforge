@@ -39,42 +39,50 @@ jobs:
     name: Plataformas
     runs-on: ubuntu-24.04
     outputs:
-      matriz: ${{ steps.m.outputs.matriz }}
+      arquitecturas: ${{ steps.m.outputs.arquitecturas }}
     steps:
       - id: m
         env:
           PUBLICAR: ${{ inputs.publicar }}
         run: |
           if [ "$PUBLICAR" = "true" ]; then
-            echo 'matriz=[{"arch":"amd64","runner":"ubuntu-24.04"},{"arch":"arm64","runner":"ubuntu-24.04-arm"}]' >> "$GITHUB_OUTPUT"
+            echo 'arquitecturas=["amd64","arm64"]' >> "$GITHUB_OUTPUT"
           else
-            echo 'matriz=[{"arch":"amd64","runner":"ubuntu-24.04"}]' >> "$GITHUB_OUTPUT"
+            echo 'arquitecturas=["amd64"]' >> "$GITHUB_OUTPUT"
           fi
 
   construir:
-    name: ${{ matrix.imagen.nombre }} (${{ matrix.plat.arch }})
+    name: ${{ matrix.imagen }} (${{ matrix.arch }})
     needs: plataformas
     # Runners NATIVOS por arquitectura, sin QEMU. Emular arm64 compilando la
     # imagen de Airflow (pip con ruedas nativas) o resolviendo Maven para Spark
     # multiplica el tiempo por cinco o más, y los runners arm64 son gratuitos
     # para repositorios públicos.
-    runs-on: ${{ matrix.plat.runner }}
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        plat: ${{ fromJSON(needs.plataformas.outputs.matriz) }}
+        arch: ${{ fromJSON(needs.plataformas.outputs.arquitecturas) }}
+        imagen: [airflow, rustfs, hive-metastore, spark, trino, marquez-api, superset]
+        # Marquez solo existe en amd64 upstream. Construirlo para arm64 daba
+        # una imagen etiquetada arm64 con binarios amd64 dentro: en un Mac
+        # funciona por emulación y en un servidor ARM falla con
+        # «exec format error». Se publica solo amd64, que es la verdad.
+        # Si se añade otra imagen solo-amd64, va aquí Y en `unir` (ESPERADOS).
+        exclude:
+          - { imagen: marquez-api, arch: arm64 }
         # `contexto` y `dockerfile` reproducen el bloque `build:` del Compose.
         # Si cambia allí, cambia aquí: stack.yml construye desde el Compose y
         # fallaría distinto que este job, lo que delata la divergencia.
-        imagen:
-          - { nombre: airflow,        contexto: ".",                                  dockerfile: infra/docker-compose/airflow/Dockerfile }
-          - { nombre: rustfs,         contexto: ".",                                  dockerfile: infra/docker-compose/s3/Dockerfile }
-          - { nombre: hive-metastore, contexto: ".",                                  dockerfile: infra/docker-compose/hive/Dockerfile }
-          - { nombre: spark,          contexto: ".",                                  dockerfile: infra/docker-compose/spark/Dockerfile }
-          - { nombre: trino,          contexto: ".",                                  dockerfile: infra/docker-compose/trino/Dockerfile }
-          - { nombre: marquez-api,    contexto: infra/docker-compose/marquez,         dockerfile: infra/docker-compose/marquez/Dockerfile }
-          - { nombre: superset,       contexto: infra/docker-compose/superset,        dockerfile: infra/docker-compose/superset/Dockerfile }
+        include:
+          - { imagen: airflow,        contexto: ".",                          dockerfile: infra/docker-compose/airflow/Dockerfile }
+          - { imagen: rustfs,         contexto: ".",                          dockerfile: infra/docker-compose/s3/Dockerfile }
+          - { imagen: hive-metastore, contexto: ".",                          dockerfile: infra/docker-compose/hive/Dockerfile }
+          - { imagen: spark,          contexto: ".",                          dockerfile: infra/docker-compose/spark/Dockerfile }
+          - { imagen: trino,          contexto: ".",                          dockerfile: infra/docker-compose/trino/Dockerfile }
+          - { imagen: marquez-api,    contexto: infra/docker-compose/marquez, dockerfile: infra/docker-compose/marquez/Dockerfile }
+          - { imagen: superset,       contexto: infra/docker-compose/superset, dockerfile: infra/docker-compose/superset/Dockerfile }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -97,9 +105,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ${{ env.REGISTRO }}/${{ matrix.imagen.nombre }}
+          images: ${{ env.REGISTRO }}/${{ matrix.imagen }}
           labels: |
-            org.opencontainers.image.title=vektralforge-${{ matrix.imagen.nombre }}
+            org.opencontainers.image.title=vektralforge-${{ matrix.imagen }}
             org.opencontainers.image.licenses=Apache-2.0
 
       # La caché va al REGISTRO y no a la de Actions. El repositorio ya
@@ -114,17 +122,17 @@ jobs:
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          context: ${{ matrix.imagen.contexto }}
-          file: ${{ matrix.imagen.dockerfile }}
-          platforms: linux/${{ matrix.plat.arch }}
+          context: ${{ matrix.contexto }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/${{ matrix.arch }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRO }}/${{ matrix.imagen.nombre }}:buildcache-${{ matrix.plat.arch }}
-          cache-to: ${{ inputs.publicar && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max', env.REGISTRO, matrix.imagen.nombre, matrix.plat.arch) || '' }}
+          cache-from: type=registry,ref=${{ env.REGISTRO }}/${{ matrix.imagen }}:buildcache-${{ matrix.arch }}
+          cache-to: ${{ inputs.publicar && format('type=registry,ref={0}/{1}:buildcache-{2},mode=max', env.REGISTRO, matrix.imagen, matrix.arch) || '' }}
           # Al publicar se empuja SOLO por digest, sin etiqueta: el manifiesto
           # multi-arch etiquetado lo crea el job `unir` cuando ambas
           # arquitecturas terminaron. Así nunca existe una etiqueta que apunte a
           # una imagen de una sola arquitectura.
-          outputs: ${{ inputs.publicar && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRO, matrix.imagen.nombre) || '' }}
+          outputs: ${{ inputs.publicar && format('type=image,name={0}/{1},push-by-digest=true,name-canonical=true,push=true', env.REGISTRO, matrix.imagen) || '' }}
           provenance: ${{ inputs.publicar && 'mode=max' || 'false' }}
           sbom: ${{ inputs.publicar }}
 
@@ -140,7 +148,7 @@ jobs:
         if: inputs.publicar
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: digest-${{ matrix.imagen.nombre }}-${{ matrix.plat.arch }}
+          name: digest-${{ matrix.imagen }}-${{ matrix.arch }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -191,10 +199,13 @@ jobs:
         working-directory: /tmp/digests
         env:
           IMAGEN: ${{ env.REGISTRO }}/${{ matrix.nombre }}
+          # Una arquitectura para las imágenes del `exclude` de `construir`
+          # (hoy solo marquez-api), dos para el resto. Mantener en sincronía.
+          ESPERADOS: ${{ matrix.nombre == 'marquez-api' && '1' || '2' }}
         run: |
           set -euo pipefail
           digests=(*)
-          [ "${#digests[@]}" -eq 2 ] || { echo "✗ Se esperaban 2 digests (amd64 + arm64), hay ${#digests[@]}" >&2; exit 1; }
+          [ "${#digests[@]}" -eq "$ESPERADOS" ] || { echo "✗ Se esperaban $ESPERADOS digests, hay ${#digests[@]}" >&2; exit 1; }
 
           etiquetas=()
           while IFS= read -r t; do etiquetas+=(-t "$t"); done \
