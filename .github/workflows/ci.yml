@@ -163,6 +163,10 @@ jobs:
     uses: ./.github/workflows/_imagenes.yml
     with:
       publicar: false
+    # Solo lectura de paquetes: para leer la caché de GHCR, nunca escribirla.
+    permissions:
+      contents: read
+      packages: read
 
   # Resultado único al que apuntar en las reglas de protección de rama: así no
   # hay que actualizarlas cada vez que se añade o renombra un job.

@@ -34,8 +34,10 @@ on:
         type: boolean
         default: true
 
+# packages: read para leer la caché de imágenes en GHCR (ver «Login en GHCR»).
 permissions:
   contents: read
+  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -80,6 +82,15 @@ jobs:
           bash .ci/scripts/init_env.sh < /dev/null
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Sin login, la caché de un paquete privado responde 401 y bake lo trata
+      # como caché vacía, en silencio: el job pasa igual, tardando ~10 min más.
+      - name: Login en GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Se construye DESDE EL COMPOSE con bake, no desde la lista de
       # _imagenes.yml: así lo que se prueba es lo que `make dev-up` construye.
