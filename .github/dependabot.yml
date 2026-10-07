@@ -20,6 +20,21 @@ updates:
           - "apache-airflow-providers-*"
     labels:
       - "dependencies"
+    # Spark 4.2 está BLOQUEADO, no olvidado (ver CHANGELOG y la subida a 4.1.3):
+    # todas las delta-spark desde la 4.2.0 —4.4.1 incluida, comprobado el
+    # 2026-10-07— exigen importlib_metadata<=8.7.1, y el constraints de
+    # Airflow 3.3.0 fija ==9.0.0. Ninguna combinación con Spark 4.2 instala.
+    # Los PR de Dependabot suben de a un sitio por vez sobre ocho, así que
+    # además nunca podrían pasar test_pins_de_spark.py.
+    #
+    # Se dejan pasar los parches de 4.1. Quitar estas líneas —en los TRES
+    # ecosistemas— cuando Airflow suelte el pin o Delta suba su tope, y hacer
+    # la subida a mano en los ocho sitios a la vez.
+    ignore:
+      - dependency-name: "pyspark"
+        versions: [">=4.2"]
+      - dependency-name: "delta-spark"
+        versions: [">=4.2"]
 
   - package-ecosystem: "pip"
     directory: "/spark"
@@ -29,6 +44,12 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    # Spark 4.2 bloqueado: ver la nota en el ecosistema pip de /airflow.
+    ignore:
+      - dependency-name: "pyspark"
+        versions: [">=4.2"]
+      - dependency-name: "delta-spark"
+        versions: [">=4.2"]
 
   # ── Imágenes Docker ────────────────────────────────────────────────────────
   # Un directorio por Dockerfile. Ajustar si la estructura cambia.
@@ -59,6 +80,9 @@ updates:
     ignore:
       - dependency-name: "apache/hive"
       - dependency-name: "rustfs/rustfs"
+      # Spark 4.2 bloqueado: ver la nota en el ecosistema pip de /airflow.
+      - dependency-name: "apache/spark"
+        versions: [">=4.2"]
 
   # Imágenes referenciadas directamente en el Compose: postgres, valkey,
   # openbao, marquez-web y el par de Kafka. Las que se construyen viven en el
