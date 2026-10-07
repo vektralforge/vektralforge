@@ -15,11 +15,17 @@ on:
         type: boolean
         default: false
 
-# Los permisos efectivos son los del workflow que llama: aquí solo se declara
-# el techo. `packages: write` y `attestations` se piden en publicar-imagenes.yml;
-# desde ci.yml llegan recortados a `contents: read`.
-permissions:
-  contents: read
+# SIN bloque `permissions` a propósito. En un workflow reutilizable, declarar
+# permisos aquí no es un techo inocuo: RECORTA los que entrega el llamador.
+# Con `permissions: contents: read` el `packages: write` de
+# publicar-imagenes.yml llegaba anulado, el login funcionaba igual y el push
+# moría con «installation not allowed to Create organization package».
+#
+# Tampoco se declaran por job: pedir aquí `packages: write` haría que el
+# llamador con solo `read` (ci.yml) ni siquiera arrancara. Los permisos los
+# decide cada llamador:
+#   ci.yml                 → contents: read, packages: read
+#   publicar-imagenes.yml  → contents: read, packages: write
 
 env:
   REGISTRO: ghcr.io/vektralforge
