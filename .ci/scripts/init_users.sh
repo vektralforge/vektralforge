@@ -237,8 +237,10 @@ crear_cuenta_s3() {
         if rc admin service-account info vf "$SVC_KEY" >/dev/null 2>&1; then
             rc admin service-account rm vf "$SVC_KEY" >/dev/null
         fi
-        rc admin service-account create vf "$SVC_KEY" "$SVC_SECRET" \
-            --policy "$1" >/dev/null
+        # Las opciones van ANTES del `--` y los posicionales después: un secreto
+        # que empiece por «-» lo tomaría rc como una opción y fallaría con
+        # «unexpected argument», que es lo que pasó en CI.
+        rc admin service-account create --policy "$1" vf -- "$SVC_KEY" "$SVC_SECRET" >/dev/null
         ' _ "$politica" 2>&1); then
         echo "  ✓ $clave"
     else
