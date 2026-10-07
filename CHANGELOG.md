@@ -60,6 +60,17 @@ under **Upgrading**.
   candidatos vivos (Loki, OpenSearch, Vector). Con esto, y con la salida de
   MinIO, **todos los componentes del stack son de licencia permisiva**.
 
+### Fixed
+
+- **`init_users.sh` fallaba una vez de cada ~20 en CI** al crear las cuentas del
+  object store: `init_env.sh` genera las claves con `token_urlsafe`, cuyo
+  alfabeto incluye `-`, y `rc` tomaba como opción un secreto que empezara por
+  guion. `rc` recibe ahora los posicionales después de `--`, y las claves
+  generadas ya no empiezan por guion.
+- **`init_env.sh` sin terminal ya no imprime las contraseñas que genera.** En
+  CI quedaban en el log público del workflow Stack. Eran de un solo uso y el
+  stack del runner solo escucha en loopback, pero no tenían por qué estar ahí.
+
 ### Upgrading
 
 - **Hay que crear el bucket `airflow-logs` y recrear las cuentas de servicio**:

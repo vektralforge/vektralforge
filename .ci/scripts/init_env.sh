@@ -82,7 +82,14 @@ generar_hex() {
 
 generar_password() {
     # token_urlsafe evita caracteres que rompen cadenas de conexión y comandos.
-    python3 -c "import secrets; print(secrets.token_urlsafe(24))"
+    # Pero su alfabeto incluye «-», y una clave que EMPIEZA por guion la toma
+    # como opción cualquier CLI que la reciba como argumento: pasó en CI con
+    # `rc admin service-account create`, una vez de cada 64 por clave. Se
+    # descartan esas. Los consumidores además usan `--`; esto es la segunda red.
+    python3 -c "import secrets
+while (t := secrets.token_urlsafe(24)).startswith('-'):
+    pass
+print(t)"
 }
 
 # ── Preparación ───────────────────────────────────────────────────────────────
@@ -144,7 +151,6 @@ for entrada in "${PASSWORDS[@]}"; do
 
     pendientes=$((pendientes + 1))
     sugerida=$(generar_password)
-    printf '  %s\n    %s\n    [%s]: ' "$clave" "$descripcion" "$sugerida"
 
     # Se lee del terminal para que funcione aunque el script se invoque desde
     # make con la salida redirigida. Comprobar que /dev/tty existe no basta:
@@ -154,10 +160,16 @@ for entrada in "${PASSWORDS[@]}"; do
     { exec 3</dev/tty; } 2>/dev/null && tty_disponible=1
 
     if [ "$tty_disponible" -eq 1 ]; then
+        printf '  %s\n    %s\n    [%s]: ' "$clave" "$descripcion" "$sugerida"
         read -r respuesta <&3 || respuesta=""
         exec 3<&-
     else
-        echo "(sin terminal: se usa el valor generado)"
+        # Sin terminal no hay a quién ofrecerle la clave, y mostrarla solo
+        # sirve para que quede escrita en un log. En CI ese log es PÚBLICO: el
+        # workflow Stack del repositorio imprimía las ocho contraseñas del
+        # runner. Morían con él y el stack escucha solo en loopback, pero no
+        # tienen por qué estar ahí.
+        printf '  %s\n    %s\n    (sin terminal: se usa una generada)\n' "$clave" "$descripcion"
     fi
 
     escribir_valor "$clave" "${respuesta:-$sugerida}"
