@@ -146,6 +146,21 @@ RUN airflow version && \
 # que no los sube a ningún sitio.
 RUN python -c "from airflow.providers.amazon.aws.log.s3_task_handler import S3RemoteLogIO; print('S3RemoteLogIO disponible')"
 
+# plugins/ va DENTRO de la imagen: en Kubernetes no hay host del que montarlo, y
+# los DAGs lo importan (`from http_publico import ...`). No viaja con el
+# GitDagBundle porque Airflow carga plugins/ al arrancar, no por DAG run: un
+# cambio aquí exige reiniciar de todas formas. En Compose se sigue montando
+# encima para editarlo sin reconstruir.
+COPY --chown=airflow:root airflow/plugins/ /opt/airflow/plugins/
+
+# El GitDagBundle necesita el provider y el binario de git. La imagen base trae
+# los dos hoy; si una versión futura deja de hacerlo, que lo diga el build y no
+# el dag-processor al intentar clonar.
+RUN git --version && \
+    python -c "from airflow.providers.git.bundles.git import GitDagBundle; print('GitDagBundle disponible')" && \
+    test -f /opt/airflow/plugins/http_publico.py && \
+    echo "plugins/ presente en la imagen"
+
 # El script de la cadena de conexión NO debe terminar en salto de línea: Airflow
 # no lo recorta y Postgres acaba buscando una base llamada "airflow\n". Costó un
 # arranque fallido descubrirlo; que falle aquí y no en el `db migrate`.

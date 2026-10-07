@@ -134,6 +134,34 @@ def test_dag_tiene_timeout(dagbag, dag_id):
     assert not sin_timeout, f"{dag_id}: tareas sin execution_timeout: {sin_timeout}"
 
 
+@pytest.mark.parametrize("dag_id", sorted(DAGS_ESPERADOS))
+def test_jobs_de_spark_existen_y_son_relativos_al_dag(dagbag, dag_id):
+    """Cada SparkSubmitOperator apunta a un archivo que existe junto al DAG.
+
+    La ruta se resuelve desde el archivo del DAG para que, con un GitDagBundle,
+    el DAG y su job salgan del mismo commit. Aquí se comprueba las dos cosas:
+    que el archivo existe —un job renombrado rompía el DAG solo al ejecutarse,
+    en el driver— y que está dentro del mismo árbol que el DAG, no en una ruta
+    fija del contenedor como /opt/spark/jobs.
+    """
+    from pathlib import Path
+
+    from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+
+    dag = dagbag.dags[dag_id]
+    raiz = Path(dag.fileloc).resolve().parents[2]
+    problemas = []
+    for tarea in dag.tasks:
+        if not isinstance(tarea, SparkSubmitOperator):
+            continue
+        ruta = Path(tarea.application)
+        if not ruta.is_file():
+            problemas.append(f"{tarea.task_id}: no existe {ruta}")
+        elif raiz not in ruta.resolve().parents:
+            problemas.append(f"{tarea.task_id}: {ruta} está fuera del repositorio del DAG")
+    assert not problemas, "\n".join(problemas)
+
+
 # ── Fecha de ejecución ────────────────────────────────────────────────────────
 
 

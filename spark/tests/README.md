@@ -19,7 +19,7 @@ cluster y lo que no.
 
 `conftest.py` pone `spark/jobs` en el `sys.path`, que es lo que hace Python al
 ejecutar un script: dentro del contenedor,
-`spark-submit /opt/spark/jobs/bronze_arclim.py` resuelve así el
+`spark-submit <repo>/spark/jobs/bronze_arclim.py` resuelve así el
 `import transformaciones`.
 
 ## Qué se cubre

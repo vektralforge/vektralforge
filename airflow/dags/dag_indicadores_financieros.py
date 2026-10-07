@@ -17,6 +17,7 @@ import json
 import logging
 import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
@@ -31,6 +32,15 @@ log = logging.getLogger(__name__)
 
 # ─── Configuración ────────────────────────────────────────────────────────────
 MINDICADOR_BASE = "https://mindicador.cl/api"
+
+# Los jobs de Spark se resuelven RELATIVOS A ESTE ARCHIVO y no con una ruta fija
+# como /opt/spark/jobs. Con un GitDagBundle, cada versión del repositorio vive
+# en su propio directorio y cada DAG run queda atado al commit con que se creó:
+# resolviendo desde __file__, el DAG de ese commit lanza el job de ese mismo
+# commit. Con una ruta fija, un rerun de un run viejo lanzaría el job de hoy.
+# En Compose funciona igual porque dags/ y jobs/ se montan con la estructura
+# del repositorio (ver docker-compose.yml).
+JOBS_SPARK = Path(__file__).resolve().parents[2] / "spark" / "jobs"
 TIMEOUT = 30  # segundos por request
 S3_ENDPOINT = os.environ["S3_ENDPOINT"]
 # Las credenciales NO están en el entorno. El entrypoint del contenedor las
@@ -291,7 +301,7 @@ with DAG(
         # Sin esto el submit va con el nombre por defecto del operador,
         # "arrow-spark", que no dice nada en la UI de Spark.
         name="vektralforge-bronze-indicadores",
-        application="/opt/spark/jobs/bronze_indicadores.py",
+        application=str(JOBS_SPARK / "bronze_indicadores.py"),
         application_args=[FECHA],
         # Sin --packages: delta-spark y delta-storage ya están en
         # /opt/spark/jars del cluster. Descargarlos desde Maven en cada
