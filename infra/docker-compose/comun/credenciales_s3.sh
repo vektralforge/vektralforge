@@ -29,7 +29,7 @@
 #   S3_SECRET_KEY_FILE  ruta del secreto montado
 #   VF_CORE_SITE           destino del core-site.xml   (vacío: no se genera)
 #   VF_CORE_SITE_BASE      plantilla con las propiedades fijas
-#   VF_AWS_CREDENTIALS     destino del archivo INI     (vacío: no se genera)
+#   VF_AWS_CREDENTIALS_FILE destino del archivo INI     (vacío: no se genera)
 
 set -euo pipefail
 
@@ -37,7 +37,7 @@ set -euo pipefail
 : "${S3_SECRET_KEY_FILE:=/run/secrets/s3_secret_key}"
 : "${VF_CORE_SITE:=}"
 : "${VF_CORE_SITE_BASE:=/opt/vektralforge/conf/core-site.xml.base}"
-: "${VF_AWS_CREDENTIALS:=}"
+: "${VF_AWS_CREDENTIALS_FILE:=}"
 
 if [ -z "${S3_ACCESS_KEY:-}" ]; then
   echo "ERROR: falta S3_ACCESS_KEY." >&2
@@ -116,16 +116,16 @@ if [ -n "$VF_CORE_SITE" ]; then
 fi
 
 # ── credentials (INI del SDK de AWS) ─────────────────────────────────────────
-if [ -n "$VF_AWS_CREDENTIALS" ]; then
-  DIRECTORIO="$(dirname "$VF_AWS_CREDENTIALS")"
+if [ -n "$VF_AWS_CREDENTIALS_FILE" ]; then
+  DIRECTORIO="$(dirname "$VF_AWS_CREDENTIALS_FILE")"
   mkdir -p "$DIRECTORIO"
   chmod 700 "$DIRECTORIO"
 
-  TMP="${VF_AWS_CREDENTIALS}.tmp.$$"
+  TMP="${VF_AWS_CREDENTIALS_FILE}.tmp.$$"
   printf '# Generado en el arranque por credenciales_s3.sh. No editar.\n[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' \
     "$S3_ACCESS_KEY" "$S3_SECRET_KEY" > "$TMP"
   chmod 600 "$TMP"
-  mv -f "$TMP" "$VF_AWS_CREDENTIALS"
+  mv -f "$TMP" "$VF_AWS_CREDENTIALS_FILE"
 
-  echo "→ credenciales de boto3: perfil default en $VF_AWS_CREDENTIALS"
+  echo "→ credenciales de boto3: perfil default en $VF_AWS_CREDENTIALS_FILE"
 fi

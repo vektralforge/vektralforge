@@ -1,5 +1,11 @@
 # Marquez solo publica imágenes amd64. En Apple Silicon corre bajo emulación.
 #
+# La arquitectura NO se fija aquí con `FROM --platform=linux/amd64`: eso hacía
+# que un build para arm64 produjera una imagen etiquetada arm64 con binarios
+# amd64 dentro —y BuildKit lo marcaba (FromPlatformFlagConstDisallowed)—. La
+# fijan quienes construyen: `platform: linux/amd64` en docker-compose.yml, y
+# CI excluye marquez-api de arm64 (.github/workflows/_imagenes.yml).
+#
 # 0.51.1 y no `latest`. Eran la misma imagen el día que se fijó —mismo digest,
 # sha256:0721c976…— así que esto no cambia nada hoy; cambia que mañana no se
 # mueva sola. `latest` hacía además que la versión no se pudiera saber sin
@@ -9,7 +15,7 @@
 # Va junto con marquezproject/marquez-web en docker-compose.yml: la UI habla
 # con la API por su REST y las dos versiones se publican en pareja. Subir una
 # sola es pedir un desajuste silencioso.
-FROM --platform=linux/amd64 marquezproject/marquez:0.51.1
+FROM marquezproject/marquez:0.51.1
 
 # La imagen oficial usa WORKDIR /usr/src/app y arranca con ./entrypoint.sh
 COPY marquez.yml.template /usr/src/app/marquez.yml.template

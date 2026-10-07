@@ -122,7 +122,7 @@ USER airflow
 
 ENV VF_CORE_SITE=/opt/vektralforge/spark-conf/core-site.xml
 ENV VF_CORE_SITE_BASE=/opt/vektralforge/conf/core-site.xml.base
-ENV VF_AWS_CREDENTIALS=/opt/vektralforge/aws/credentials
+ENV VF_AWS_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 ENV AWS_SHARED_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 
 RUN airflow version && \

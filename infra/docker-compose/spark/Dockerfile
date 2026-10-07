@@ -123,7 +123,7 @@ RUN chmod 755 /opt/vektralforge/bin/credenciales_s3.sh \
 
 ENV VF_CORE_SITE=/opt/spark/conf/core-site.xml
 ENV VF_CORE_SITE_BASE=/opt/vektralforge/conf/core-site.xml.base
-ENV VF_AWS_CREDENTIALS=/opt/vektralforge/aws/credentials
+ENV VF_AWS_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 ENV AWS_SHARED_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 
 # El contenedor corre como spark (UID 185) y su home pertenece a root en la
