@@ -66,8 +66,12 @@ cd "$REPO_ROOT"
 pre-commit install
 
 # ── 7. detect-secrets baseline ───────────────────────────────────────────────
+# --exclude-files se pasa aquí y no solo en detect_secrets.sh: el baseline
+# guarda DENTRO los filtros con los que se generó. Omitirlo en la creación
+# inicial deja un archivo que detect_secrets.sh rechaza en su primera corrida,
+# por el mismo motivo que documenta su propio encabezado.
 _info "Initializing detect-secrets baseline"
-detect-secrets scan > "$REPO_ROOT/.secrets.baseline"
+detect-secrets scan --exclude-files '\.secrets\.baseline$' > "$REPO_ROOT/.secrets.baseline"
 
 # ── 8. .venv en .gitignore ───────────────────────────────────────────────────
 if ! grep -q "^\.venv" "$REPO_ROOT/.gitignore" 2>/dev/null; then

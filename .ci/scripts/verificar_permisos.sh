@@ -30,9 +30,13 @@
 # politica-datos.json, de modo que lo que se verifica es que ESA política se
 # aplica; la de airflow-logs es solo de vf-pipeline. Que vf-hive y vf-trino NO
 # vean airflow-logs no se mide aquí: haría falta su credencial, que este
-# contenedor no tiene. Que vf-hive y vf-trino estén atadas a ella lo demuestra el pipeline:
-# si no lo estuvieran, el metastore no habría creado sus prefijos ni Trino
-# podría leer, y `make dev-load-example` no terminaría.
+# contenedor no tiene. Que vf-hive y vf-trino estén atadas a ella lo demuestra
+# el pipeline: si no lo estuvieran, el metastore no habría creado sus
+# prefijos ni Trino podría leer, y `make dev-load-example` no terminaría.
+#
+# Log: mismo formato [INFO]/[ERROR] en inglés que el resto de los scripts —
+# homologado también dentro del programa Python embebido, ver su propio
+# encabezado.
 
 set -uo pipefail
 
@@ -40,7 +44,7 @@ C_AIRFLOW=docker-compose-airflow-webserver-1
 CUENTA_ESPERADA="${1:-vf-pipeline}"
 
 if ! docker inspect --format='{{.State.Status}}' "$C_AIRFLOW" 2>/dev/null | grep -q running; then
-    echo "  ✗ $C_AIRFLOW no está corriendo. Ejecuta: make dev-up" >&2
+    echo "[ERROR] $C_AIRFLOW is not running. Run: make dev-up" >&2
     exit 1
 fi
 

@@ -11,6 +11,8 @@
 # haciéndole la pregunta que de verdad importa.
 #
 # Uso: esperar_stack.sh [timeout_segundos]   (por defecto 600)
+#
+# Log: mismo formato [INFO]/[ERROR] en inglés que el resto de los scripts.
 
 set -uo pipefail
 
@@ -53,7 +55,7 @@ while [ ${#pendientes[@]} -gt 0 ]; do
     for c in "${pendientes[@]}"; do
         nombre="${c%%|*}"; cmd="${c#*|}"
         if $cmd; then
-            echo "  ✓ $nombre ($(( $(date +%s) - inicio ))s)"
+            echo "[INFO]  $nombre ($(( $(date +%s) - inicio ))s)"
         else
             siguen+=("$c")
         fi
@@ -63,11 +65,11 @@ while [ ${#pendientes[@]} -gt 0 ]; do
 
     if [ $(( $(date +%s) - inicio )) -ge "$TIMEOUT" ]; then
         echo ""
-        echo "  ✗ Tras ${TIMEOUT}s siguen sin estar listos:" >&2
+        echo "[ERROR] After ${TIMEOUT}s, still not ready:" >&2
         for c in "${pendientes[@]}"; do echo "      ${c%%|*}" >&2; done
         exit 1
     fi
     sleep 5
 done
 
-echo "  ✓ Stack listo en $(( $(date +%s) - inicio ))s"
+echo "[INFO]  Stack ready in $(( $(date +%s) - inicio ))s"
