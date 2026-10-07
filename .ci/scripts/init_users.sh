@@ -285,6 +285,12 @@ PY
         return
     fi
 
+    # mktemp crea el archivo con 600 y `docker cp` conserva el modo: dentro del
+    # contenedor RustFS no corre como root y no podría leerlo («Failed to read
+    # policy file ... Permission denied»). La política no es un secreto, así que
+    # queda con los mismos 644 que tienen los archivos del repositorio.
+    chmod 644 "$pipeline"
+
     if ! docker cp "$datos" "$C_S3:/tmp/politica-datos.json" >/dev/null 2>&1 ||
        ! docker cp "$pipeline" "$C_S3:/tmp/politica-pipeline.json" >/dev/null 2>&1; then
         rm -f "$pipeline"
