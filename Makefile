@@ -6,7 +6,7 @@
 .PHONY: help check-env check-python \
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
-        dev-verificar-permisos \
+        dev-verificar-permisos dev-verificar-logs \
         lint-dags test-dags lint-spark test-spark lint-sql \
         lint-all test-all detect-secrets auditar-historial auditar-identificadores \
         deploy-staging deploy-prod
@@ -173,6 +173,12 @@ dev-verificar-permisos: check-env
 	@echo "→ Verificando que la cuenta del pipeline esté acotada..."
 	@bash .ci/scripts/verificar_permisos.sh
 
+# Los logs de las tareas van al bucket airflow-logs. Si no llegan, Airflow no
+# avisa: las tareas corren igual. Tiene sentido después de dev-load-example.
+dev-verificar-logs: check-env
+	@echo "→ Verificando que los logs de las tareas lleguen al object store..."
+	@bash .ci/scripts/verificar_logs_remotos.sh
+
 # ── Lint y tests ──────────────────────────────────────────────────────────────
 
 lint-dags:
@@ -242,6 +248,7 @@ help:
 	@echo "    make dev-reset-hard       Reset extremo (borra volúmenes y reconstruye imágenes)"
 	@echo "    make dev-load-example     Carga los pipelines de ejemplo y los dashboards"
 	@echo "    make dev-verificar-permisos  Comprueba que la cuenta del pipeline esté acotada"
+	@echo "    make dev-verificar-logs   Comprueba que los logs de las tareas lleguen al bucket"
 	@echo ""
 	@echo "  Calidad de código:"
 	@echo "    make lint-all             Lint completo (Ruff + sqlfluff)"
