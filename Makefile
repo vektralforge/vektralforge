@@ -6,7 +6,7 @@
 .PHONY: help check-env check-python \
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
-        dev-verificar-permisos dev-verificar-logs \
+        dev-verificar-permisos dev-verificar-logs dev-bundle-git \
         lint-dags test-dags lint-spark test-spark lint-sql \
         lint-all test-all detect-secrets auditar-historial auditar-identificadores \
         deploy-staging deploy-prod
@@ -166,6 +166,20 @@ dev-load-example: check-env
 	@echo ""
 	@bash .ci/scripts/load_example.sh $(ENV_FILE)
 
+# Los DAGs como llegarían en Kubernetes: desde un GitDagBundle que clona el
+# repositorio público, en vez del directorio montado. Es una prueba, no el modo
+# de desarrollo; `make dev-up` vuelve al montaje. Ver compose.bundle-git.yml.
+# La ref tiene que estar publicada en GitHub.
+dev-bundle-git: check-env
+	@echo "→ DAGs desde GitDagBundle (ref: $(or $(VF_BUNDLE_REF),develop))..."
+	VF_BUNDLE_REF=$(VF_BUNDLE_REF) $(COMPOSE) -f infra/docker-compose/compose.bundle-git.yml \
+		--env-file $(ENV_FILE) up -d airflow-dag-processor airflow-scheduler airflow-webserver
+	@echo ""
+	@echo "  Cada DAG run registra el commit con que se creó:"
+	@echo "    $(COMPOSE) --env-file $(ENV_FILE) exec postgres sh -c \\"
+	@echo "      'psql -U \$$POSTGRES_USER -d airflow -c \"select dag_id, run_id, bundle_name, bundle_version from dag_run order by id desc limit 5\"'"
+	@echo "  Para volver al directorio montado: make dev-up"
+
 # El §2.9 dio a cada consumidor una cuenta acotada en vez de la raíz. Un permiso
 # de más no da síntomas —el stack funciona igual—, así que la única forma de
 # saberlo es intentarlo. Necesita el stack levantado.
@@ -249,6 +263,7 @@ help:
 	@echo "    make dev-load-example     Carga los pipelines de ejemplo y los dashboards"
 	@echo "    make dev-verificar-permisos  Comprueba que la cuenta del pipeline esté acotada"
 	@echo "    make dev-verificar-logs   Comprueba que los logs de las tareas lleguen al bucket"
+	@echo "    make dev-bundle-git       DAGs desde un GitDagBundle (VF_BUNDLE_REF=<rama|tag>)"
 	@echo ""
 	@echo "  Calidad de código:"
 	@echo "    make lint-all             Lint completo (Ruff + sqlfluff)"
