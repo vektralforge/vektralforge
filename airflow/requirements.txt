@@ -32,6 +32,13 @@ apache-airflow-providers-microsoft-mssql
 # providers: la elige el archivo de constraints. urllib3 viene con requests.
 requests
 
+# ── DAGs desde Git ───────────────────────────────────────────────────────────
+# Trae el GitDagBundle: en Kubernetes los DAGs y sus jobs de Spark se clonan del
+# repositorio en vez de montarse desde el host, y cada DAG run queda atado al
+# commit con que se creó. La imagen base ya lo trae (extra «git»); se declara
+# por lo mismo que requests. La versión la fija el constraints: 0.4.0 en 3.3.0.
+apache-airflow-providers-git
+
 # ── Secretos ─────────────────────────────────────────────────────────────────
 hvac
 
