@@ -54,6 +54,32 @@ x-airflow-common: &airflow-common
     # contenedor, así que es aquí donde se resuelve.
     HIVE_METASTORE_URIS: thrift://hive-metastore:9083
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    # ── Logs de tareas en el object store ───────────────────────────────────
+    #
+    # Cada tarea sube su log al bucket airflow-logs al terminar, y la UI lo lee
+    # de ahí. Antes los tres contenedores de Airflow compartían un volumen de
+    # logs, que en Kubernetes exige un volumen ReadWriteMany: local-path, el de
+    # K3s, no lo es. Con los logs en el object store cada contenedor solo
+    # necesita su directorio local mientras la tarea corre.
+    #
+    # La conexión no lleva credenciales: sin login ni password, el hook de AWS
+    # cae en la cadena por defecto de boto3, que encuentra el INI de
+    # AWS_SHARED_CREDENTIALS_FILE con la cuenta vf-pipeline. Es la única de las
+    # tres cuentas con acceso a airflow-logs (ver init_users.sh), y solo puede
+    # leer, escribir y listar: borrar no. Sobrescribir sí puede —S3 no distingue
+    # una cosa de otra sin versionado—, así que esto no es un registro a prueba
+    # de manipulación.
+    AIRFLOW__LOGGING__REMOTE_LOGGING: "True"
+    AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: s3://airflow-logs
+    AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: s3_logs
+    AIRFLOW__LOGGING__DELETE_LOCAL_LOGS: "True"
+    AIRFLOW_CONN_S3_LOGS: '{"conn_type": "aws", "extra": {"endpoint_url": "${S3_ENDPOINT}", "region_name": "us-east-1", "config_kwargs": {"signature_version": "s3v4", "s3": {"addressing_style": "path"}}}}'
+    # Mientras una tarea corre, su log todavía no está en el bucket: la UI se lo
+    # pide al servidor de logs del scheduler (puerto 8793), que lo busca por el
+    # hostname que la tarea registró. Con la IP en vez del hostname la búsqueda
+    # funciona igual en Compose y en Kubernetes, donde el hostname de un pod no
+    # resuelve desde otro.
+    AIRFLOW__CORE__HOSTNAME_CALLABLE: airflow.utils.net.get_host_ip_address
     AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: "true"
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
@@ -71,7 +97,6 @@ x-airflow-common: &airflow-common
   volumes:
     - ../../airflow/dags:/opt/airflow/dags
     - ../../airflow/plugins:/opt/airflow/plugins
-    - airflow-logs:/opt/airflow/logs
     - ../../spark/jobs:/opt/spark/jobs
     # Caché de Ivy: sin esto, spark-submit vuelve a descargar las dependencias
     # de Delta desde Maven en cada ejecución de tarea.
@@ -409,7 +434,6 @@ services:
     volumes:
       - ../../airflow/dags:/opt/airflow/dags
       - ../../airflow/plugins:/opt/airflow/plugins
-      - airflow-logs:/opt/airflow/logs
       - ../../spark/jobs:/opt/spark/jobs
     depends_on:
       postgres:
@@ -528,5 +552,4 @@ secrets:
 volumes:
   postgres-data:
   s3-data:
-  airflow-logs:
   ivy-cache:

@@ -331,6 +331,10 @@ by `AWS_SHARED_CREDENTIALS_FILE`, and Trino in the catalogue it renders at
 startup. Only the `rustfs` service and `init_users.sh` — which legitimately create
 buckets and accounts — receive the root credentials.
 
+`vf-pipeline` can also reach the `airflow-logs` bucket, where Airflow uploads
+each task's log, through `politica-logs-airflow.json`: read, write and list, but
+not delete. The other two accounts cannot see it.
+
 They are not passed as Spark properties either: a `--conf` ends up on the
 `spark-submit` command line and in the container's `ps`, even though the hook
 masks it in the log. A CI test verifies that no task reintroduces them into the

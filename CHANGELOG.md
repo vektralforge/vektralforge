@@ -14,6 +14,15 @@ under **Upgrading**.
 
 ### Changed
 
+- **Los logs de las tareas de Airflow van al object store.** Cada tarea sube su
+  log al bucket `airflow-logs` al terminar y la UI lo lee de ahí; mientras
+  corre, lo sirve el servidor de logs del scheduler. Desaparece el volumen
+  `airflow-logs` que compartían los tres contenedores de Airflow, que en
+  Kubernetes habría exigido un volumen ReadWriteMany. Solo `vf-pipeline` tiene
+  acceso al bucket, para leer, escribir y listar, no para borrar.
+  `apache-airflow-providers-amazon` pasa a declararse: la nota que lo excluía
+  por SQLAlchemy 2.x ya no aplicaba.
+
 - **Valkey `9.1` sustituye a Redis como caché de Superset.** El #72 había subido
   Redis de 7.2 a 8.0 como un bump de Dependabot más, y con él la licencia pasó
   de BSD-3-Clause a RSALv2/SSPLv1/AGPLv3 mientras la documentación seguía
@@ -52,6 +61,13 @@ under **Upgrading**.
   MinIO, **todos los componentes del stack son de licencia permisiva**.
 
 ### Upgrading
+
+- **Hay que crear el bucket `airflow-logs` y recrear las cuentas de servicio**:
+  `bash .ci/scripts/init_users.sh infra/docker-compose/.env buckets` y luego lo
+  mismo con `cuentas`, o `make dev-reset`. Sin el bucket, Airflow corre igual pero no
+  puede subir los logs y la UI no los encuentra al terminar la tarea. Los logs
+  anteriores se quedan en el volumen viejo, que ya no se monta; se borra con
+  `docker volume rm docker-compose_airflow-logs`.
 
 - **Hay que renombrar las claves del `.env`.** Compose interpola `${S3_ROOT_USER}`
   directamente, así que un `.env` con nombres `MINIO_*` deja el stack sin
