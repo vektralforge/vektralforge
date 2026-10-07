@@ -49,13 +49,13 @@ CLAVES_HEX=(
 # Contraseñas de servicio: se ofrece una generada, editable.
 declare -a PASSWORDS=(
     "POSTGRES_PASSWORD|PostgreSQL database"
-    "MINIO_ROOT_PASSWORD|MinIO console and API"
+    "S3_ROOT_PASSWORD|object store console and API"
     "AIRFLOW_ADMIN_PASSWORD|Airflow admin user"
     "SUPERSET_ADMIN_PASSWORD|Superset admin user"
     "OPENBAO_TOKEN|OpenBao root token"
-    "MINIO_PIPELINE_SECRET_KEY|MinIO account for Airflow and Spark"
-    "MINIO_HIVE_SECRET_KEY|MinIO account for the metastore"
-    "MINIO_TRINO_SECRET_KEY|MinIO account for Trino"
+    "S3_PIPELINE_SECRET_KEY|object store account for Airflow and Spark"
+    "S3_HIVE_SECRET_KEY|object store account for the metastore"
+    "S3_TRINO_SECRET_KEY|object store account for Trino"
 )
 
 # Valores de la plantilla que cuentan como «sin definir».

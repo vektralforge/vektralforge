@@ -3,11 +3,12 @@
 # Requisitos: Python 3.12, Docker Compose v2, GNU Make
 # Variables de entorno: infra/docker-compose/.env (ver .env.example)
 
-.PHONY: help check-env \
+.PHONY: help check-env check-deps \
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
+        dev-verificar-permisos \
         lint-dags test-dags lint-spark test-spark lint-sql \
-        lint-all test-all detect-secrets auditar-historial \
+        lint-all test-all detect-secrets auditar-historial auditar-identificadores \
         deploy-staging deploy-prod
 
 .DEFAULT_GOAL := help
@@ -16,7 +17,7 @@ COMPOSE  = docker compose -f infra/docker-compose/docker-compose.yml
 ENV_FILE = infra/docker-compose/.env
 
 # Variables que deben existir y tener valor en el .env
-REQUIRED_VARS = POSTGRES_USER POSTGRES_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD
+REQUIRED_VARS = POSTGRES_USER POSTGRES_PASSWORD S3_ROOT_USER S3_ROOT_PASSWORD
 
 # ── Verificaciones ────────────────────────────────────────────────────────────
 #
@@ -43,9 +44,9 @@ check-env:
 		echo "  the containers start with unexpanded credentials and Postgres"; \
 		echo "  refuses the connection about ninety seconds later."; \
 		echo ""; \
-		echo "    cp .env.example $(ENV_FILE)"; \
+		echo "    make init-env"; \
 		echo ""; \
-		echo "  Then edit the values for your environment."; \
+		echo "  Generates $(ENV_FILE) with keys and offers a password per service."; \
 		echo ""; \
 		exit 1; \
 	fi
@@ -64,13 +65,37 @@ check-env:
 	@echo "[INFO]  $(ENV_FILE) ... OK"
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
+#
+# `check-deps` corre .ci/scripts/check_deps.sh standalone (ya soporta ese modo,
+# ver su propio encabezado): detecta el sistema, revisa Python 3.12, venv, pip,
+# git, make, Homebrew/gestor de paquetes y Docker+Compose, e instala lo
+# instalable con confirmación. `setup` NO lo lista como prerrequisito porque
+# setup.sh ya lo sourcea y llama a su main() internamente (para quedarse con
+# PYTHON_BIN exportado) — listarlo también acá lo correría dos veces seguidas.
+#
+# `init-env`, en cambio, no tenía NINGÚN chequeo: era el primer comando de la
+# secuencia documentada (`make init-env → make setup → ...`) y el único que
+# podía fallar con un error de bajo nivel de `openssl`/`sed` en vez de una
+# explicación. Con este prerrequisito, falta de dependencias (Docker, git,
+# Python, etc.) se reporta igual de claro desde el primer comando.
+#
+# Lo que esto NO resuelve: Xcode Command Line Tools en una Mac que no las
+# tiene todavía. `make` mismo —igual que `git`, `cc`, `clang`— es un binario
+# "shim" de Xcode CLT: el sistema operativo intercepta su primera invocación
+# y dispara el diálogo de instalación ANTES de que Make llegue a leer una sola
+# línea de este archivo, prerrequisitos incluidos. Ningún target ni receta
+# puede interceptar eso — ocurre un nivel por debajo de Make. Sigue siendo un
+# prerrequisito manual de verdad, documentado como paso 0 (antes de cualquier
+# `make`): instalar las CLT con `xcode-select --install`.
+check-deps:
+	@bash .ci/scripts/check_deps.sh
 
 setup: check-env
 	@echo "[INFO]  Running setup"
 	@bash .ci/scripts/setup.sh
 
 # ── Crea $(ENV_FILE) con claves generadas ─────────────────────────────────────────────────────────────────────
-init-env:
+init-env: check-deps
 	@bash .ci/scripts/init_env.sh
 
 # ── Stack local ───────────────────────────────────────────────────────────────
@@ -102,7 +127,7 @@ dev-up: check-env dev-build
 	@echo "[INFO]  Stack available at:"
 	@echo "    Airflow  → http://localhost:8090"
 	@echo "    Trino    → http://localhost:8081"
-	@echo "    MinIO    → http://localhost:9001"
+	@echo "    RustFS   → http://localhost:9001"
 	@echo "    Superset → http://localhost:8088"
 	@echo "    Marquez  → http://localhost:9100"
 	@echo "    OpenBao  → http://localhost:8200"
@@ -161,6 +186,13 @@ dev-load-example: check-env
 	@echo ""
 	@bash .ci/scripts/load_example.sh $(ENV_FILE)
 
+# El §2.9 dio a cada consumidor una cuenta acotada en vez de la raíz. Un permiso
+# de más no da síntomas —el stack funciona igual—, así que la única forma de
+# saberlo es intentarlo. Necesita el stack levantado.
+dev-verificar-permisos: check-env
+	@echo "[INFO]  Checking that the pipeline account is scoped"
+	@bash .ci/scripts/verificar_permisos.sh
+
 # ── Lint y tests ──────────────────────────────────────────────────────────────
 
 lint-dags:
@@ -193,6 +225,12 @@ detect-secrets:
 auditar-historial:
 	@bash .ci/scripts/auditar_historial.sh
 
+# Segundo modo del mismo guion. La lista de términos vive en
+# .ci/identificadores-cliente.txt, que no se versiona; sin ella corren igual los
+# patrones estructurales (IPs privadas, hosts internos, registros privados).
+auditar-identificadores:
+	@bash .ci/scripts/auditar_historial.sh identificadores
+
 # ── Deploy ────────────────────────────────────────────────────────────────────
 
 deploy-staging:
@@ -213,8 +251,9 @@ help:
 	@echo "  VektralForge — available commands"
 	@echo ""
 	@echo "  Setup and local stack:"
+	@echo "    make check-deps           Checks/installs system dependencies (also run by init-env)"
 	@echo "    make setup                Creates .venv (Python 3.12) and installs dependencies"
-	@echo "    make init-env             Creates $(ENV_FILE) with generated keys"
+	@echo "    make init-env             Checks dependencies, then creates $(ENV_FILE) with generated keys"
 	@echo "    make dev-up               Starts the stack"
 	@echo "    make dev-down             Stops the stack"
 	@echo "    make dev-ps               Container status"
@@ -223,19 +262,27 @@ help:
 	@echo "    make dev-reset            Full reset (deletes volumes, recreates users)"
 	@echo "    make dev-reset-hard       Extreme reset (deletes volumes and rebuilds images)"
 	@echo "    make dev-load-example     Loads the sample pipelines and dashboards"
+	@echo "    make dev-verificar-permisos  Checks that the pipeline account is scoped"
 	@echo ""
 	@echo "  Code quality:"
 	@echo "    make lint-all             Full lint (Ruff + sqlfluff)"
 	@echo "    make test-all             Full tests"
 	@echo "    make detect-secrets       Credential scan (working tree)"
-	@echo "    make auditar-historial    Credential scan (git history)"
+	@echo "    make auditar-historial    Credentials and identifiers (git history)"
+	@echo "    make auditar-identificadores  Only external-infrastructure identifiers"
 	@echo ""
 	@echo "  Deploy — PLANNED, not implemented:"
 	@echo "    make deploy-staging       Fails explaining what's missing"
 	@echo "    make deploy-prod          Same"
 	@echo ""
 	@echo "  First run:"
-	@echo "    cp .env.example $(ENV_FILE)"
+	@echo "    macOS only: if this machine has never run 'make', 'git' or similar"
+	@echo "    tools, install Xcode Command Line Tools FIRST — xcode-select --install"
+	@echo "    'make' itself is gated by them; without CLT it won't even start, so"
+	@echo "    this text can't appear on screen to say so. Nothing below runs until"
+	@echo "    that's done."
+	@echo ""
+	@echo "    make init-env             Generates $(ENV_FILE), offers a password per service"
 	@echo "    make setup"
 	@echo "    make dev-up"
 	@echo "    make dev-load-example"

@@ -33,8 +33,8 @@ get_var() {
 }
 
 POSTGRES_USER=$(get_var POSTGRES_USER)
-MINIO_USER=$(get_var MINIO_ROOT_USER)
-MINIO_PASS=$(get_var MINIO_ROOT_PASSWORD)
+S3_ROOT_USER_VAL=$(get_var S3_ROOT_USER)
+S3_ROOT_PASS_VAL=$(get_var S3_ROOT_PASSWORD)
 AF_USER=$(get_var AIRFLOW_ADMIN_USER)
 AF_PASS=$(get_var AIRFLOW_ADMIN_PASSWORD)
 AF_EMAIL=$(get_var AIRFLOW_ADMIN_EMAIL)
@@ -43,14 +43,14 @@ SS_PASS=$(get_var SUPERSET_ADMIN_PASSWORD)
 SS_EMAIL=$(get_var SUPERSET_ADMIN_EMAIL)
 OB_TOKEN=$(get_var OPENBAO_TOKEN)
 
-# Cuentas de servicio de MinIO. Los identificadores no son secretos; llevan
-# valor por defecto para que un .env antiguo no rompa el arranque.
-PIPELINE_KEY=$(get_var MINIO_PIPELINE_ACCESS_KEY)
-PIPELINE_SECRET=$(get_var MINIO_PIPELINE_SECRET_KEY)
-HIVE_KEY=$(get_var MINIO_HIVE_ACCESS_KEY)
-HIVE_SECRET=$(get_var MINIO_HIVE_SECRET_KEY)
-TRINO_KEY=$(get_var MINIO_TRINO_ACCESS_KEY)
-TRINO_SECRET=$(get_var MINIO_TRINO_SECRET_KEY)
+# Cuentas de servicio del object store. Los identificadores no son secretos;
+# llevan valor por defecto para que un .env antiguo no rompa el arranque.
+PIPELINE_KEY=$(get_var S3_PIPELINE_ACCESS_KEY)
+PIPELINE_SECRET=$(get_var S3_PIPELINE_SECRET_KEY)
+HIVE_KEY=$(get_var S3_HIVE_ACCESS_KEY)
+HIVE_SECRET=$(get_var S3_HIVE_SECRET_KEY)
+TRINO_KEY=$(get_var S3_TRINO_ACCESS_KEY)
+TRINO_SECRET=$(get_var S3_TRINO_SECRET_KEY)
 PIPELINE_KEY="${PIPELINE_KEY:-vf-pipeline}"
 HIVE_KEY="${HIVE_KEY:-vf-hive}"
 TRINO_KEY="${TRINO_KEY:-vf-trino}"
@@ -67,13 +67,13 @@ OB_TOKEN="${OB_TOKEN:-dev-root-token}"
 check_required() {
     [ -n "$2" ] || { echo "[ERROR] $1 missing in $ENV_FILE" >&2; exit 1; }
 }
-check_required MINIO_ROOT_USER "$MINIO_USER"
-check_required MINIO_ROOT_PASSWORD "$MINIO_PASS"  # pragma: allowlist secret
+check_required S3_ROOT_USER "$S3_ROOT_USER_VAL"
+check_required S3_ROOT_PASSWORD "$S3_ROOT_PASS_VAL"  # pragma: allowlist secret
 check_required AIRFLOW_ADMIN_PASSWORD "$AF_PASS"  # pragma: allowlist secret
 check_required SUPERSET_ADMIN_PASSWORD "$SS_PASS"  # pragma: allowlist secret
-check_required MINIO_PIPELINE_SECRET_KEY "$PIPELINE_SECRET"  # pragma: allowlist secret
-check_required MINIO_HIVE_SECRET_KEY "$HIVE_SECRET"  # pragma: allowlist secret
-check_required MINIO_TRINO_SECRET_KEY "$TRINO_SECRET"  # pragma: allowlist secret
+check_required S3_PIPELINE_SECRET_KEY "$PIPELINE_SECRET"  # pragma: allowlist secret
+check_required S3_HIVE_SECRET_KEY "$HIVE_SECRET"  # pragma: allowlist secret
+check_required S3_TRINO_SECRET_KEY "$TRINO_SECRET"  # pragma: allowlist secret
 
 # ── Paso de secretos a los contenedores ──────────────────────────────────────
 #
@@ -90,25 +90,25 @@ check_required MINIO_TRINO_SECRET_KEY "$TRINO_SECRET"  # pragma: allowlist secre
 #   · `airflow users create` sin --password llama a getpass dos veces.
 #   · `superset fab create-admin` usa @click.password_option(), que es prompt
 #     con confirmación.
-#   · `mc alias import ALIAS /dev/stdin` lee la credencial de la entrada
-#     estándar, y sustituye a `mc alias set`.
+#   · `rc alias import /dev/stdin` lee la credencial de la entrada estándar y
+#     sustituye a `rc alias set`, que además sondea el endpoint.
 #
 # Los tres reciben ahora la clave por la TUBERÍA de `docker exec -i`: ni en la
 # línea de comandos, ni en el entorno, ni en un archivo dentro del contenedor.
 # Solo en el pipe y en la memoria del proceso.
 #
-# Queda uno, y no tiene salida: `mc admin user svcacct add` solo acepta
-# --secret-key con el valor en la línea de comandos. Los secretos de las tres
-# cuentas de servicio siguen ahí durante los milisegundos que dura el comando,
-# y conviene decirlo entero: `docker top` enseña desde el host la línea de
-# comandos de los procesos de dentro, así que ese caso concreto tampoco estaba
-# cerrado en el host.
+# Queda uno, y no tiene salida: `rc admin service-account create` toma el
+# secreto como argumento posicional, igual que `mc` lo tomaba en --secret-key.
+# Los secretos de las tres cuentas de servicio siguen ahí durante los
+# milisegundos que dura el comando, y conviene decirlo entero: `docker top`
+# enseña desde el host la línea de comandos de los procesos de dentro, así que
+# ese caso concreto tampoco estaba cerrado en el host.
 DIR_SECRETOS=$(mktemp -d)
 chmod 700 "$DIR_SECRETOS"
 trap 'rm -rf "$DIR_SECRETOS"' EXIT
 
 # Formato de --env-file: una línea NOMBRE=valor, sin comillas, el valor literal
-# hasta el fin de línea. Lo usa ya solo `crear_cuenta_minio`, que es el único
+# hasta el fin de línea. Lo usa ya solo `crear_cuenta_s3`, que es el único
 # paso sin una vía por stdin.
 archivo_env() {
     local nombre="$1"
@@ -119,29 +119,32 @@ archivo_env() {
     printf '%s' "$archivo"
 }
 
-# `mc alias import` lee de stdin un JSON con la credencial. Es la vía por la que
-# la raíz de MinIO entra al contenedor sin pasar por argv ni por el entorno.
+# `rc alias import` lee un JSON desde un archivo, y `/dev/stdin` vale como
+# archivo: es la vía por la que la raíz entra al contenedor sin pasar por argv
+# ni por el entorno. Comprobado que al importar NO contacta con el servidor, al
+# contrario que `rc alias set`, que sondea el endpoint y falla si todavía no
+# responde.
 #
-# Se usa un alias PROPIO y no `local`: ese lo trae `mc` por defecto y es el que
-# usa el healthcheck del contenedor (`mc ready local`). Sobreescribirlo
-# funcionaba, pero dejaba la credencial raíz escrita en el config de mc dentro
-# del contenedor para el resto de su vida. El alias propio se borra con un trap
-# al terminar cada comando.
+# El nombre del alias va DENTRO del JSON —`rc alias import` no lo recibe como
+# argumento— y se borra con un trap al terminar cada comando, para no dejar la
+# credencial raíz escrita en la configuración del CLI dentro del contenedor.
+# RC_CONFIG_DIR la manda a /tmp porque el proceso corre con un UID cuyo HOME no
+# es escribible.
 #
 # Solo hay que escapar la barra invertida y la comilla doble: `make init-env`
 # genera claves alfanuméricas, pero un .env escrito a mano puede traer
-# cualquier cosa, y un JSON roto daría un error de mc que no señala la causa.
+# cualquier cosa, y un JSON roto daría un error de rc que no señala la causa.
 escapar_json() {
     printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
-json_alias_minio() {
-    printf '{"url":"http://localhost:9000","accessKey":"%s","secretKey":"%s","api":"s3v4","path":"auto"}\n' \
-        "$(escapar_json "$MINIO_USER")" "$(escapar_json "$MINIO_PASS")"
+json_alias_s3() {
+    printf '{"schema_version":1,"aliases":[{"name":"vf","endpoint":"http://localhost:9000","credentials":{"access_key":"%s","secret_key":"%s"},"anonymous":false,"region":"us-east-1","signature":"v4","bucket_lookup":"path","insecure":false}]}\n' \
+        "$(escapar_json "$S3_ROOT_USER_VAL")" "$(escapar_json "$S3_ROOT_PASS_VAL")"
 }
 
 C_POSTGRES=docker-compose-postgres-1
-C_MINIO=docker-compose-minio-1
+C_S3=docker-compose-rustfs-1
 C_AIRFLOW=docker-compose-airflow-webserver-1
 C_SUPERSET=docker-compose-superset-1
 
@@ -154,9 +157,10 @@ step_failed() {
 #
 # Cada paso es una función y se invoca por separado. Antes era un guion lineal, y
 # `load_example.sh` lo ejecutaba ENTERO para arreglar una sola cosa: los buckets
-# de MinIO. Eso hacía que cargar datos de ejemplo recreara de paso los usuarios
-# admin y reinicializara los roles de Superset —idempotente, pero nadie lo pedía—
-# y que el banner apareciera al final de un comando que no lo necesita.
+# del object store. Eso hacía que cargar datos de ejemplo recreara de paso los
+# usuarios admin y reinicializara los roles de Superset —idempotente, pero
+# nadie lo pedía— y que el banner apareciera al final de un comando que no lo
+# necesita.
 #
 # La condición tampoco correspondía a la acción: se comprobaban los buckets y se
 # ejecutaban los siete pasos, mientras que un admin de Airflow desaparecido no
@@ -182,25 +186,26 @@ paso_bases() {
 }
 
 paso_buckets() {
-    # ── MinIO ────────────────────────────────────────────────────────────────────
-    echo "[INFO]  Creating MinIO buckets..."
-    if out=$(json_alias_minio | docker exec -i "$C_MINIO" sh -c '
+    # ── Object store ─────────────────────────────────────────────────────────────
+    echo "[INFO]  Creating object store buckets..."
+    if out=$(json_alias_s3 | docker exec -i "$C_S3" sh -c '
         set -e
-        mc alias import vf /dev/stdin --quiet
-        trap "mc alias remove vf >/dev/null 2>&1" EXIT
+        RC_CONFIG_DIR=$(mktemp -d); export RC_CONFIG_DIR
+        trap "rc alias remove vf >/dev/null 2>&1; rm -rf \"$RC_CONFIG_DIR\"" EXIT
+        rc alias import /dev/stdin --replace --quiet
         for b in raw bronze silver gold checkpoints; do
-            mc mb --ignore-existing "vf/$b" --quiet
+            rc bucket create "vf/$b" --ignore-existing --quiet
         done
-        mc ls vf
+        rc ls vf
     ' 2>&1); then
         echo "$out" | sed 's/^/  /'
     else
-        step_failed "MinIO: $out"
+        step_failed "object store: $out"
     fi
 }
 
-# Crea las cuentas de servicio con las que Airflow, Spark, Hive y Trino entran a
-# MinIO.
+# Crea las cuentas de servicio con las que Airflow, Spark, Hive y Trino entran al
+# object store.
 #
 # Antes los cinco consumidores usaban las credenciales RAÍZ: cualquiera de esos
 # contenedores podía borrar todos los buckets, crear usuarios o cambiar
@@ -213,26 +218,31 @@ paso_buckets() {
 #
 # Se borra y se recrea en vez de editar: `add` y `rm` son los verbos estables, y
 # durante un dev-reset no hay nadie usando la cuenta anterior.
-crear_cuenta_minio() {
+crear_cuenta_s3() {
     local nombre="$1" clave="$2" secreto="$3" out
 
     # La raíz entra por stdin. El SECRETO de la cuenta de servicio no puede:
-    # `mc admin user svcacct add` solo acepta --secret-key con el valor en la
-    # línea de comandos, así que sigue viajando por --env-file hasta el entorno
-    # del contenedor y de ahí a argv. Es el residual del §2.10.
-    if out=$(json_alias_minio | docker exec -i \
+    # `rc admin service-account create` lo toma como ARGUMENTO POSICIONAL, igual
+    # que `mc admin user svcacct add` lo tomaba en --secret-key, así que sigue
+    # viajando por --env-file hasta el entorno del contenedor y de ahí a argv.
+    # El residual del §2.10 se queda exactamente donde estaba: el cambio de
+    # backend no lo resuelve, y conviene escribirlo en vez de dejar creer que sí.
+    #
+    # Lo que SÍ desaparece es el usuario padre. `rc` cuelga la cuenta de la
+    # identidad del alias cuando se omite --user, así que el nombre de la raíz
+    # ya no tiene que entrar en el archivo de entorno.
+    if out=$(json_alias_s3 | docker exec -i \
         --env-file "$(archivo_env "svcacct-$nombre" \
-              "MC_USER=$MINIO_USER" \
               "SVC_KEY=$clave" "SVC_SECRET=$secreto")" \
-        "$C_MINIO" sh -c '
+        "$C_S3" sh -c '
         set -e
-        mc alias import vf /dev/stdin --quiet
-        trap "mc alias remove vf >/dev/null 2>&1" EXIT
-        if mc admin user svcacct info vf "$SVC_KEY" >/dev/null 2>&1; then
-            mc admin user svcacct rm vf "$SVC_KEY" >/dev/null
+        RC_CONFIG_DIR=$(mktemp -d); export RC_CONFIG_DIR
+        trap "rc alias remove vf >/dev/null 2>&1; rm -rf \"$RC_CONFIG_DIR\"" EXIT
+        rc alias import /dev/stdin --replace --quiet
+        if rc admin service-account info vf "$SVC_KEY" >/dev/null 2>&1; then
+            rc admin service-account rm vf "$SVC_KEY" >/dev/null
         fi
-        mc admin user svcacct add vf "$MC_USER" \
-            --access-key "$SVC_KEY" --secret-key "$SVC_SECRET" \
+        rc admin service-account create vf "$SVC_KEY" "$SVC_SECRET" \
             --policy /tmp/politica-datos.json >/dev/null
         ' 2>&1); then
         echo "[INFO]  $clave configured"
@@ -242,21 +252,21 @@ crear_cuenta_minio() {
 }
 
 paso_cuentas() {
-    echo "[INFO]  Creating MinIO service accounts..."
-    local politica="infra/docker-compose/minio/politica-datos.json"
+    echo "[INFO]  Creating object store service accounts..."
+    local politica="infra/docker-compose/s3/politica-datos.json"
 
     if [ ! -f "$politica" ]; then
         step_failed "$politica not found"
         return
     fi
-    if ! docker cp "$politica" "$C_MINIO:/tmp/politica-datos.json" >/dev/null 2>&1; then
-        step_failed "could not copy the policy to $C_MINIO"
+    if ! docker cp "$politica" "$C_S3:/tmp/politica-datos.json" >/dev/null 2>&1; then
+        step_failed "could not copy the policy to $C_S3"
         return
     fi
 
-    crear_cuenta_minio pipeline "$PIPELINE_KEY" "$PIPELINE_SECRET"
-    crear_cuenta_minio hive     "$HIVE_KEY"     "$HIVE_SECRET"
-    crear_cuenta_minio trino    "$TRINO_KEY"    "$TRINO_SECRET"
+    crear_cuenta_s3 pipeline "$PIPELINE_KEY" "$PIPELINE_SECRET"
+    crear_cuenta_s3 hive     "$HIVE_KEY"     "$HIVE_SECRET"
+    crear_cuenta_s3 trino    "$TRINO_KEY"    "$TRINO_SECRET"
 }
 
 # `superset db upgrade` va aquí y no en un paso propio porque `fab create-admin`
@@ -341,13 +351,13 @@ paso_banner() {
     # muestra el NOMBRE de la variable; el valor lo lee quien lo necesite.
     printf "  %-10s %-26s %-15s %s\n" "Service" "URL" "User" "Password"
     printf "  %-10s %-26s %-15s %s\n" "--------" "-------------------------" "---------------" "-------------------------"
-    printf "  %-10s %-26s %-15s %s\n" "Airflow"  "http://localhost:8090" "$AF_USER"    "\$AIRFLOW_ADMIN_PASSWORD"
-    printf "  %-10s %-26s %-15s %s\n" "Superset" "http://localhost:8088" "$SS_USER"    "\$SUPERSET_ADMIN_PASSWORD"
-    printf "  %-10s %-26s %-15s %s\n" "MinIO"    "http://localhost:9001" "$MINIO_USER" "\$MINIO_ROOT_PASSWORD"
-    printf "  %-10s %-26s %-15s %s\n" "OpenBao"  "http://localhost:8200" "token:"      "\$OPENBAO_TOKEN"
-    printf "  %-10s %-26s %-15s %s\n" "Trino"    "http://localhost:8081" "trino"       "no authentication"
-    printf "  %-10s %-26s %-15s %s\n" "Spark"    "http://localhost:8082" "-"           "no authentication"
-    printf "  %-10s %-26s %-15s %s\n" "Marquez"  "http://localhost:3000" "-"           "no authentication"
+    printf "  %-10s %-26s %-15s %s\n" "Airflow"  "http://localhost:8090" "$AF_USER"          "\$AIRFLOW_ADMIN_PASSWORD"
+    printf "  %-10s %-26s %-15s %s\n" "Superset" "http://localhost:8088" "$SS_USER"          "\$SUPERSET_ADMIN_PASSWORD"
+    printf "  %-10s %-26s %-15s %s\n" "RustFS"   "http://localhost:9001" "$S3_ROOT_USER_VAL" "\$S3_ROOT_PASSWORD"
+    printf "  %-10s %-26s %-15s %s\n" "OpenBao"  "http://localhost:8200" "token:"            "\$OPENBAO_TOKEN"
+    printf "  %-10s %-26s %-15s %s\n" "Trino"    "http://localhost:8081" "trino"             "no authentication"
+    printf "  %-10s %-26s %-15s %s\n" "Spark"    "http://localhost:8082" "-"                 "no authentication"
+    printf "  %-10s %-26s %-15s %s\n" "Marquez"  "http://localhost:3000" "-"                 "no authentication"
     echo ""
     echo "  Passwords live in $ENV_FILE (permissions 600) and are never printed."
     echo "  To read one:"
@@ -356,7 +366,7 @@ paso_banner() {
     echo "  Trino, Spark, and Marquez don't ask for credentials: anyone who reaches"
     echo "  those ports gets in. That's why .env sets BIND_HOST=127.0.0.1."
     echo ""
-    echo "  MinIO buckets: raw/ bronze/ silver/ gold/ checkpoints/"
+    echo "  Buckets: raw/ bronze/ silver/ gold/ checkpoints/"
     echo "  Sample data: make dev-load-example"
     echo ""
 }
