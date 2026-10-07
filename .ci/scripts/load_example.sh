@@ -178,13 +178,11 @@ with app.app_context():
     return 0
 }
 
-# ── 3. Copiar jobs Spark ──────────────────────────────────────────────────────
-log "Sincronizando jobs Spark..."
-docker cp spark/jobs/bronze_indicadores.py \
-    docker-compose-spark-master-1:/opt/spark/jobs/bronze_indicadores.py 2>/dev/null || true
-docker cp spark/jobs/bronze_arclim.py \
-    docker-compose-spark-master-1:/opt/spark/jobs/bronze_arclim.py 2>/dev/null || true
-ok "Jobs Spark actualizados"
+# ── 3. Jobs Spark ─────────────────────────────────────────────────────────────
+# Aquí se copiaban los jobs a spark-master con `docker cp`. No servía de nada:
+# el destino era un montaje de solo lectura, así que la copia fallaba siempre,
+# y el `|| true` lo callaba. Tampoco hacía falta: el driver corre en el
+# contenedor de Airflow y lee los jobs de su propio montaje.
 
 # ── 4. El catálogo lo crea Spark ─────────────────────────────────────────────
 # Aquí había un CREATE SCHEMA desde Trino. Ya no hace falta: los jobs usan

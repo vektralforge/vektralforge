@@ -80,6 +80,8 @@ x-airflow-common: &airflow-common
     # funciona igual en Compose y en Kubernetes, donde el hostname de un pod no
     # resuelve desde otro.
     AIRFLOW__CORE__HOSTNAME_CALLABLE: airflow.utils.net.get_host_ip_address
+    # El LocalDagBundle «dags-folder» lee de aquí. Ver los montajes de abajo.
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/vektralforge/repo/airflow/dags
     AIRFLOW__SCHEDULER__STANDALONE_DAG_PROCESSOR: "true"
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-webserver:8080/execution/
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
@@ -95,9 +97,20 @@ x-airflow-common: &airflow-common
     - postgres_password
     - s3_pipeline_secret_key
   volumes:
-    - ../../airflow/dags:/opt/airflow/dags
+    # dags/ y jobs/ se montan con la ESTRUCTURA DEL REPOSITORIO, no en
+    # /opt/airflow/dags y /opt/spark/jobs: los DAGs resuelven sus jobs relativos
+    # a su propio archivo (../../spark/jobs), que es lo que permite que con un
+    # GitDagBundle el DAG y el job salgan del mismo commit. Así la misma ruta
+    # resuelve en Compose y en el checkout de un bundle. Ver
+    # AIRFLOW__CORE__DAGS_FOLDER arriba.
+    #
+    # Se montan solo esos dos directorios y no el repositorio entero: la raíz
+    # tiene infra/docker-compose/.env con todas las claves.
+    - ../../airflow/dags:/opt/vektralforge/repo/airflow/dags
+    - ../../spark/jobs:/opt/vektralforge/repo/spark/jobs
+    # La imagen ya trae plugins/ (los necesita sin montaje en Kubernetes); el
+    # montaje es para editarlos en desarrollo sin reconstruirla.
     - ../../airflow/plugins:/opt/airflow/plugins
-    - ../../spark/jobs:/opt/spark/jobs
     # Caché de Ivy: sin esto, spark-submit vuelve a descargar las dependencias
     # de Delta desde Maven en cada ejecución de tarea.
     - ivy-cache:/home/airflow/.ivy2
@@ -239,8 +252,10 @@ services:
       dockerfile: infra/docker-compose/spark/Dockerfile
     restart: unless-stopped
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
-    volumes:
-      - ../../spark/jobs:/opt/spark/jobs:ro
+    # Sin montaje de spark/jobs. Con SparkSubmitOperator en modo client el job
+    # corre como driver en el contenedor de Airflow, y transformaciones.py solo
+    # se usa ahí: las filas se arman como dicts antes de createDataFrame, así
+    # que los executors nunca importan nada de spark/jobs.
     environment:
       SPARK_MASTER_HOST: spark-master
       SPARK_MASTER_PORT: "7077"
@@ -266,8 +281,7 @@ services:
       dockerfile: infra/docker-compose/spark/Dockerfile
     restart: unless-stopped
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
-    volumes:
-      - ../../spark/jobs:/opt/spark/jobs:ro
+    # Sin montaje de spark/jobs: ver spark-master.
     environment:
       SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-1g}
       SPARK_WORKER_CORES: "${SPARK_WORKER_CORES:-2}"
@@ -431,10 +445,9 @@ services:
       - postgres_password
     command: db migrate
     restart: "no"
+    # Sin dags/ ni jobs/: `db migrate` no parsea DAGs.
     volumes:
-      - ../../airflow/dags:/opt/airflow/dags
       - ../../airflow/plugins:/opt/airflow/plugins
-      - ../../spark/jobs:/opt/spark/jobs
     depends_on:
       postgres:
         condition: service_healthy

@@ -23,6 +23,15 @@ under **Upgrading**.
   `apache-airflow-providers-amazon` pasa a declararse: la nota que lo excluía
   por SQLAlchemy 2.x ya no aplicaba.
 
+- **Los DAGs resuelven sus jobs de Spark relativos a su propio archivo**, no en
+  `/opt/spark/jobs`. Es lo que permite traer los DAGs con un GitDagBundle de
+  Airflow 3 —como se hará en Kubernetes— y que cada DAG run ejecute el job del
+  mismo commit con que se creó. En Compose, `dags/` y `jobs/` se montan con la
+  estructura del repositorio bajo `/opt/vektralforge/repo/`. `make
+  dev-bundle-git` levanta Airflow leyendo los DAGs desde GitHub para probarlo.
+  `plugins/` pasa a ir dentro de la imagen de Airflow, y spark-master y
+  spark-worker dejan de montar `spark/jobs`, que nunca usaron.
+
 - **Valkey `9.1` sustituye a Redis como caché de Superset.** El #72 había subido
   Redis de 7.2 a 8.0 como un bump de Dependabot más, y con él la licencia pasó
   de BSD-3-Clause a RSALv2/SSPLv1/AGPLv3 mientras la documentación seguía
@@ -68,6 +77,12 @@ under **Upgrading**.
   puede subir los logs y la UI no los encuentra al terminar la tarea. Los logs
   anteriores se quedan en el volumen viejo, que ya no se monta; se borra con
   `docker volume rm docker-compose_airflow-logs`.
+- **Un DAG propio con `application="/opt/spark/jobs/..."` deja de encontrar su
+  job**: esa ruta ya no se monta. Hay que resolverla desde el archivo del DAG,
+  como hacen los de ejemplo (`Path(__file__).resolve().parents[2] / "spark" /
+  "jobs"`). Lo mismo para cualquier referencia a `/opt/airflow/dags`: la carpeta
+  de DAGs es ahora `/opt/vektralforge/repo/airflow/dags`. Hace falta `make
+  dev-build`: la imagen de Airflow trae ahora `plugins/`.
 
 - **Hay que renombrar las claves del `.env`.** Compose interpola `${S3_ROOT_USER}`
   directamente, así que un `.env` con nombres `MINIO_*` deja el stack sin
