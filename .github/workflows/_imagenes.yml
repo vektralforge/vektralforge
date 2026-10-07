@@ -74,11 +74,13 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      # Login solo al publicar. En un PR —incluidos los de forks, cuyo token no
-      # puede escribir paquetes— la caché se LEE de forma anónima, lo que exige
-      # que los paquetes de GHCR sean públicos.
+      # Login SIEMPRE, también en los PR. Los paquetes que crea un workflow en
+      # una organización nacen privados; una lectura anónima de la caché daría
+      # 401 y buildx lo trataría como un fallo de caché, sin error: el build
+      # pasaría, solo que recompilando todo. Con el token del repositorio
+      # (packages: read en los PR, write al publicar) la lectura funciona sea
+      # cual sea la visibilidad, incluidos los PR de forks y de Dependabot.
       - name: Login en GHCR
-        if: inputs.publicar
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
