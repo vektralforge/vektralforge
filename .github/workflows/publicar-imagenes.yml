@@ -1,0 +1,33 @@
+name: Publicar imágenes
+
+# Publica las imágenes multi-arch en GHCR:
+#   push a develop     → ghcr.io/vektralforge/<imagen>:develop (+ sha-<corto>)
+#   etiqueta v*.*.*    → ghcr.io/vektralforge/<imagen>:<versión>
+#
+# main no publica por sí sola: lo que llega a main se libera con una etiqueta.
+
+on:
+  push:
+    branches: [develop]
+    tags: ["v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"]
+  workflow_dispatch:
+
+# Dos publicaciones de la misma ref NO se cancelan entre sí: cancelar a medias
+# deja digests subidos sin manifiesto que los una. Se encolan.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  imagenes:
+    name: Imágenes
+    uses: ./.github/workflows/_imagenes.yml
+    with:
+      publicar: true
+    # El único sitio del repositorio con permiso de escritura en paquetes.
+    permissions:
+      contents: read
+      packages: write

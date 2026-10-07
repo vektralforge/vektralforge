@@ -129,10 +129,14 @@ RUN airflow version && \
     java -version && \
     python -c "import pyspark, delta; assert pyspark.__version__.startswith('4.1'), pyspark.__version__; print('pyspark', pyspark.__version__, 'delta OK')" && \
     PYSPARK_JARS=$(python -c "import pyspark, os; print(os.path.join(os.path.dirname(pyspark.__file__), 'jars'))") && \
-    ls "$PYSPARK_JARS" | grep -q "^hadoop-aws-" && \
-    ls "$PYSPARK_JARS" | grep -q "delta-spark_4.1_2.13" && \
-    ls "$PYSPARK_JARS" | grep -q "^bundle-" && \
-    ls "$PYSPARK_JARS" | grep -q "^openlineage-spark_2.13-" && \
+    # Globs y no `ls | grep -q`: grep -q sale con la primera coincidencia, ls
+    # recibe SIGPIPE al seguir escribiendo y, con `pipefail` (lo activa la
+    # imagen base de Airflow), el RUN falla con 141 según quién gane la
+    # carrera. Pasaba en CI y no en local.
+    ls "$PYSPARK_JARS"/hadoop-aws-* >/dev/null && \
+    ls "$PYSPARK_JARS"/*delta-spark_4.1_2.13* >/dev/null && \
+    ls "$PYSPARK_JARS"/bundle-* >/dev/null && \
+    ls "$PYSPARK_JARS"/openlineage-spark_2.13-* >/dev/null && \
     test -f "$SPARK_CONF_DIR/spark-defaults.conf" && \
     echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
 

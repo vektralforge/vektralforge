@@ -328,6 +328,17 @@ echo "  Marquez   → http://localhost:3000"
 echo "  Dashboard → http://localhost:8088/superset/dashboard/indicadores-financieros-chile/"
 echo ""
 
+# En CI (VF_ESTRICTO=1) cualquier DAG fallido es un fallo. En local se mantiene
+# el criterio permisivo: quien prueba el stack quiere ver lo que sí cargó
+# aunque una de las dos APIs públicas esté caída.
+if [ "${VF_ESTRICTO:-0}" = "1" ]; then
+    for dag_id in "${!DAG_STATUS[@]}"; do
+        [[ "${DAG_STATUS[$dag_id]}" == "✓"* ]] || exit 1
+    done
+    [ ${#DAG_STATUS[@]} -gt 0 ] || exit 1
+    exit 0
+fi
+
 # Salir con error solo si TODOS los DAGs fallaron
 all_failed=true
 for dag_id in "${!DAG_STATUS[@]}"; do

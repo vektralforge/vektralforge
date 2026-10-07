@@ -1,0 +1,157 @@
+name: Stack
+
+# Integración: construye las imágenes desde el Compose, levanta el stack
+# completo en el runner y comprueba que funciona de verdad.
+#
+#   pull_request / push a develop → humo: stack listo + usuarios + permisos
+#   cada noche y a demanda         → además, los dos pipelines de ejemplo
+#
+# Los pipelines de ejemplo NO corren en los PR: dependen de mindicador.cl y de
+# la API de ARClim, y un PR no debe ponerse rojo porque un tercero esté caído.
+# Por eso este workflow tampoco forma parte del check `CI` requerido.
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - "airflow/**"
+      - "spark/**"
+      - "trino/**"
+      - "superset/**"
+      - ".ci/scripts/**"
+      - ".env.example"
+      - ".github/workflows/stack.yml"
+  push:
+    branches: [develop]
+  schedule:
+    # 06:17 UTC (03:17 en Santiago). Minuto impar para no caer en la hora en
+    # punto, donde GitHub acumula retrasos.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      ejemplos:
+        description: "Cargar también los pipelines de ejemplo"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
+  ENV_FILE: infra/docker-compose/.env
+  COMPOSE: docker compose -f infra/docker-compose/docker-compose.yml --env-file infra/docker-compose/.env
+  REGISTRO: ghcr.io/vektralforge
+
+jobs:
+  stack:
+    name: Stack completo
+    # 4 vCPU / 16 GB en repositorios públicos. Con SPARK_WORKER_MEMORY=2g el
+    # stack entero cabe; si deja de caber, el síntoma será un OOMKilled en el
+    # volcado de `docker compose ps`, no un timeout misterioso.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      # Las imágenes del stack superan con holgura los ~14 GB libres que trae
+      # el runner. Se borran toolchains que este job no usa.
+      - name: Liberar disco
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          docker system prune -af >/dev/null
+          df -h / | tail -1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # init_env.sh genera la clave Fernet con `cryptography`.
+      - name: Generar .env
+        run: |
+          pip install --quiet cryptography
+          # Sin TTY: acepta los valores generados. Las claves son de un solo
+          # uso y mueren con el runner; ninguna sale de aquí.
+          bash .ci/scripts/init_env.sh < /dev/null
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Se construye DESDE EL COMPOSE con bake, no desde la lista de
+      # _imagenes.yml: así lo que se prueba es lo que `make dev-up` construye.
+      # La caché se lee de las mismas entradas que escribe la publicación, de
+      # modo que un PR sin cambios en Dockerfiles no recompila nada.
+      #
+      # Bake corre DESDE infra/docker-compose, por dos motivos:
+      #  - Los `context: ../..` del Compose se resuelven respecto del directorio
+      #    de trabajo. Desde la raíz del repo, `../..` apuntaba a
+      #    /home/runner/work —fuera del checkout— y Buildx (≥0.20) se niega a
+      #    leer fuera sin un permiso explícito.
+      #  - Lee el .env de ese directorio, igual que `docker compose`: sin él,
+      #    cada variable del Compose salía como «not set» en el log.
+      # El permiso se concede solo sobre el workspace, que es la raíz del repo:
+      # el contexto real de las imágenes que construyen desde ahí.
+      - name: Construir imágenes
+        working-directory: infra/docker-compose
+        run: |
+          c() { echo "type=registry,ref=${REGISTRO}/$1:buildcache-amd64"; }
+          docker buildx bake \
+            -f docker-compose.yml \
+            --allow "fs.read=${GITHUB_WORKSPACE}" \
+            --load \
+            --set "airflow-*.cache-from=$(c airflow)" \
+            --set "spark-*.cache-from=$(c spark)" \
+            --set "rustfs.cache-from=$(c rustfs)" \
+            --set "hive-metastore.cache-from=$(c hive-metastore)" \
+            --set "trino.cache-from=$(c trino)" \
+            --set "marquez-api.cache-from=$(c marquez-api)" \
+            --set "superset.cache-from=$(c superset)"
+          df -h / | tail -1
+
+      - name: Levantar el stack
+        run: $COMPOSE up -d --no-build
+
+      - name: Esperar a que esté listo
+        run: bash .ci/scripts/esperar_stack.sh 600
+
+      - name: Crear usuarios y cuentas de servicio
+        run: bash .ci/scripts/init_users.sh "$ENV_FILE"
+
+      # §2.9: un permiso de más no da síntomas. Solo se ve intentándolo.
+      - name: Verificar permisos del object store
+        run: bash .ci/scripts/verificar_permisos.sh
+
+      - name: Pipelines de ejemplo
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.ejemplos)
+        env:
+          VF_ESTRICTO: "1"
+          # 20 min por tarea: cubre un reintento completo del DAG. El job
+          # entero tiene su propio techo de 90.
+          VF_TIMEOUT_TAREA: "1200"
+        run: bash .ci/scripts/load_example.sh "$ENV_FILE"
+
+      # ── Diagnóstico ──────────────────────────────────────────────────────
+      - name: Volcar estado y logs
+        if: failure()
+        run: |
+          mkdir -p /tmp/diagnostico
+          $COMPOSE ps -a | tee /tmp/diagnostico/ps.txt
+          for s in $($COMPOSE config --services); do
+            $COMPOSE logs --no-color --timestamps "$s" > "/tmp/diagnostico/$s.log" 2>&1 || true
+          done
+          docker stats --no-stream > /tmp/diagnostico/stats.txt 2>&1 || true
+          # El .env NO se sube: contiene las claves generadas. Aunque mueran
+          # con el runner, un artefacto de un repositorio público lo descarga
+          # cualquiera durante su retención.
+
+      - name: Subir diagnóstico
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: diagnostico-stack
+          path: /tmp/diagnostico
+          retention-days: 7
