@@ -6,6 +6,10 @@ aquí no se lee ningún secreto: boto3 lo toma de AWS_SHARED_CREDENTIALS_FILE.
 
 El razonamiento de por qué los controles van en este orden, y por qué un
 NoSuchBucket cuenta como fallo, está en la cabecera del guion que lo invoca.
+
+Salida: mismo formato [INFO]/[WARN]/[ERROR] en inglés que el resto de los
+scripts del proyecto — homologado también aquí porque estos print() son la
+salida real que ve quien corre `make dev-verificar-permisos`.
 """
 
 import os
@@ -50,7 +54,8 @@ def marcar(ok, etiqueta, detalle=""):
     global fallos
     if not ok:
         fallos += 1
-    print(f"  {'✓' if ok else '✗'} {etiqueta}{': ' + detalle if detalle else ''}")
+    prefijo = "[INFO] " if ok else "[ERROR]"
+    print(f"  {prefijo} {etiqueta}{': ' + detalle if detalle else ''}")
 
 
 def avisar(etiqueta, detalle):
@@ -59,7 +64,7 @@ def avisar(etiqueta, detalle):
     que la divergencia no se olvide, y no rompe el objetivo de make."""
     global avisos
     avisos += 1
-    print(f"  ⚠ {etiqueta}: {detalle}")
+    print(f"  [WARN]  {etiqueta}: {detalle}")
 
 
 def codigo(error):
@@ -70,7 +75,7 @@ def debe_funcionar(etiqueta, fn):
     try:
         fn()
     except ClientError as e:
-        marcar(False, etiqueta, f"denegado ({codigo(e)})")
+        marcar(False, etiqueta, f"denied ({codigo(e)})")
     except Exception as e:  # noqa: BLE001 — cualquier fallo aquí invalida la prueba
         marcar(False, etiqueta, f"{type(e).__name__}: {e}")
     else:
@@ -86,52 +91,52 @@ def debe_denegarse(etiqueta, fn, deshacer=None):
             marcar(True, etiqueta)
         else:
             marcar(
-                False, etiqueta, f"{c} — la petición se autorizó y falló por otra razón"
+                False, etiqueta, f"{c} — the request was authorized and failed for another reason"
             )
     except Exception as e:  # noqa: BLE001
         marcar(False, etiqueta, f"{type(e).__name__}: {e}")
     else:
-        marcar(False, etiqueta, "PERMITIDO")
+        marcar(False, etiqueta, "ALLOWED")
         if deshacer:
             try:
                 deshacer()
-                print("      (deshecho)")
+                print("      (undone)")
             except Exception as e:  # noqa: BLE001
-                print(f"      (no se pudo deshacer: {e})")
+                print(f"      (could not undo: {e})")
 
 
-print(f"\n  Endpoint: {ENDPOINT}")
+print(f"\n[INFO]  Endpoint: {ENDPOINT}")
 
 cred = boto3.Session().get_credentials()
 identidad = cred.access_key if cred else None
-print(f"  Identidad: {identidad}\n")
+print(f"[INFO]  Identity: {identidad}\n")
 if identidad != ESPERADA:
     # Con la raíz los positivos pasarían y los negativos fallarían, pero por el
     # motivo equivocado. Mejor no correr la prueba que informar de algo que no
     # se midió.
-    print(f"  ✗ Se esperaba {ESPERADA}. Abortado: la prueba no mediría la política.")
+    print(f"[ERROR] Expected {ESPERADA}. Aborting: the test wouldn't measure the policy.")
     sys.exit(1)
 
 clave = f"_control_permisos/{uuid.uuid4().hex}.txt"
 
-print("  Controles positivos — esto DEBE funcionar")
+print("[INFO]  Positive controls — this MUST succeed")
 debe_funcionar(
-    "PutObject en bronze",
+    "PutObject on bronze",
     lambda: s3.put_object(Bucket="bronze", Key=clave, Body=b"control"),
 )
 debe_funcionar(
-    "GetObject del objeto escrito", lambda: s3.get_object(Bucket="bronze", Key=clave)
+    "GetObject of the written object", lambda: s3.get_object(Bucket="bronze", Key=clave)
 )
 debe_funcionar(
-    "ListBucket en bronze",
+    "ListBucket on bronze",
     lambda: s3.list_objects_v2(Bucket="bronze", Prefix="_control_permisos/"),
 )
 debe_funcionar(
-    "GetBucketLocation en bronze", lambda: s3.get_bucket_location(Bucket="bronze")
+    "GetBucketLocation on bronze", lambda: s3.get_bucket_location(Bucket="bronze")
 )
 for b in BUCKETS:
     debe_funcionar(
-        f"ListBucket en {b}", lambda b=b: s3.list_objects_v2(Bucket=b, MaxKeys=1)
+        f"ListBucket on {b}", lambda b=b: s3.list_objects_v2(Bucket=b, MaxKeys=1)
     )
 
 # Las cuatro operaciones de multipart, que son las que usa S3A para escribir
@@ -139,7 +144,7 @@ for b in BUCKETS:
 # no queda objeto.
 mpu = {}
 debe_funcionar(
-    "CreateMultipartUpload en bronze",
+    "CreateMultipartUpload on bronze",
     lambda: mpu.update(s3.create_multipart_upload(Bucket="bronze", Key=clave + ".mpu")),
 )
 if mpu.get("UploadId"):
@@ -169,7 +174,7 @@ if mpu.get("UploadId"):
     )
 
 debe_funcionar(
-    "DeleteObject del objeto de prueba",
+    "DeleteObject of the test object",
     lambda: s3.delete_object(Bucket="bronze", Key=clave),
 )
 
@@ -179,14 +184,14 @@ debe_funcionar(
 # cada pasada.
 CLAVE_LOGS = "_control_permisos/ultimo.txt"
 debe_funcionar(
-    f"PutObject en {LOGS}",
+    f"PutObject on {LOGS}",
     lambda: s3.put_object(Bucket=LOGS, Key=CLAVE_LOGS, Body=b"control"),
 )
 debe_funcionar(
-    f"GetObject en {LOGS}", lambda: s3.get_object(Bucket=LOGS, Key=CLAVE_LOGS)
+    f"GetObject on {LOGS}", lambda: s3.get_object(Bucket=LOGS, Key=CLAVE_LOGS)
 )
 debe_funcionar(
-    f"ListBucket en {LOGS}",
+    f"ListBucket on {LOGS}",
     lambda: s3.list_objects_v2(Bucket=LOGS, Prefix="_control_permisos/"),
 )
 
@@ -204,8 +209,8 @@ def control_listallmybuckets():
     Lo que importa no es si la llamada se autoriza, sino si REVELA algo fuera de
     la política. Eso es lo que se mide aquí: la lista devuelta no puede contener
     ningún bucket que no esté en la política. Si lo contiene, es una fuga y el
-    control falla; si solo trae los de la política, es una divergencia de forma y queda
-    como aviso en cada ejecución.
+    control falla; si solo trae los de la política, es una divergencia de forma
+    y queda como aviso en cada ejecución.
 
     Para que la distinción sea medible tiene que existir un bucket fuera de la
     política. Si no existe ninguno, el control lo dice en vez de fingir que pasó.
@@ -225,7 +230,7 @@ def control_listallmybuckets():
             marcar(True, etiqueta)
         else:
             marcar(
-                False, etiqueta, f"{c} — la petición se autorizó y falló por otra razón"
+                False, etiqueta, f"{c} — the request was authorized and failed for another reason"
             )
         return
     except Exception as e:  # noqa: BLE001
@@ -238,23 +243,23 @@ def control_listallmybuckets():
         marcar(
             False,
             etiqueta,
-            "PERMITIDO y revela buckets fuera de la política: " + ", ".join(fuera),
+            "ALLOWED and reveals buckets outside the policy: " + ", ".join(fuera),
         )
     elif sorted(nombres) == sorted(PERMITIDOS):
         avisar(
             etiqueta,
-            "permitido; la lista trae solo los de la política. Medido el "
-            "2026-10-03 con un bucket fuera de ella presente: RustFS filtra",
+            "allowed; the list only returns the ones from the policy. Measured on "
+            "2026-10-03 with a bucket outside it present: RustFS filters",
         )
     else:
         avisar(
             etiqueta,
-            f"permitido; devuelve {nombres or 'nada'}. Sin un bucket fuera de la "
-            "política no se puede distinguir filtrado de fuga",
+            f"allowed; returns {nombres or 'nothing'}. Without a bucket outside the "
+            "policy, filtering can't be distinguished from a leak",
         )
 
 
-print("\n  Controles negativos — esto DEBE denegarse")
+print("\n[INFO]  Negative controls — this MUST be denied")
 debe_denegarse(
     "CreateBucket",
     lambda: s3.create_bucket(Bucket=FUERA),
@@ -263,20 +268,20 @@ debe_denegarse(
 debe_denegarse("DeleteBucket", lambda: s3.delete_bucket(Bucket=FUERA))
 control_listallmybuckets()
 debe_denegarse(
-    "ListBucket fuera de la política", lambda: s3.list_objects_v2(Bucket=FUERA)
+    "ListBucket outside the policy", lambda: s3.list_objects_v2(Bucket=FUERA)
 )
 debe_denegarse(
-    "GetObject fuera de la política", lambda: s3.get_object(Bucket=FUERA, Key="x")
+    "GetObject outside the policy", lambda: s3.get_object(Bucket=FUERA, Key="x")
 )
 # Contra una clave que no existe: si la política lo permitiera, S3 respondería
 # 204 sin borrar nada, y si lo deniega, AccessDenied. Así el negativo no puede
 # destruir un log real aunque la política esté mal.
 debe_denegarse(
-    f"DeleteObject en {LOGS}",
+    f"DeleteObject on {LOGS}",
     lambda: s3.delete_object(Bucket=LOGS, Key="_control_permisos/no-existe.txt"),
 )
 debe_denegarse(
-    "PutBucketPolicy en bronze",
+    "PutBucketPolicy on bronze",
     lambda: s3.put_bucket_policy(
         Bucket="bronze", Policy='{"Version":"2012-10-17","Statement":[]}'
     ),
@@ -284,12 +289,12 @@ debe_denegarse(
 
 print()
 if fallos:
-    print(f"  ✗ {fallos} control(es) fallido(s)")
+    print(f"[ERROR] {fallos} control(s) failed")
 elif avisos:
     print(
-        f"  ✓ La cuenta está acotada: opera sobre los objetos y nada más ({avisos} aviso(s))"
+        f"[INFO]  The account is scoped: it operates on the objects and nothing else ({avisos} warning(s))"
     )
 else:
-    print("  ✓ La cuenta está acotada: opera sobre los objetos y nada más")
+    print("[INFO]  The account is scoped: it operates on the objects and nothing else")
 print()
 sys.exit(1 if fallos else 0)

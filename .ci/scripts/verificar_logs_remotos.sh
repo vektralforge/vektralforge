@@ -13,13 +13,16 @@
 # ejemplo; en local, tras `make dev-load-example`— y corre dentro del
 # contenedor de Airflow, con la misma cuenta y el mismo endpoint que usa el
 # S3TaskHandler. Ningún secreto pasa por aquí.
+#
+# Log: mismo formato [INFO]/[ERROR] en inglés que el resto de los scripts —
+# homologado también dentro del programa Python embebido.
 
 set -uo pipefail
 
 C_AIRFLOW=docker-compose-airflow-webserver-1
 
 if ! docker inspect --format='{{.State.Status}}' "$C_AIRFLOW" 2>/dev/null | grep -q running; then
-    echo "  ✗ $C_AIRFLOW no está corriendo. Ejecuta: make dev-up" >&2
+    echo "[ERROR] $C_AIRFLOW is not running. Run: make dev-up" >&2
     exit 1
 fi
 
@@ -46,17 +49,17 @@ for pagina in s3.get_paginator("list_objects_v2").paginate(
     logs += [o for o in pagina.get("Contents", []) if o["Key"].endswith(".log")]
 
 if not logs:
-    print("  ✗ airflow-logs no tiene ningún log de tarea.")
-    print("    Si ya corrió algún DAG, Airflow no está subiendo los logs: revisar")
-    print("    el log del scheduler buscando «S3» o «remote».")
+    print("[ERROR] airflow-logs has no task logs.")
+    print("    If a DAG already ran, Airflow isn't uploading the logs: check the")
+    print("    scheduler log for \"S3\" or \"remote\".")
     sys.exit(1)
 
 dags = sorted({o["Key"].split("/", 1)[0].removeprefix("dag_id=") for o in logs})
 vacios = [o["Key"] for o in logs if o["Size"] == 0]
-print(f"  ✓ {len(logs)} log(s) de tarea en airflow-logs, de {len(dags)} DAG(s):")
+print(f"[INFO]  {len(logs)} task log(s) in airflow-logs, from {len(dags)} DAG(s):")
 for d in dags:
-    print(f"      {d}")
+    print(f"    {d}")
 if vacios:
-    print(f"  ✗ {len(vacios)} log(s) vacío(s), p. ej. {vacios[0]}")
+    print(f"[ERROR] {len(vacios)} empty log(s), e.g. {vacios[0]}")
     sys.exit(1)
 PY
