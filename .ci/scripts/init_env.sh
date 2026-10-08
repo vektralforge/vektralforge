@@ -99,6 +99,35 @@ escribir_valor() {
     fi
 }
 
+# Copia al DESTINO, tal cual, cualquier clave de la PLANTILLA que no exista
+# todavía ahí — ni siquiera como línea vacía.
+#
+# Las claves generadas (CLAVES_HEX/PASSWORDS, más abajo) ya quedaban cubiertas
+# por escribir_valor, que las agrega si faltan. Pero una clave que NO se
+# genera —un identificador sin secreto, como S3_ROOT_USER, con un valor fijo
+# en la plantilla— nunca pasa por ahí. Si la plantilla la incorpora en una
+# vuelta posterior, un .env ya existente de antes se queda sin ella para
+# siempre: ni es pendiente (no está la línea, así que nada la detecta) ni se
+# agrega sola. check-env la exige igual, y termina fallando con un error que
+# no dice por qué apareció justo ahora.
+#
+# Copiar la línea entera (no reconstruida a partir de clave/valor) conserva
+# cualquier «=» adicional que el valor tenga.
+sincronizar_claves_nuevas() {
+    local linea clave
+    while IFS= read -r linea || [ -n "$linea" ]; do
+        case "$linea" in
+            ''|'#'*) continue ;;
+        esac
+        clave="${linea%%=*}"
+        if ! grep -qE "^${clave}=" "$DESTINO" 2>/dev/null; then
+            printf '%s\n' "$linea" >> "$DESTINO"
+            _info "$clave added (new in $PLANTILLA, missing from $DESTINO)"
+        fi
+    done < "$PLANTILLA"
+    return 0
+}
+
 generar_hex() {
     openssl rand -hex 32
 }
@@ -157,6 +186,7 @@ if [ ! -f "$DESTINO" ]; then
     _info "Created $DESTINO from $PLANTILLA"
 else
     _info "$DESTINO already exists, filling in only the pending values"
+    sincronizar_claves_nuevas
 fi
 echo ""
 

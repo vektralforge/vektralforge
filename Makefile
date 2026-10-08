@@ -2,8 +2,16 @@
 #
 # Requisitos: Python 3.12, Docker Compose v2, GNU Make
 # Variables de entorno: infra/docker-compose/.env (ver .env.example)
+#
+# WARNING: no soportado en arquitecturas BSD (FreeBSD, OpenBSD, NetBSD,
+# DragonFly). Docker Compose depende de namespaces y cgroups del kernel de
+# Linux, que esos sistemas no tienen — no hay instalación nativa posible.
+# check_deps.sh ya lo detecta y lo corta con ese mismo mensaje, pero eso
+# solo corre dentro de `setup`; cualquier otro target (init-env, dev-up,
+# etc.) ejecutado directo en BSD falla más abajo, con un error de Docker o
+# de alguna otra herramienta en vez de esta explicación.
 
-.PHONY: help check-env check-deps \
+.PHONY: help check-env \
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
         dev-verificar-permisos dev-verificar-logs dev-bundle-git \
@@ -66,18 +74,20 @@ check-env:
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 #
-# `check-deps` corre .ci/scripts/check_deps.sh standalone (ya soporta ese modo,
-# ver su propio encabezado): detecta el sistema, revisa Python 3.12, venv, pip,
+# .ci/scripts/check_deps.sh detecta el sistema, revisa Python 3.12, venv, pip,
 # git, make, Homebrew/gestor de paquetes y Docker+Compose, e instala lo
-# instalable con confirmación. `setup` NO lo lista como prerrequisito porque
-# setup.sh ya lo sourcea y llama a su main() internamente (para quedarse con
-# PYTHON_BIN exportado) — listarlo también acá lo correría dos veces seguidas.
+# instalable con confirmación. No tiene target propio acá a propósito: los
+# comandos de este archivo son independientes entre sí, y check_deps.sh no es
+# uno de ellos — es un detalle interno de `setup`, que ya lo sourcea y llama a
+# su main() internamente (para quedarse con PYTHON_BIN exportado). Exponerlo
+# también como target lo correría dos veces seguidas en una instalación
+# normal. Quien lo necesite standalone (el script ya soporta ese modo, ver su
+# propio encabezado) lo invoca directo: `bash .ci/scripts/check_deps.sh`.
 #
-# `init-env`, en cambio, no tenía NINGÚN chequeo: era el primer comando de la
-# secuencia documentada (`make init-env → make setup → ...`) y el único que
-# podía fallar con un error de bajo nivel de `openssl`/`sed` en vez de una
-# explicación. Con este prerrequisito, falta de dependencias (Docker, git,
-# Python, etc.) se reporta igual de claro desde el primer comando.
+# `init-env` es igual de independiente: el primer comando de la secuencia
+# documentada (`make init-env → make setup → ...`) y su único trabajo es
+# crear $(ENV_FILE) con las claves generadas — no depende de `setup` ni de
+# check_deps.sh.
 #
 # Lo que esto NO resuelve: Xcode Command Line Tools en una Mac que no las
 # tiene todavía. `make` mismo —igual que `git`, `cc`, `clang`— es un binario
@@ -87,15 +97,12 @@ check-env:
 # puede interceptar eso — ocurre un nivel por debajo de Make. Sigue siendo un
 # prerrequisito manual de verdad, documentado como paso 0 (antes de cualquier
 # `make`): instalar las CLT con `xcode-select --install`.
-check-deps:
-	@bash .ci/scripts/check_deps.sh
-
 setup: check-env
 	@echo "[INFO]  Running setup"
 	@bash .ci/scripts/setup.sh
 
 # ── Crea $(ENV_FILE) con claves generadas ─────────────────────────────────────────────────────────────────────
-init-env: check-deps
+init-env:
 	@bash .ci/scripts/init_env.sh
 
 # ── Stack local ───────────────────────────────────────────────────────────────
@@ -271,31 +278,36 @@ help:
 	@echo "  VektralForge — available commands"
 	@echo ""
 	@echo "  Setup and local stack:"
-	@echo "    make check-deps           Checks/installs system dependencies (also run by init-env)"
-	@echo "    make setup                Creates .venv (Python 3.12) and installs dependencies"
-	@echo "    make init-env             Checks dependencies, then creates $(ENV_FILE) with generated keys"
-	@echo "    make dev-up               Starts the stack"
-	@echo "    make dev-down             Stops the stack"
-	@echo "    make dev-ps               Container status"
-	@echo "    make dev-logs             Live logs (SERVICE=airflow-scheduler for a single one)"
-	@echo "    make dev-build            Rebuilds images after changing a Dockerfile"
-	@echo "    make dev-reset            Full reset (deletes volumes, recreates users)"
-	@echo "    make dev-reset-hard       Extreme reset (deletes volumes and rebuilds images)"
-	@echo "    make dev-load-example     Loads the sample pipelines and dashboards"
-	@echo "    make dev-verificar-permisos  Checks that the pipeline account is scoped"
-	@echo "    make dev-verificar-logs   Checks that task logs reach the bucket"
-	@echo "    make dev-bundle-git       DAGs from a GitDagBundle (VF_BUNDLE_REF=<branch|tag>)"
+	@printf '%s\t%s\n' \
+		"make setup" "Creates .venv (Python 3.12) and installs dependencies" \
+		"make init-env" "Creates $(ENV_FILE) with generated keys" \
+		"make dev-up" "Starts the stack" \
+		"make dev-down" "Stops the stack" \
+		"make dev-ps" "Container status" \
+		"make dev-logs" "Live logs (SERVICE=airflow-scheduler for a single one)" \
+		"make dev-build" "Rebuilds images after changing a Dockerfile" \
+		"make dev-reset" "Full reset (deletes volumes, recreates users)" \
+		"make dev-reset-hard" "Extreme reset (deletes volumes and rebuilds images)" \
+		"make dev-load-example" "Loads the sample pipelines and dashboards" \
+		"make dev-verificar-permisos" "Checks that the pipeline account is scoped" \
+		"make dev-verificar-logs" "Checks that task logs reach the bucket" \
+		"make dev-bundle-git" "DAGs from a GitDagBundle (VF_BUNDLE_REF=<branch|tag>)" \
+	| awk -F'\t' '{c[NR]=$$1; d[NR]=$$2; if (length($$1)>w) w=length($$1)} END{for(i=1;i<=NR;i++) printf "    %-*s  %s\n", w, c[i], d[i]}'
 	@echo ""
 	@echo "  Code quality:"
-	@echo "    make lint-all             Full lint (Ruff + sqlfluff)"
-	@echo "    make test-all             Full tests"
-	@echo "    make detect-secrets       Credential scan (working tree)"
-	@echo "    make auditar-historial    Credentials and identifiers (git history)"
-	@echo "    make auditar-identificadores  Only external-infrastructure identifiers"
+	@printf '%s\t%s\n' \
+		"make lint-all" "Full lint (Ruff + sqlfluff)" \
+		"make test-all" "Full tests" \
+		"make detect-secrets" "Credential scan (working tree)" \
+		"make auditar-historial" "Credentials and identifiers (git history)" \
+		"make auditar-identificadores" "Only external-infrastructure identifiers" \
+	| awk -F'\t' '{c[NR]=$$1; d[NR]=$$2; if (length($$1)>w) w=length($$1)} END{for(i=1;i<=NR;i++) printf "    %-*s  %s\n", w, c[i], d[i]}'
 	@echo ""
 	@echo "  Deploy — PLANNED, not implemented:"
-	@echo "    make deploy-staging       Fails explaining what's missing"
-	@echo "    make deploy-prod          Same"
+	@printf '%s\t%s\n' \
+		"make deploy-staging" "Fails explaining what's missing" \
+		"make deploy-prod" "Same" \
+	| awk -F'\t' '{c[NR]=$$1; d[NR]=$$2; if (length($$1)>w) w=length($$1)} END{for(i=1;i<=NR;i++) printf "    %-*s  %s\n", w, c[i], d[i]}'
 	@echo ""
 	@echo "  First run:"
 	@echo "    macOS only: if this machine has never run 'make', 'git' or similar"
@@ -311,4 +323,6 @@ help:
 	@echo ""
 	@echo "  Requirements: Python 3.12 · Docker Compose v2"
 	@echo "  Variables:    $(ENV_FILE)"
+	@echo "  [WARN]  Not supported on BSD architectures (FreeBSD, OpenBSD, NetBSD,"
+	@echo "          DragonFly) — Docker Compose needs Linux kernel namespaces/cgroups."
 	@echo ""
