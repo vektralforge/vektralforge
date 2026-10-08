@@ -2,7 +2,8 @@
 # .ci/scripts/verificar_permisos.sh
 #
 # Comprueba que la cuenta de servicio del pipeline esté ACOTADA: que pueda
-# operar sobre los objetos de los cinco buckets y que no pueda nada más.
+# operar sobre los objetos de los cinco buckets, leer, escribir y listar en
+# airflow-logs sin poder borrar, y que no pueda nada más.
 #
 # Por qué existe. El §2.9 dejó a cada consumidor con una cuenta limitada por
 # politica-datos.json en vez de la raíz, y hasta ahora eso se comprobaba a mano
@@ -27,9 +28,11 @@
 #
 # Alcance: se prueba vf-pipeline. Las tres cuentas comparten
 # politica-datos.json, de modo que lo que se verifica es que ESA política se
-# aplica. Que vf-hive y vf-trino estén atadas a ella lo demuestra el pipeline:
-# si no lo estuvieran, el metastore no habría creado sus prefijos ni Trino
-# podría leer, y `make dev-load-example` no terminaría.
+# aplica; la de airflow-logs es solo de vf-pipeline. Que vf-hive y vf-trino NO
+# vean airflow-logs no se mide aquí: haría falta su credencial, que este
+# contenedor no tiene. Que vf-hive y vf-trino estén atadas a ella lo demuestra
+# el pipeline: si no lo estuvieran, el metastore no habría creado sus
+# prefijos ni Trino podría leer, y `make dev-load-example` no terminaría.
 #
 # Log: mismo formato [INFO]/[ERROR] en inglés que el resto de los scripts —
 # homologado también dentro del programa Python embebido, ver su propio

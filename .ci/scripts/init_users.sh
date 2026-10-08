@@ -193,7 +193,7 @@ paso_buckets() {
         RC_CONFIG_DIR=$(mktemp -d); export RC_CONFIG_DIR
         trap "rc alias remove vf >/dev/null 2>&1; rm -rf \"$RC_CONFIG_DIR\"" EXIT
         rc alias import /dev/stdin --replace --quiet
-        for b in raw bronze silver gold checkpoints; do
+        for b in raw bronze silver gold checkpoints airflow-logs; do
             rc bucket create "vf/$b" --ignore-existing --quiet
         done
         rc ls vf
@@ -219,7 +219,7 @@ paso_buckets() {
 # Se borra y se recrea en vez de editar: `add` y `rm` son los verbos estables, y
 # durante un dev-reset no hay nadie usando la cuenta anterior.
 crear_cuenta_s3() {
-    local nombre="$1" clave="$2" secreto="$3" out
+    local nombre="$1" clave="$2" secreto="$3" politica="$4" out
 
     # La raíz entra por stdin. El SECRETO de la cuenta de servicio no puede:
     # `rc admin service-account create` lo toma como ARGUMENTO POSICIONAL, igual
@@ -242,31 +242,73 @@ crear_cuenta_s3() {
         if rc admin service-account info vf "$SVC_KEY" >/dev/null 2>&1; then
             rc admin service-account rm vf "$SVC_KEY" >/dev/null
         fi
-        rc admin service-account create vf "$SVC_KEY" "$SVC_SECRET" \
-            --policy /tmp/politica-datos.json >/dev/null
-        ' 2>&1); then
+        # Las opciones van ANTES del `--` y los posicionales después: un secreto
+        # que empiece por «-» lo tomaría rc como una opción y fallaría con
+        # «unexpected argument», que es lo que pasó en CI.
+        rc admin service-account create --policy "$1" vf -- "$SVC_KEY" "$SVC_SECRET" >/dev/null
+        ' _ "$politica" 2>&1); then
         echo "[INFO]  $clave configured"
     else
         step_failed "account $clave: $(echo "$out" | tail -2)"
     fi
 }
 
+# Dos políticas y no una. politica-datos.json la comparten las tres cuentas:
+# operar sobre los objetos de los cinco buckets del lakehouse.
+# politica-logs-airflow.json da acceso al bucket airflow-logs y SOLO la recibe
+# vf-pipeline, que es la cuenta con la que Airflow sube y lee los logs de las
+# tareas. Si se añadiera a la política común, Trino y el metastore podrían leer
+# los logs de Airflow, que no les hace ninguna falta y pueden contener datos.
+#
+# `rc admin service-account create` acepta UNA política, así que la de
+# vf-pipeline se compone al vuelo uniendo las sentencias de las dos. Unirlas
+# aquí, y no mantener un tercer archivo con las dos copiadas, es lo que impide
+# que la parte de datos de vf-pipeline se desvíe de la de las otras cuentas.
 paso_cuentas() {
     echo "[INFO]  Creating object store service accounts..."
-    local politica="infra/docker-compose/s3/politica-datos.json"
+    local datos="infra/docker-compose/s3/politica-datos.json"
+    local logs="infra/docker-compose/s3/politica-logs-airflow.json"
+    local f pipeline
 
-    if [ ! -f "$politica" ]; then
-        step_failed "$politica not found"
+    for f in "$datos" "$logs"; do
+        if [ ! -f "$f" ]; then
+            step_failed "$f not found"
+            return
+        fi
+    done
+
+    pipeline=$(mktemp)
+    if ! python3 - "$datos" "$logs" > "$pipeline" <<'PY'
+import json, sys
+docs = [json.load(open(p)) for p in sys.argv[1:]]
+print(json.dumps({
+    "Version": docs[0]["Version"],
+    "Statement": [s for d in docs for s in d["Statement"]],
+}, indent=2))
+PY
+    then
+        rm -f "$pipeline"
+        step_failed "could not compose the vf-pipeline policy"
         return
     fi
-    if ! docker cp "$politica" "$C_S3:/tmp/politica-datos.json" >/dev/null 2>&1; then
-        step_failed "could not copy the policy to $C_S3"
+
+    # mktemp crea el archivo con 600 y `docker cp` conserva el modo: dentro del
+    # contenedor RustFS no corre como root y no podría leerlo («Failed to read
+    # policy file ... Permission denied»). La política no es un secreto, así que
+    # queda con los mismos 644 que tienen los archivos del repositorio.
+    chmod 644 "$pipeline"
+
+    if ! docker cp "$datos" "$C_S3:/tmp/politica-datos.json" >/dev/null 2>&1 ||
+       ! docker cp "$pipeline" "$C_S3:/tmp/politica-pipeline.json" >/dev/null 2>&1; then
+        rm -f "$pipeline"
+        step_failed "could not copy the policies to $C_S3"
         return
     fi
+    rm -f "$pipeline"
 
-    crear_cuenta_s3 pipeline "$PIPELINE_KEY" "$PIPELINE_SECRET"
-    crear_cuenta_s3 hive     "$HIVE_KEY"     "$HIVE_SECRET"
-    crear_cuenta_s3 trino    "$TRINO_KEY"    "$TRINO_SECRET"
+    crear_cuenta_s3 pipeline "$PIPELINE_KEY" "$PIPELINE_SECRET" /tmp/politica-pipeline.json
+    crear_cuenta_s3 hive     "$HIVE_KEY"     "$HIVE_SECRET"     /tmp/politica-datos.json
+    crear_cuenta_s3 trino    "$TRINO_KEY"    "$TRINO_SECRET"    /tmp/politica-datos.json
 }
 
 # `superset db upgrade` va aquí y no en un paso propio porque `fab create-admin`
@@ -366,7 +408,7 @@ paso_banner() {
     echo "  Trino, Spark, and Marquez don't ask for credentials: anyone who reaches"
     echo "  those ports gets in. That's why .env sets BIND_HOST=127.0.0.1."
     echo ""
-    echo "  Buckets: raw/ bronze/ silver/ gold/ checkpoints/"
+    echo "  Buckets: raw/ bronze/ silver/ gold/ checkpoints/ · Airflow logs in airflow-logs/"
     echo "  Sample data: make dev-load-example"
     echo ""
 }

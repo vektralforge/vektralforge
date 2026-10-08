@@ -6,7 +6,7 @@
 .PHONY: help check-env check-deps \
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
-        dev-verificar-permisos \
+        dev-verificar-permisos dev-verificar-logs dev-bundle-git \
         lint-dags test-dags lint-spark test-spark lint-sql \
         lint-all test-all detect-secrets auditar-historial auditar-identificadores \
         deploy-staging deploy-prod
@@ -186,12 +186,32 @@ dev-load-example: check-env
 	@echo ""
 	@bash .ci/scripts/load_example.sh $(ENV_FILE)
 
+# Los DAGs como llegarían en Kubernetes: desde un GitDagBundle que clona el
+# repositorio público, en vez del directorio montado. Es una prueba, no el modo
+# de desarrollo; `make dev-up` vuelve al montaje. Ver compose.bundle-git.yml.
+# La ref tiene que estar publicada en GitHub.
+dev-bundle-git: check-env
+	@echo "[INFO]  DAGs from GitDagBundle (ref: $(or $(VF_BUNDLE_REF),develop))"
+	VF_BUNDLE_REF=$(VF_BUNDLE_REF) $(COMPOSE) -f infra/docker-compose/compose.bundle-git.yml \
+		--env-file $(ENV_FILE) up -d airflow-dag-processor airflow-scheduler airflow-webserver
+	@echo ""
+	@echo "[INFO]  Each DAG run records the commit it was created from:"
+	@echo "    $(COMPOSE) --env-file $(ENV_FILE) exec postgres sh -c \\"
+	@echo "      'psql -U \$$POSTGRES_USER -d airflow -c \"select dag_id, run_id, bundle_name, bundle_version from dag_run order by id desc limit 5\"'"
+	@echo "  Back to the mounted directory: make dev-up"
+
 # El §2.9 dio a cada consumidor una cuenta acotada en vez de la raíz. Un permiso
 # de más no da síntomas —el stack funciona igual—, así que la única forma de
 # saberlo es intentarlo. Necesita el stack levantado.
 dev-verificar-permisos: check-env
 	@echo "[INFO]  Checking that the pipeline account is scoped"
 	@bash .ci/scripts/verificar_permisos.sh
+
+# Los logs de las tareas van al bucket airflow-logs. Si no llegan, Airflow no
+# avisa: las tareas corren igual. Tiene sentido después de dev-load-example.
+dev-verificar-logs: check-env
+	@echo "[INFO]  Checking that task logs reach the object store"
+	@bash .ci/scripts/verificar_logs_remotos.sh
 
 # ── Lint y tests ──────────────────────────────────────────────────────────────
 
@@ -263,6 +283,8 @@ help:
 	@echo "    make dev-reset-hard       Extreme reset (deletes volumes and rebuilds images)"
 	@echo "    make dev-load-example     Loads the sample pipelines and dashboards"
 	@echo "    make dev-verificar-permisos  Checks that the pipeline account is scoped"
+	@echo "    make dev-verificar-logs   Checks that task logs reach the bucket"
+	@echo "    make dev-bundle-git       DAGs from a GitDagBundle (VF_BUNDLE_REF=<branch|tag>)"
 	@echo ""
 	@echo "  Code quality:"
 	@echo "    make lint-all             Full lint (Ruff + sqlfluff)"

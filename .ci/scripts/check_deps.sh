@@ -25,8 +25,8 @@
 #      diagnosable from that file even though the screen only shows a short
 #      error.
 #   5. Whatever is missing and CANNOT be installed automatically (a Linux
-#      distro's own package manager, Docker, make, Xcode CLT on macOS) is
-#      reported with manual instructions.
+#      distro's own package manager, make, Xcode CLT on macOS, Docker on
+#      Arch/openSUSE) is reported with manual instructions.
 #
 # Per-OS philosophy:
 #   - GNU/Linux: everything automatable is installed if the user confirms.
@@ -39,9 +39,16 @@
 #     installable on macOS goes through it. Xcode Command Line Tools is
 #     checked but NEVER installed on its own.
 #   - BSD: not supported — Docker does not run natively on these kernels.
-#   - Docker: on all three families this ONLY verifies it's accessible.
-#     It never installs it — having it installed beforehand is the user's
-#     responsibility.
+#   - Docker: installed automatically on Debian/Ubuntu and RHEL/Fedora/
+#     CentOS (Docker's own get.docker.com script — the same install path
+#     its manual instructions already pointed to) and on macOS (Colima,
+#     not Docker Desktop: scriptable end to end, with no license dialog to
+#     click through). Arch and openSUSE stay manual — their Compose v2
+#     package hasn't been verified against a live system, and a wrong
+#     guess here is worse than no automation. And if Docker is already
+#     installed but the daemon just isn't running, this offers to start it
+#     too (systemctl / colima start / open -a Docker), so a machine that
+#     already has Docker doesn't need a manual step just to turn it on.
 #
 # Log style: every line is prefixed [INFO] / [WARN] / [ERROR] — [INFO] for
 # normal progress and successful checks, [WARN] for a missing dependency

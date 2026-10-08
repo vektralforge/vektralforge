@@ -106,7 +106,21 @@ generar_hex() {
 generar_password() {
     # Base64 url-safe sin relleno: evita caracteres que rompen cadenas de
     # conexión y comandos, igual que hacía secrets.token_urlsafe(24).
-    openssl rand -base64 24 | tr '+/' '-_' | tr -d '=\n'
+    # Pero su alfabeto incluye «-», y una clave que EMPIEZA por guion la toma
+    # como opción cualquier CLI que la reciba como argumento: pasó en CI con
+    # `rc admin service-account create`, una vez de cada 64 por clave (el 64
+    # viene de los símbolos del alfabeto base64; tras la traducción de + y /
+    # el guion es uno de ellos). Se descartan esas y se regenera. Los
+    # consumidores además usan `--`; esto es la segunda red.
+    local p
+    while :; do
+        p=$(openssl rand -base64 24 | tr '+/' '-_' | tr -d '=\n')
+        case "$p" in
+            -*) continue ;;
+            *)  break ;;
+        esac
+    done
+    printf '%s' "$p"
 }
 
 generar_fernet() {
@@ -188,7 +202,6 @@ for entrada in "${PASSWORDS[@]}"; do
 
     pendientes=$((pendientes + 1))
     sugerida=$(generar_password)
-    printf '[INFO]  %s\n    %s\n    [%s]: ' "$clave" "$descripcion" "$sugerida"
 
     # Se lee del terminal para que funcione aunque el script se invoque desde
     # make con la salida redirigida. Comprobar que /dev/tty existe no basta:
@@ -198,10 +211,16 @@ for entrada in "${PASSWORDS[@]}"; do
     { exec 3</dev/tty; } 2>/dev/null && tty_disponible=1
 
     if [ "$tty_disponible" -eq 1 ]; then
+        printf '[INFO]  %s\n    %s\n    [%s]: ' "$clave" "$descripcion" "$sugerida"
         read -r respuesta <&3 || respuesta=""
         exec 3<&-
     else
-        echo "(no terminal: using the generated value)"
+        # Sin terminal no hay a quién ofrecerle la clave, y mostrarla solo
+        # sirve para que quede escrita en un log. En CI ese log es PÚBLICO: el
+        # workflow Stack del repositorio imprimía las ocho contraseñas del
+        # runner. Morían con él y el stack escucha solo en loopback, pero no
+        # tienen por qué estar ahí.
+        printf '[INFO]  %s\n    %s\n    (no terminal: using a generated value)\n' "$clave" "$descripcion"
     fi
 
     escribir_valor "$clave" "${respuesta:-$sugerida}"
