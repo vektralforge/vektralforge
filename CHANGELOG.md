@@ -112,6 +112,11 @@ actualizar.
   subido `cp-kafka` a 8.3.2, que ya no habla con ZooKeeper, dejando el broker
   sin arrancar contra `cp-zookeeper` 7.6.1. Vuelve a 7.6.1 y Dependabot deja de
   proponer la serie 8, que llegará con la migración a KRaft.
+- **Los builds del CI ya no dependen del cupo anónimo de Docker Hub.** Los
+  runners compartidos de GitHub lo agotan entre todos, y el primer intento de
+  este release terminó con todas las imágenes en `429 Too Many Requests`. Con
+  los secretos `DOCKERHUB_USERNAME` y `DOCKERHUB_TOKEN` los workflows se
+  autentican; sin ellos —PR de forks y de Dependabot— siguen como antes.
 - **`init_users.sh` fallaba una vez de cada ~20 en CI** al crear las cuentas del
   object store: `init_env.sh` genera las claves con `token_urlsafe`, cuyo
   alfabeto incluye `-`, y `rc` tomaba como opción un secreto que empezara por

@@ -14,6 +14,14 @@ on:
         description: "Empujar a GHCR (multi-arch) en vez de solo construir (amd64)"
         type: boolean
         default: false
+    # Opcionales: sin ellos el build descarga de Docker Hub de forma anónima.
+    # Se declaran uno a uno en vez de `secrets: inherit`, que entregaría aquí
+    # todos los secretos del repositorio.
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
 
 # SIN bloque `permissions` a propósito. En un workflow reutilizable, declarar
 # permisos aquí no es un techo inocuo: RECORTA los que entrega el llamador.
@@ -59,6 +67,9 @@ jobs:
     # multiplica el tiempo por cinco o más, y los runners arm64 son gratuitos
     # para repositorios públicos.
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    # A nivel de job porque un `if:` de paso no puede leer `secrets`.
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -87,6 +98,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Docker Hub limita las descargas ANÓNIMAS por IP, y los runners
+      # compartidos de GitHub agotan ese cupo entre todos: el release 0.2.0 se
+      # quedó con todos los builds en 429 Too Many Requests al resolver las
+      # imágenes base (maven, alpine, marquez). Autenticado, el límite es por
+      # cuenta y no se comparte. El token es de solo lectura sobre contenido
+      # público; sin los secretos —PR de forks y de Dependabot— el paso se
+      # omite y el build sigue anónimo, como antes.
+      - name: Login en Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Login SIEMPRE, también en los PR. Los paquetes que crea un workflow en
       # una organización nacen privados; una lectura anónima de la caché daría
