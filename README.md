@@ -55,7 +55,7 @@ project without controlling it — see [SPONSORS.md](SPONSORS.md) and
 | PostgreSQL | 15 | Metadata |
 | Valkey | 9.1 | Superset cache (metadata and chart data) |
 | OpenBao | 2.7.0 | Secrets (dev mode locally) |
-| Apache Kafka | 8.3.2 (CP) | Optional `streaming` profile; no pipeline yet |
+| Apache Kafka | 7.6.1 (CP) | Optional `streaming` profile; no pipeline yet |
 | Apache ZooKeeper | 7.6.1 (CP) | Optional `streaming` profile; serves Kafka only |
 
 **Python 3.12 everywhere**: the Spark driver and its executors must agree on the

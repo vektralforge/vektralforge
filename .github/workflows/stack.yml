@@ -56,6 +56,9 @@ jobs:
     # stack entero cabe; si deja de caber, el síntoma será un OOMKilled en el
     # volcado de `docker compose ps`, no un timeout misterioso.
     runs-on: ubuntu-24.04
+    # A nivel de job porque un `if:` de paso no puede leer `secrets`.
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
     timeout-minutes: 90
     steps:
       # Las imágenes del stack superan con holgura los ~14 GB libres que trae
@@ -82,6 +85,20 @@ jobs:
           bash .ci/scripts/init_env.sh < /dev/null
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Docker Hub limita las descargas ANÓNIMAS por IP, y los runners
+      # compartidos de GitHub agotan ese cupo entre todos: el release 0.2.0 se
+      # quedó con todos los builds en 429 Too Many Requests al resolver las
+      # imágenes base (maven, alpine, marquez). Autenticado, el límite es por
+      # cuenta y no se comparte. El token es de solo lectura sobre contenido
+      # público; sin los secretos —PR de forks y de Dependabot— el paso se
+      # omite y el build sigue anónimo, como antes.
+      - name: Login en Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Sin login, la caché de un paquete privado responde 401 y bake lo trata
       # como caché vacía, en silencio: el job pasa igual, tardando ~10 min más.
