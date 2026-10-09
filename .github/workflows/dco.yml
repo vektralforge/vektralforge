@@ -22,11 +22,40 @@ jobs:
         env:
           # El login de quien abrió el PR lo pone GitHub, no el commit.
           PR_AUTOR: ${{ github.event.pull_request.user.login }}
+          # Por variable de entorno y no interpolados en el script: los nombres
+          # de rama los elige quien abre el PR.
+          RAMA_BASE: ${{ github.event.pull_request.base.ref }}
+          RAMA_HEAD: ${{ github.event.pull_request.head.ref }}
+          REPO_HEAD: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           BASE="${{ github.event.pull_request.base.sha }}"
           HEAD="${{ github.event.pull_request.head.sha }}"
           FAILED=0
+
+          # El PR de release develop → main no se vuelve a verificar commit a
+          # commit. Todo lo que hay en develop entró por un PR que ya pasó este
+          # mismo control, y lo que se ve aquí no son esos commits sino los que
+          # produjo el squash al fusionarlos, con otro autor y otras firmas:
+          #
+          #   - un PR de Dependabot pasa por la excepción de bots porque lo
+          #     abrió el bot; el release lo abre una persona, y la excepción
+          #     —a propósito— no se extiende a commits de bot en PR humanos;
+          #   - un squash toma como autor el correo principal de la cuenta de
+          #     GitHub de quien abrió el PR, que puede no coincidir con el de
+          #     las líneas Signed-off-by que el squash copia de los commits
+          #     originales.
+          #
+          # Así, el primer release (25 commits) fallaba en 12 que pasaron el
+          # control al entrar en develop. Como develop no admite force-push,
+          # su historial no se puede firmar de nuevo: el control se hace en la
+          # entrada y aquí se omite. Solo con ambas ramas en este repositorio:
+          # un fork puede llamar `develop` a una rama suya.
+          if [ "$REPO_HEAD" = "$REPO" ] && [ "$RAMA_HEAD" = "develop" ] && [ "$RAMA_BASE" = "main" ]; then
+            echo "Release develop → main: cada commit de develop ya pasó el DCO en su propio PR."
+            exit 0
+          fi
 
           for sha in $(git rev-list "$BASE".."$HEAD"); do
             # Merge commits are exempt
