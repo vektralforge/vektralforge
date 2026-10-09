@@ -153,12 +153,27 @@ jobs:
 
       - run: .ci/scripts/test_spark.sh
 
+  # Construye las siete imágenes del stack (amd64, sin publicar). Es lo que
+  # convierte un Dockerfile roto, un sha256 equivocado o un requirements que ya
+  # no resuelve en un PR en rojo, en vez de un fallo descubierto al publicar.
+  # La caché del registro hace que un PR sin cambios en las imágenes termine en
+  # un par de minutos.
+  imagenes:
+    name: Imágenes
+    uses: ./.github/workflows/_imagenes.yml
+    with:
+      publicar: false
+    # Solo lectura de paquetes: para leer la caché de GHCR, nunca escribirla.
+    permissions:
+      contents: read
+      packages: read
+
   # Resultado único al que apuntar en las reglas de protección de rama: así no
   # hay que actualizarlas cada vez que se añade o renombra un job.
   ci:
     name: CI
     if: always()
-    needs: [lint, secrets, test-dags, test-spark]
+    needs: [lint, secrets, test-dags, test-spark, imagenes]
     runs-on: ubuntu-24.04
     steps:
       - name: Verificar que todo pasó

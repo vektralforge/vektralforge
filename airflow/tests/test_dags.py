@@ -134,6 +134,34 @@ def test_dag_tiene_timeout(dagbag, dag_id):
     assert not sin_timeout, f"{dag_id}: tareas sin execution_timeout: {sin_timeout}"
 
 
+@pytest.mark.parametrize("dag_id", sorted(DAGS_ESPERADOS))
+def test_jobs_de_spark_existen_y_son_relativos_al_dag(dagbag, dag_id):
+    """Cada SparkSubmitOperator apunta a un archivo que existe junto al DAG.
+
+    La ruta se resuelve desde el archivo del DAG para que, con un GitDagBundle,
+    el DAG y su job salgan del mismo commit. Aquí se comprueba las dos cosas:
+    que el archivo existe —un job renombrado rompía el DAG solo al ejecutarse,
+    en el driver— y que está dentro del mismo árbol que el DAG, no en una ruta
+    fija del contenedor como /opt/spark/jobs.
+    """
+    from pathlib import Path
+
+    from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+
+    dag = dagbag.dags[dag_id]
+    raiz = Path(dag.fileloc).resolve().parents[2]
+    problemas = []
+    for tarea in dag.tasks:
+        if not isinstance(tarea, SparkSubmitOperator):
+            continue
+        ruta = Path(tarea.application)
+        if not ruta.is_file():
+            problemas.append(f"{tarea.task_id}: no existe {ruta}")
+        elif raiz not in ruta.resolve().parents:
+            problemas.append(f"{tarea.task_id}: {ruta} está fuera del repositorio del DAG")
+    assert not problemas, "\n".join(problemas)
+
+
 # ── Fecha de ejecución ────────────────────────────────────────────────────────
 
 
@@ -171,12 +199,12 @@ def test_fecha_ejecucion_sin_ds(modulos_dag, modulo):
 def test_configuracion_desde_el_entorno(modulos_dag, modulo):
     """El endpoint viene del entorno y no hay defaults en el código.
 
-    Un default como 'minioadmin' hace que el DAG se conecte con credenciales
+    Un default como 'rustfsadmin' hace que el DAG se conecte con credenciales
     equivocadas y falle mucho después, con un error de S3 que no señala la
     causa.
     """
     m = modulos_dag[modulo]
-    assert m.MINIO_ENDPOINT == "http://minio-test:9000"
+    assert m.S3_ENDPOINT == "http://rustfs-test:9000"
 
 
 @pytest.mark.parametrize(
@@ -190,7 +218,7 @@ def test_credenciales_no_se_leen_a_variables_de_modulo(modulos_dag, modulo):
     SparkSubmitOperator, que es exactamente lo que hay que evitar.
     """
     m = modulos_dag[modulo]
-    leidas = [n for n in ("MINIO_ACCESS", "MINIO_SECRET") if hasattr(m, n)]
+    leidas = [n for n in ("S3_ACCESS_KEY", "S3_SECRET_KEY") if hasattr(m, n)]
     assert not leidas, f"{modulo} lee credenciales a nivel de módulo: {leidas}"
 
 

@@ -1,0 +1,46 @@
+# infra/docker-compose/compose.bundle-git.yml
+#
+# Override para probar en Compose cómo llegan los DAGs en Kubernetes: desde un
+# GitDagBundle en vez del directorio montado. No es el modo de desarrollo —ahí
+# se sigue editando dags/ y viendo el cambio al instante—, es la forma de
+# verificar en local, antes de llegar a un clúster, que:
+#
+#   · el bundle clona el repositorio y el dag-processor encuentra los DAGs,
+#   · cada DAG run registra el commit con que se creó (dag_run.bundle_version),
+#   · el job de Spark se resuelve desde ESE checkout y no desde el montaje.
+#
+# Uso:  make dev-bundle-git                         (rama develop)
+#       make dev-bundle-git VF_BUNDLE_REF=<rama|tag>
+#       make dev-up                                 (vuelve al directorio montado)
+#
+# El repositorio es público, así que no hace falta conexión ni credenciales:
+# repo_url basta. Un repositorio privado necesitaría una conexión de tipo git
+# con una deploy key (git_conn_id), y en Kubernetes esa clave viajaría como un
+# Secret cifrado con SOPS. La ref tiene que estar publicada en GitHub: el bundle
+# clona de allí, no de la copia local.
+#
+# Reemplaza al LocalDagBundle «dags-folder», no se suma a él: los dos traerían
+# los mismos dag_id.
+#
+# sparse_dirs limita el checkout a dags/ y jobs/: el resto del repositorio no
+# hace falta para ejecutar nada y no tiene por qué estar en el contenedor.
+
+x-bundle-git: &bundle-git
+  AIRFLOW__DAG_PROCESSOR__DAG_BUNDLE_CONFIG_LIST: >-
+    [{"name": "vektralforge",
+      "classpath": "airflow.providers.git.bundles.git.GitDagBundle",
+      "kwargs": {"repo_url": "https://github.com/vektralforge/vektralforge.git",
+                 "tracking_ref": "${VF_BUNDLE_REF:-develop}",
+                 "subdir": "airflow/dags",
+                 "sparse_dirs": ["airflow/dags", "spark/jobs"],
+                 "refresh_interval": 60}}]
+
+services:
+  airflow-dag-processor:
+    environment: *bundle-git
+  # Con LocalExecutor las tareas corren en el scheduler: es él quien prepara el
+  # checkout de la versión de cada run antes de ejecutarla.
+  airflow-scheduler:
+    environment: *bundle-git
+  airflow-webserver:
+    environment: *bundle-git

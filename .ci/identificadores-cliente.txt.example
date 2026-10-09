@@ -1,0 +1,22 @@
+# Términos de infraestructura ajena que NO deben aparecer en este repositorio.
+#
+# Copiar a `.ci/identificadores-cliente.txt`, que está en .gitignore y NO se
+# versiona: en un repositorio público, enumerar los nombres que se buscan es
+# exactamente publicarlos. Este archivo de ejemplo sí se versiona, y por eso
+# solo lleva marcadores genéricos.
+#
+# Lo usa `.ci/scripts/auditar_historial.sh identificadores`, junto con los
+# patrones estructurales que sí van en el guion —IPs privadas, hosts internos,
+# registros de contenedores privados— y que no nombran a nadie.
+#
+# Formato: un término por línea.
+#   texto literal       se busca como palabra completa, sin distinguir mayúsculas
+#   re:<expresión>      se interpreta como expresión regular
+#
+# Qué conviene poner: nombres de clúster y de host de clientes, códigos internos
+# de proyecto, nombres de dominio corporativos, sufijos de registros privados.
+
+cliente-ejemplo
+clusterejemplo
+re:AG_[0-9]{3}
+re:[a-z0-9-]+\.ejemplo-corp\.cl

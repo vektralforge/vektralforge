@@ -6,7 +6,7 @@ módulo. Si los tests tuvieran que importar los jobs para probar estas funciones
 el CI necesitaría instalar pyspark —400 MB— para ejercitar aritmética.
 
 Los jobs se quedan con lo que sí necesita Spark: la sesión, la lectura desde
-MinIO y la escritura en Delta.
+el object store y la escritura en Delta.
 """
 
 from __future__ import annotations

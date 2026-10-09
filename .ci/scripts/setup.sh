@@ -6,41 +6,50 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 VENV_DIR="$REPO_ROOT/.venv"
 
-# ── 1. Verificar Python ───────────────────────────────────────────────────────
-echo "→ Verificando Python 3.10+..."
-python3 -c "import sys; assert sys.version_info >= (3,10), 'Requiere Python 3.10+'"
-PYTHON_VERSION=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
-echo "  Python $PYTHON_VERSION detectado ✓"
+# ── 1. Chequear/instalar dependencias de sistema ─────────────────────────────
+# Delegado por completo a check_deps.sh: valida (e instala, con confirmación
+# del usuario) python3.12, venv, pip, git, make, Homebrew/gestor de paquetes y
+# Docker+Compose. Se sourcea (no se ejecuta directo) para que quede disponible
+# su main() acá mismo, y para que el `exec > >(tee ...)` de su logging cubra
+# también el resto de este script, no solo el chequeo de dependencias. Sourcear
+# también deja disponibles sus helpers _info/_ok/_bad/_err — se reutilizan
+# abajo en vez de reimplementar el mismo formato de log a mano.
+# Al llamar a main() queda exportado PYTHON_BIN con la ruta absoluta del
+# intérprete 3.12 ya validado — se usa más abajo para crear el virtualenv, en
+# vez de confiar en cuál "python3" resuelva el PATH (que podía ser cualquier
+# versión >= 3.10, no necesariamente la 3.12 que el resto del proyecto pisa).
+source "$REPO_ROOT/.ci/scripts/check_deps.sh"
+main
 
 # ── 2. Crear virtualenv si no existe ─────────────────────────────────────────
 if [ ! -d "$VENV_DIR" ]; then
-  echo "→ Creando virtualenv en .venv/ ..."
-  python3 -m venv "$VENV_DIR"
-  echo "  ✓ Virtualenv creado"
+  _info "Creating virtualenv in .venv/ (with $PYTHON_BIN)"
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+  _ok "Virtualenv created"
 else
-  echo "→ Virtualenv .venv/ ya existe, reutilizando"
+  _info "Virtualenv .venv/ already exists, reusing it"
 fi
 
 # ── 3. Activar virtualenv ─────────────────────────────────────────────────────
 source "$VENV_DIR/bin/activate"
-echo "→ Virtualenv activo: $VIRTUAL_ENV"
+_ok "Virtualenv active ($VIRTUAL_ENV)"
 
 # ── 4. Actualizar pip ────────────────────────────────────────────────────────
-echo "→ Actualizando pip..."
+_info "Updating pip"
 pip install --upgrade pip --quiet
 
 # ── 5. Instalar dependencias ──────────────────────────────────────────────────
-echo "→ Instalando dependencias Airflow..."
+_info "Installing Airflow dependencies"
 pip install -r "$REPO_ROOT/airflow/requirements.txt"
 
-echo "→ Instalando dependencias Spark..."
+_info "Installing Spark dependencies"
 pip install -r "$REPO_ROOT/spark/requirements.txt"
 
 # Desde los requirements, no desde una lista escrita aquí: esta línea instalaba
 # ruff, sqlfluff y detect-secrets SIN versión, saltándose los pines que el CI sí
 # respeta. El resultado era que el lint local y el del CI podían discrepar, que
 # es exactamente lo que los pines existen para evitar.
-echo "→ Instalando herramientas de desarrollo..."
+_info "Installing development tools"
 pip install --quiet -r "$REPO_ROOT/airflow/requirements-dev.txt"
 pip install --quiet -r "$REPO_ROOT/spark/requirements-dev.txt"
 
@@ -52,25 +61,26 @@ pip install --quiet -r "$REPO_ROOT/spark/requirements-dev.txt"
 pip install --quiet pre-commit
 
 # ── 6. pre-commit ─────────────────────────────────────────────────────────────
-echo "→ Configurando pre-commit hooks..."
+_info "Configuring pre-commit hooks"
 cd "$REPO_ROOT"
 pre-commit install
 
 # ── 7. detect-secrets baseline ───────────────────────────────────────────────
-echo "→ Inicializando baseline de detect-secrets..."
-detect-secrets scan > "$REPO_ROOT/.secrets.baseline"
+# --exclude-files se pasa aquí y no solo en detect_secrets.sh: el baseline
+# guarda DENTRO los filtros con los que se generó. Omitirlo en la creación
+# inicial deja un archivo que detect_secrets.sh rechaza en su primera corrida,
+# por el mismo motivo que documenta su propio encabezado.
+_info "Initializing detect-secrets baseline"
+detect-secrets scan --exclude-files '\.secrets\.baseline$' > "$REPO_ROOT/.secrets.baseline"
 
 # ── 8. .venv en .gitignore ───────────────────────────────────────────────────
 if ! grep -q "^\.venv" "$REPO_ROOT/.gitignore" 2>/dev/null; then
   echo ".venv/" >> "$REPO_ROOT/.gitignore"
-  echo "  ✓ .venv/ agregado a .gitignore"
+  _ok ".venv/ added to .gitignore"
 fi
 
 echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║  ✓ Setup completo                                        ║"
-echo "╠══════════════════════════════════════════════════════════╣"
-echo "║  Activar entorno:   source .venv/bin/activate            ║"
-echo "║  Levantar stack:    make dev-up                          ║"
-echo "║  OpenBao:           http://localhost:8200                ║"
-echo "╚══════════════════════════════════════════════════════════╝"
+_ok "Setup complete"
+_info "Activate the environment: source .venv/bin/activate"
+_info "Start the stack: make dev-up"
+_info "OpenBao: http://localhost:8200"

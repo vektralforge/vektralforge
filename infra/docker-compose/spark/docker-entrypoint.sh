@@ -2,8 +2,8 @@
 #
 # VektralForge — arranque de spark-master y spark-worker
 #
-# Materializa las credenciales de MinIO en core-site.xml y en el INI del SDK
-# (ver credenciales_minio.sh) y luego cede el control al entrypoint de la
+# Materializa las credenciales del object store en core-site.xml y en el INI del SDK
+# (ver credenciales_s3.sh) y luego cede el control al entrypoint de la
 # imagen base, que es quien sabe interpretar los modos `driver` y `executor`.
 #
 # Las rutas de salida las fija el Dockerfile con ENV VF_*; aquí no se repiten
@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-/opt/vektralforge/bin/credenciales_minio.sh
+/opt/vektralforge/bin/credenciales_s3.sh
 
 # La imagen de Apache Spark trae su propio /opt/entrypoint.sh. Se encadena en
 # vez de sustituirlo, y si algún día desaparece de la base esto sigue

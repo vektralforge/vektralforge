@@ -49,8 +49,8 @@ default configurations, its container images, and the project's own
 infrastructure (`vektralforge.org`, the GitHub organisation, published packages).
 
 **Out of scope:** vulnerabilities in upstream components — Apache Airflow, Spark,
-Delta Lake, MinIO, Hive Metastore, Trino, Superset, Kafka, OpenBao, Marquez,
-Graylog and their dependencies. Please report those to the respective projects.
+Delta Lake, RustFS, Hive Metastore, Trino, Superset, Kafka, OpenBao, Marquez
+and their dependencies. Please report those to the respective projects.
 If the issue is in how VektralForge *configures* or *integrates* one of these, it
 is in scope and we want to hear about it.
 
@@ -66,7 +66,7 @@ production-hardened. Before deploying, review at minimum:
 
 - Every default credential in `.env` and the Compose files
 - Secrets management — OpenBao, or your platform's equivalent
-- Network exposure of MinIO, Trino, Superset and the Airflow web interface
+- Network exposure of RustFS, Trino, Superset and the Airflow web interface
 - TLS termination for every exposed service
 - Object storage bucket policies
 

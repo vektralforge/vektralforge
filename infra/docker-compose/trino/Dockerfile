@@ -4,7 +4,7 @@
 # Dockerfile es un entrypoint que renderiza los catálogos.
 #
 # Por qué hace falta: Trino solo resuelve `${ENV:VARIABLE}` en sus archivos de
-# configuración, así que la clave de MinIO tenía que vivir en el entorno del
+# configuración, así que la clave del object store tenía que vivir en el entorno del
 # contenedor —y aparecer en `docker inspect` y en `docker compose config`—. El
 # resto del stack ya la recibe como archivo montado; esto pone a Trino en la
 # misma línea.

@@ -89,7 +89,7 @@ COPY --from=jars /jars/ /opt/spark/jars/
 # el provider de OpenLineage de Airflow en cada spark-submit.
 COPY infra/docker-compose/spark/spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
-# ── Credenciales de MinIO: archivos, no variables de entorno ─────────────────
+# ── Credenciales del object store: archivos, no variables de entorno ────────────────
 #
 # Antes llegaban como AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY, que es lo que
 # resuelve EnvironmentVariableCredentialsProvider. Funcionaba, pero un
@@ -102,7 +102,7 @@ COPY infra/docker-compose/spark/spark-defaults.conf /opt/spark/conf/spark-defaul
 # cliente boto3 a nivel de módulo, y ese módulo se importa en los executors al
 # deserializar cualquier función definida en él.
 COPY infra/docker-compose/comun/core-site.xml.base /opt/vektralforge/conf/core-site.xml.base
-COPY infra/docker-compose/comun/credenciales_minio.sh /opt/vektralforge/bin/credenciales_minio.sh
+COPY infra/docker-compose/comun/credenciales_s3.sh /opt/vektralforge/bin/credenciales_s3.sh
 COPY infra/docker-compose/spark/docker-entrypoint.sh /opt/vektralforge/bin/docker-entrypoint.sh
 
 # /opt/spark/conf es de root en la imagen base y el contenedor corre como
@@ -114,7 +114,7 @@ COPY infra/docker-compose/spark/docker-entrypoint.sh /opt/vektralforge/bin/docke
 # permisos 700, y `+x` sobre 700 deja 711: el kernel ejecuta el archivo, pero
 # el intérprete del shebang necesita LEERLO, y sin o+r falla con un
 # «bash: ...: Permission denied» que parece un problema de ejecución y no lo es.
-RUN chmod 755 /opt/vektralforge/bin/credenciales_minio.sh \
+RUN chmod 755 /opt/vektralforge/bin/credenciales_s3.sh \
               /opt/vektralforge/bin/docker-entrypoint.sh && \
     chmod 644 /opt/vektralforge/conf/core-site.xml.base && \
     mkdir -p /opt/vektralforge/aws && \
@@ -123,7 +123,7 @@ RUN chmod 755 /opt/vektralforge/bin/credenciales_minio.sh \
 
 ENV VF_CORE_SITE=/opt/spark/conf/core-site.xml
 ENV VF_CORE_SITE_BASE=/opt/vektralforge/conf/core-site.xml.base
-ENV VF_AWS_CREDENTIALS=/opt/vektralforge/aws/credentials
+ENV VF_AWS_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 ENV AWS_SHARED_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 
 # El contenedor corre como spark (UID 185) y su home pertenece a root en la
@@ -136,10 +136,15 @@ RUN mkdir -p /home/spark/.ivy2/cache /home/spark/.ivy2/jars && \
 # aquí y no en medio de un DAG.
 RUN python3.12 --version && \
     python3.12 -c "import pyspark, delta; print('pyspark', pyspark.__version__)" && \
-    ls /opt/spark/jars | grep -q "^hadoop-aws-" && \
-    ls /opt/spark/jars | grep -q "delta-spark_4.1_2.13" && \
-    ls /opt/spark/jars | grep -q "^bundle-" && \
-    ls /opt/spark/jars | grep -q "^openlineage-spark_2.13-" && \
+    # Globs y no `ls | grep -q`: grep -q sale con la primera coincidencia y ls
+    # recibe SIGPIPE si sigue escribiendo. Aquí el shell no tiene `pipefail` y
+    # no fallaba, pero en la imagen de Airflow sí, con exit 141 según quién
+    # ganara la carrera. Se corrige en los dos sitios para que no reaparezca
+    # el día que esta imagen cambie de base o de SHELL.
+    ls /opt/spark/jars/hadoop-aws-* >/dev/null && \
+    ls /opt/spark/jars/*delta-spark_4.1_2.13* >/dev/null && \
+    ls /opt/spark/jars/bundle-* >/dev/null && \
+    ls /opt/spark/jars/openlineage-spark_2.13-* >/dev/null && \
     echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
 
 USER spark
@@ -161,12 +166,12 @@ RUN test -x /opt/entrypoint.sh || { \
 # El generador de credenciales, ejecutado con una clave falsa y con el usuario
 # con el que va a correr de verdad. También se escribe donde va a escribir.
 RUN printf 'clave-de-prueba' > /tmp/s && \
-    MINIO_ACCESS_KEY=prueba MINIO_SECRET_KEY_FILE=/tmp/s \
-      /opt/vektralforge/bin/credenciales_minio.sh && \
+    S3_ACCESS_KEY=prueba S3_SECRET_KEY_FILE=/tmp/s \
+      /opt/vektralforge/bin/credenciales_s3.sh && \
     rm -f /tmp/s && \
     grep -q "<name>fs.s3a.secret.key</name>" /opt/spark/conf/core-site.xml && \
     grep -q "^\\[default\\]$" /opt/vektralforge/aws/credentials && \
     rm -f /opt/spark/conf/core-site.xml /opt/vektralforge/aws/credentials && \
-    echo "credenciales_minio.sh genera core-site.xml y el INI del SDK"
+    echo "credenciales_s3.sh genera core-site.xml y el INI del SDK"
 
 ENTRYPOINT ["/opt/vektralforge/bin/docker-entrypoint.sh"]

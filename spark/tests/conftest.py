@@ -1,7 +1,7 @@
 """Pone spark/jobs en el sys.path.
 
 Es lo que hace Python al ejecutar un script: su directorio entra como sys.path[0].
-Dentro del contenedor, `spark-submit /opt/spark/jobs/bronze_arclim.py` resuelve
+Dentro del contenedor, `spark-submit <repo>/spark/jobs/bronze_arclim.py` resuelve
 así el `import transformaciones`, y los tests replican esa misma resolución.
 """
 

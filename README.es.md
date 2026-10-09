@@ -48,32 +48,41 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Delta Lake | 4.1.0 | Formato de tabla transaccional |
 | Apache Hive Metastore | 4.0.0 | Catálogo compartido Spark ↔ Trino |
 | Trino | 448 | Consulta SQL |
-| MinIO | 2025-04 | Almacenamiento de objetos S3 · ver nota |
+| RustFS | 1.0.0-rc.6 | Almacenamiento de objetos S3 · ver nota |
 | Apache Superset | 6.1.0 | Visualización |
 | OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
 | Marquez | 0.51.1 | Almacén y UI de linaje |
 | PostgreSQL | 15 | Metadatos |
-| Redis | 7.2 | Caché de Superset (metadatos y datos de los gráficos) |
-| OpenBao | 2.1.0 | Secretos (modo dev en local) |
-| Apache Kafka | 7.6.1 (CP) | Perfil opcional `streaming`; sin pipeline aún |
+| Valkey | 9.1 | Caché de Superset (metadatos y datos de los gráficos) |
+| OpenBao | 2.7.0 | Secretos (modo dev en local) |
+| Apache Kafka | 8.3.2 (CP) | Perfil opcional `streaming`; sin pipeline aún |
 | Apache ZooKeeper | 7.6.1 (CP) | Perfil opcional `streaming`; solo sirve a Kafka |
 
 Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
 versión menor o PySpark rechaza la ejecución.
 
-**Sobre MinIO.** La versión está fijada a propósito en `RELEASE.2025-04-08`: es
-la última que conserva la consola de administración íntegra, porque MinIO la
-retiró de la edición comunitaria en la release siguiente. Después el proyecto se
-apagó —última imagen pública en septiembre de 2025, repositorio archivado en
-2026—, así que **no hay una versión posterior a la que ir**, y ninguna imagen
-publicada incluye el parche de `CVE-2025-62506` (escalada de privilegios,
-severidad alta). Es un riesgo asumido para un stack de desarrollo local con los
-puertos en loopback, y no lo es para nada más. La salida no es otra versión de
-MinIO sino otro backend: el almacenamiento habla S3 y nada del proyecto depende
-de MinIO en particular — ver [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+**Sobre el object store.** El backend era MinIO y ya no lo es. MinIO retiró la
+consola de administración de la edición comunitaria en `RELEASE.2025-05-24`,
+publicó su última imagen en septiembre de 2025 y archivó el repositorio en 2026;
+`CVE-2025-62506` —escalada de privilegios, severidad alta— se corrigió solo en
+una release que nunca llegó a publicarse como imagen. No había etiqueta a la que
+ir, así que la salida era cambiar de backend y no de versión.
 
-Licencias de terceros, incluidas las dos que no son permisivas —MinIO (AGPLv3) y
-Graylog (SSPL)— en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+**RustFS** es Apache 2.0, con lo que el stack pierde su única dependencia
+AGPLv3, y habla la misma política de IAM de AWS, de modo que
+`politica-datos.json` se reutiliza sin tocar una línea. PyIceberg, Polaris y
+Apache Gravitino ya lo usan como backend S3 de sus pruebas de integración.
+
+La etiqueta `1.0.0-rc.6` está fijada y figura en los `ignore` de Dependabot: no
+es GA, la cadencia de candidatas es de varias por mes, y el Object Lock de RustFS
+**falló abierto** dos veces en 2026 —el issue #1509 y `CVE-2026-73288`,
+corregido en `rc.1`, que esta etiqueta ya incluye—. Un candado que se rompe
+permitiendo el borrado no da ningún síntoma, así que subir esta etiqueta se
+revisa a mano.
+
+Licencias de terceros en [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+Desde octubre de 2026 todas son permisivas: MinIO (AGPLv3) quedó reemplazado y
+Graylog (SSPL) salió del inventario porque nunca llegó a estar en el stack.
 
 ---
 
@@ -117,7 +126,7 @@ ejecutarlo cuando aparezcan variables nuevas.
 | Airflow | http://localhost:8090 |
 | Superset | http://localhost:8088 |
 | Trino | http://localhost:8081 |
-| MinIO | http://localhost:9001 |
+| RustFS | http://localhost:9001 |
 | Marquez (linaje) | http://localhost:3000 |
 | Spark Master | http://localhost:8082 |
 | OpenBao | http://localhost:8200 |
@@ -146,15 +155,30 @@ Ambos comparten el Hive Metastore. Los jobs escriben con `saveAsTable`, no con
 en que se escribe y Trino la ve sin registrarla dos veces. Añadir un pipeline no
 exige tocar ningún script de registro: basta con escribir en `bronze`.
 
-```
-API pública → Airflow → Spark → Delta Lake → MinIO
-                                     ↓
-                          Hive Metastore (compartido)
-                                     ↓
-                                  Trino → Superset
+```mermaid
+flowchart LR
+    classDef storage fill:#7E3A1E,stroke:#5B7076,color:#F4F1EC
+    classDef compute fill:#B4552D,stroke:#5B7076,color:#F4F1EC
+    classDef service fill:#D2703F,stroke:#5B7076,color:#0E1418
+    classDef axis fill:#4A5560,stroke:#5B7076,color:#F4F1EC
+    classDef lineage fill:#2CC6C6,stroke:#4A5560,color:#0E1418
 
-        OpenLineage captura el linaje en cada paso → Marquez
+    API([API pública]) --> AF[Airflow]:::service
+    AF --> SP[Spark]:::compute
+    SP --> DL[(Delta Lake)]:::storage
+    DL --> RFS[(RustFS)]:::storage
+    SP -->|escribe catálogo| HMS{{Hive Metastore}}:::axis
+    HMS -->|lee catálogo| TR[Trino]:::compute
+    TR --> SS[Superset]:::service
+
+    AF -.linaje.-> MQ[(Marquez)]:::lineage
+    SP -.linaje.-> MQ
 ```
+
+Los colores siguen el mismo esquema de capas del isotipo (ver
+[docs/marca.md](docs/marca.md)): almacenamiento en Rust Base, cómputo en Copper
+Forge, servicio/orquestación en Clay Ember, el metastore compartido en Steel
+Axis, linaje en Signal Teal.
 
 El linaje se captura en dos niveles. El provider de OpenLineage de Airflow emite
 el run de cada tarea; el `OpenLineageSparkListener` —declarado en el
@@ -174,16 +198,17 @@ Detalle completo en [docs/arquitectura.md](docs/arquitectura.md).
 ### Estructura
 
 ```
-airflow/          DAGs, plugins y tests
-spark/            Jobs PySpark y tests
-trino/catalog/    Catálogos de Trino
-superset/         Configuración de dashboards
-infra/
-  docker-compose/ Stack local y Dockerfiles
-  k3s/            Namespaces — el despliegue está planificado, no implementado
-.ci/scripts/      Lógica de lint, test y deploy
-.github/          CI y plantillas
-docs/             Documentación, marca y diagramas
+.
+├── airflow/              DAGs, plugins y tests
+├── spark/                Jobs PySpark y tests
+├── trino/catalog/        Catálogos de Trino
+├── superset/             Configuración de dashboards
+├── infra/
+│   ├── docker-compose/   Stack local y Dockerfiles
+│   └── k3s/              Namespaces — el despliegue está planificado, no implementado
+├── .ci/scripts/          Lógica de lint, test y deploy
+├── .github/              CI y plantillas
+└── docs/                 Documentación, marca y diagramas
 ```
 
 Las dependencias están separadas en `requirements.txt` y `requirements-dev.txt`:
@@ -262,10 +287,14 @@ make dev-build          # Reconstruye las imágenes (tras cambiar un Dockerfile)
 make dev-reset          # Borra volúmenes y recrea usuarios
 make dev-reset-hard     # Además reconstruye las imágenes locales
 make dev-load-example   # Ejecuta los pipelines y configura los dashboards
+make dev-bundle-git     # DAGs desde un GitDagBundle en vez del directorio montado
+make dev-check-perms    # Comprueba que la cuenta del pipeline esté acotada
+make dev-check-logs     # Comprueba que los logs de las tareas lleguen al bucket
 make lint-all           # Ruff + sqlfluff
 make test-all           # Tests
 make detect-secrets     # Escaneo de credenciales (árbol de trabajo)
 make auditar-historial  # Escaneo de credenciales (historial de git)
+make auditar-identificadores  # Identificadores de infraestructura ajena en el historial
 ```
 
 El despliegue a K3s **está planificado, no implementado**: `make deploy-staging`
@@ -306,17 +335,21 @@ Ningún archivo del repositorio contiene credenciales. Los que las necesitan
 y los catálogos de Trino— se generan al arrancar el contenedor a partir de los
 secretos que Compose entrega como archivos en `/run/secrets/`.
 
-Las credenciales de MinIO **no viajan como variables de entorno**. Cada
+Las credenciales del object store **no viajan como variables de entorno**. Cada
 consumidor entra con su propia cuenta de servicio —`vf-pipeline`, `vf-hive`,
 `vf-trino`; ninguna es la raíz— acotada por
-`infra/docker-compose/minio/politica-datos.json` a operar sobre los objetos de
+`infra/docker-compose/s3/politica-datos.json` a operar sobre los objetos de
 los cinco buckets. Su clave llega como archivo montado, fuera de
 `docker inspect`, de `docker compose config` y de `/proc/<pid>/environ`, y el
 entrypoint la materializa en el formato que cada consumidor sabe leer: S3A en
 `core-site.xml` con `SimpleAWSCredentialsProvider`, boto3 en el INI que le
 indica `AWS_SHARED_CREDENTIALS_FILE`, y Trino en el catálogo que renderiza al
-arrancar. Solo el servicio `minio` y `init_users.sh` —que legítimamente crean
+arrancar. Solo el servicio `rustfs` y `init_users.sh` —que legítimamente crean
 buckets y cuentas— reciben la raíz.
+
+`vf-pipeline` tiene además acceso al bucket `airflow-logs`, donde Airflow sube
+el log de cada tarea, por `politica-logs-airflow.json`: puede leer, escribir y
+listar, pero no borrar. Las otras dos cuentas no lo ven.
 
 Tampoco se pasan como propiedades de Spark: un `--conf` acaba en la línea de
 comandos de `spark-submit` y en el `ps` del contenedor, aunque el hook lo
@@ -385,7 +418,7 @@ stack completo no está automatizada**, así que verifica con `make dev-up` y
 - **Trino usa `s3://`, Spark usa `s3a://`.** El metastore mapea ambos esquemas al
   conector S3A.
 - **`apache-airflow-providers-amazon` excluido** por incompatibilidad con
-  SQLAlchemy 2.x. El acceso a MinIO se hace con `boto3` directo.
+  SQLAlchemy 2.x. El acceso al object store se hace con `boto3` directo.
 
 ---
 

@@ -177,9 +177,21 @@ docs(governance): clarify TSC composition rule
 6. Sign off every commit.
 7. Open the pull request against `develop`, describing what changed and why.
 
-A maintainer other than the author reviews and merges. Maintainers do not merge
-their own changes without an independent review. CI must be green, including the
-DCO check, `ruff`, tests and CodeQL.
+A maintainer other than the author reviews and merges. Nobody merges their own
+changes.
+
+This is not an honour system, and you do not have to take our word for it: a
+branch ruleset on `develop` and `main` enforces it. Merging requires one
+approving review from somebody other than the author and two green checks —
+`CI`, which aggregates linting, SQL linting, the secret scan and the tests, and
+`Check Signed-off-by`, which is the DCO. Direct pushes and force pushes to those
+two branches are refused, for everyone: the bypass list is empty, so repository
+admins are subject to the same rule.
+
+CodeQL runs on every pull request through GitHub's default setup. Its alerts are
+triaged, but it is deliberately **not** a required check: a code-scanning
+service that is slow or unavailable should not be able to block an unrelated
+documentation fix.
 
 Expect a first response within a week. If a pull request goes quiet for longer,
 a polite ping on the thread is welcome and not considered rude.

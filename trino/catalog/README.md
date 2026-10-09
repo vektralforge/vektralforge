@@ -1,7 +1,7 @@
 # Catálogos de Trino
 
 > **In English.** One `.properties` file per Trino catalog, loaded at startup
-> and queried by file name. Only `delta` is active — Delta Lake tables on MinIO
+> and queried by file name. Only `delta` is active — Delta Lake tables on RustFS
 > through the Hive Metastore. Files ending in `.disabled` are templates for
 > federated queries and are not loaded. Never write a literal credential in
 > these files: use `${ENV:VARIABLE}`; the `detect-secrets` hook blocks the
@@ -15,7 +15,7 @@ de `delta.properties` se consulta como `delta.esquema.tabla`.
 
 | Archivo | Catálogo | Descripción |
 | --- | --- | --- |
-| `delta.properties` | `delta` | Tablas Delta Lake sobre MinIO, vía Hive Metastore. Es el catálogo principal del lakehouse. |
+| `delta.properties` | `delta` | Tablas Delta Lake sobre RustFS, vía Hive Metastore. Es el catálogo principal del lakehouse. |
 
 ## Catálogos de ejemplo (desactivados)
 

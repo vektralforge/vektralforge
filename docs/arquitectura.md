@@ -2,7 +2,7 @@
 
 > **In English.** This is the reference for what is actually implemented, not
 > what is planned. It covers the thirteen-service Docker Compose stack, the
-> Spark-writes / Trino-reads split over Delta Lake on MinIO with a shared Hive
+> Spark-writes / Trino-reads split over Delta Lake on RustFS with a shared Hive
 > Metastore, the OpenLineage path into Marquez, how credentials reach each
 > container as mounted files, and the four Mermaid diagrams of data flow,
 > services, lakehouse layers and secret delivery.
@@ -51,12 +51,12 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Delta Lake | 4.1.0 | `Operativo` | Formato de tabla transaccional |
 | Hive Metastore | 4.0.0 | `Operativo` | Catálogo compartido Spark ↔ Trino |
 | Trino | 448 | `Operativo` | Consulta SQL |
-| MinIO | 2025-04 | `Sin upstream` | Almacenamiento de objetos S3 · ver nota |
+| RustFS | 1.0.0-rc.6 | `Candidata` | Almacenamiento de objetos S3 · ver nota |
 | Apache Superset | 6.1.0 | `Operativo` | Visualización |
 | OpenLineage | 1.52.0 | `Operativo` | Linaje en Airflow y Spark |
 | Marquez | 0.51.1 | `Operativo` | Almacén y UI de linaje |
 | PostgreSQL | 15 | `Operativo` | Metadatos de Airflow, Hive, Marquez y Superset |
-| Redis | 7.2 | `Operativo` | Caché de Superset: metadatos y resultados de los gráficos |
+| Valkey | 9.1 | `Operativo` | Caché de Superset: metadatos y resultados de los gráficos |
 | OpenBao | 2.1.0 | `Parcial` | Secretos; en local corre en modo dev |
 | Apache Kafka | 7.6.1 (CP) | `Opcional` | Perfil `streaming`; sin pipeline aún |
 | Apache ZooKeeper | 7.6.1 (CP) | `Opcional` | Perfil `streaming`; solo sirve a Kafka |
@@ -65,7 +65,6 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Sealed Secrets | — | `En evaluación` | Alternativa a OpenBao para K3s |
 | Great Expectations | — | `Planificado` | Calidad de datos |
 | Prometheus + Grafana | — | `Planificado` | Métricas |
-| Graylog | — | `En evaluación` | Logs; su licencia SSPL es un factor en la decisión |
 
 El linaje se emite en dos niveles: el provider de OpenLineage de Airflow publica
 el run de cada tarea, y el `OpenLineageSparkListener` publica los datasets que
@@ -87,19 +86,38 @@ Sobre control de acceso: **no hay una capa transversal**. Trino usa
 FabAuthManager. Apache Ranger daría políticas unificadas a nivel de tabla,
 columna y fila, pero no está implementado.
 
-**Sobre MinIO.** La versión está fijada a propósito en `RELEASE.2025-04-08`: es
-la última que conserva la consola de administración íntegra, porque MinIO la
-retiró de la edición comunitaria en la release siguiente. Después el proyecto se
-apagó —última imagen pública en septiembre de 2025, repositorio archivado en
-2026—, así que **no hay una versión posterior a la que ir**, y ninguna imagen
-publicada incluye el parche de `CVE-2025-62506` (escalada de privilegios,
-severidad alta). Es un riesgo asumido para un stack de desarrollo local con los
-puertos en loopback, y no lo es para nada más. La salida no es otra versión de
-MinIO sino otro backend: el almacenamiento habla S3 y nada del proyecto depende
-de MinIO en particular — ver [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+**Sobre el object store.** El backend era MinIO y ya no lo es. MinIO retiró la
+consola de administración de la edición comunitaria en `RELEASE.2025-05-24`,
+publicó su última imagen en septiembre de 2025 y archivó el repositorio en 2026;
+`CVE-2025-62506` —escalada de privilegios, severidad alta— se corrigió solo en
+una release que nunca llegó a publicarse como imagen. No había etiqueta a la que
+ir, así que la salida era cambiar de backend, no de versión.
 
-Las licencias de terceros, incluidas MinIO (AGPLv3) y Graylog (SSPL), están en
-[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+**RustFS** es Apache 2.0, con lo que el stack pierde su única dependencia
+AGPLv3, y habla la misma política de IAM de AWS, de modo que
+`politica-datos.json` se reutiliza sin tocar una línea. PyIceberg, Polaris y
+Apache Gravitino ya lo usan como backend S3 de sus pruebas de integración.
+
+La etiqueta `1.0.0-rc.6` está fijada y figura en los `ignore` de Dependabot: no
+es GA, la cadencia de candidatas es de varias por mes, y el Object Lock de RustFS
+**falló abierto** dos veces en 2026 —el issue #1509 y `CVE-2026-73288`,
+corregido en `rc.1`, que esta etiqueta ya incluye—. Un candado que se rompe
+permitiendo el borrado no da ningún síntoma, así que subir de etiqueta aquí se
+revisa a mano. Para el módulo de evidencia con retención WORM, comprobar primero
+que un borrado bajo COMPLIANCE devuelve `AccessDenied`.
+
+**Sobre los logs.** No hay logging centralizado y es un hueco conocido: cada
+servicio escribe a stdout y se lee con `docker compose logs`. Graylog figuró como
+candidato «en evaluación» durante meses sin estar jamás en el Compose, y queda
+descartado: su licencia SSPL no está aprobada por la OSI y su sección 13 alcanza
+a quien ofrezca el software como servicio, que es justo lo que un stack pensado
+para consultoría no puede arrastrar. Los candidatos vivos son Grafana Loki
+(AGPLv3), OpenSearch (Apache 2.0) y Vector (MPL 2.0); el logging es la pieza más
+desacoplada del stack y la más fácil de cambiar.
+
+Las licencias de terceros están en
+[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md): desde octubre de 2026,
+todas permisivas.
 
 Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
 versión menor o PySpark rechaza la ejecución.
@@ -117,7 +135,7 @@ flowchart LR
 
     AF["<b>Airflow 3.3.0</b><br/>orquesta"]
 
-    subgraph minio["MinIO · almacenamiento S3"]
+    subgraph rustfs["RustFS · almacenamiento S3"]
         RAW["<b>raw/</b><br/>respuesta cruda · caché"]
         BRZ["<b>bronze/</b><br/>tablas Delta"]
         SLV["silver/<br/><i>vacío</i>"]
@@ -250,7 +268,7 @@ flowchart LR
         HMS["hive-metastore<br/>thrift :9083"]
     end
 
-    MIN["<b>minio</b><br/>API :9000 · consola :9001"]
+    RFS["<b>rustfs</b><br/>API :9000 · consola :9001"]
 
     subgraph vis["Visualización y linaje"]
         direction TB
@@ -262,17 +280,17 @@ flowchart LR
     subgraph apoyo["Servicios de apoyo"]
         direction TB
         PG["postgres 15 · :5432<br/>airflow · metastore · marquez"]
-        RDS["redis 7.2 · :6379<br/>caché de Superset"]
+        RDS["valkey 9.1 · :6379<br/>caché de Superset"]
         OB["openbao 2.1.0 · :8200<br/>modo -dev, sin consumidores"]
         KFK["kafka 7.6.1 · :9092 + zookeeper<br/>perfil streaming, no arranca"]
     end
 
     AFS -->|"spark-submit · modo client"| SPM
     SPM --- SPW
-    SPM --> MIN
-    HMS --> MIN
+    SPM --> RFS
+    HMS --> RFS
     TRN --> HMS
-    TRN --> MIN
+    TRN --> RFS
     SUP --> TRN
     MQW --> MQA
     AFS -.->|OpenLineage| MQA
@@ -389,7 +407,7 @@ flowchart LR
 | `gold/` | Agregados para consumo | Indefinido |
 
 Las políticas de retención son de diseño: **no hay lifecycle policies
-configuradas en MinIO ni un DAG de `VACUUM`**. Delta conserva todas las
+configuradas en el object store ni un DAG de `VACUUM`**. Delta conserva todas las
 versiones hasta que alguien las purgue.
 
 ---
@@ -425,17 +443,21 @@ Ningún archivo del repositorio contiene credenciales. Los que las necesitan
 y los catálogos de Trino— se generan al arrancar el contenedor a partir de los
 secretos que Compose entrega como archivos en `/run/secrets/`.
 
-Las credenciales de MinIO **no viajan como variables de entorno**. Cada
+Las credenciales del object store **no viajan como variables de entorno**. Cada
 consumidor entra con su propia cuenta de servicio —`vf-pipeline`, `vf-hive`,
 `vf-trino`; ninguna es la raíz— acotada por
-`infra/docker-compose/minio/politica-datos.json` a operar sobre los objetos de
+`infra/docker-compose/s3/politica-datos.json` a operar sobre los objetos de
 los cinco buckets. Su clave llega como archivo montado, fuera de
 `docker inspect`, de `docker compose config` y de `/proc/<pid>/environ`, y el
 entrypoint la materializa en el formato que cada consumidor sabe leer: S3A en
 `core-site.xml` con `SimpleAWSCredentialsProvider`, boto3 en el INI que le
 indica `AWS_SHARED_CREDENTIALS_FILE`, y Trino en el catálogo que renderiza al
-arrancar. Solo el servicio `minio` y `init_users.sh` —que legítimamente crean
+arrancar. Solo el servicio `rustfs` y `init_users.sh` —que legítimamente crean
 buckets y cuentas— reciben la raíz.
+
+`vf-pipeline` tiene además acceso al bucket `airflow-logs`, donde Airflow sube
+el log de cada tarea, por `politica-logs-airflow.json`: puede leer, escribir y
+listar, pero no borrar. Las otras dos cuentas no lo ven.
 
 Tampoco como propiedades de Spark. Una propiedad pasada con `--conf` viaja en
 la línea de comandos del proceso: queda en el `ps` del contenedor de Airflow y
@@ -488,7 +510,7 @@ reporte como éxito.
 | Airflow | http://localhost:8090 |
 | Superset | http://localhost:8088 |
 | Trino | http://localhost:8081 |
-| MinIO | http://localhost:9001 |
+| RustFS | http://localhost:9001 |
 | Marquez | http://localhost:3000 |
 | Spark Master | http://localhost:8082 |
 | OpenBao | http://localhost:8200 |
@@ -523,7 +545,7 @@ EUR 79 al mes.
 |---|---|---|---|---|
 | node-1 | Control plane, Airflow, OpenBao | 8 núcleos | 32 GB | — |
 | node-2 | Spark, Trino | 16 núcleos | 64 GB | — |
-| node-3 | MinIO, Kafka, Marquez | 8 núcleos | 32 GB | 4 TB |
+| node-3 | RustFS, Kafka, Marquez | 8 núcleos | 32 GB | 4 TB |
 | **Total** | | **32 núcleos** | **128 GB** | **4 TB** |
 
 ---

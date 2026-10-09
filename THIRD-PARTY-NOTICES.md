@@ -4,61 +4,39 @@ VektralForge itself is licensed under the [Apache License 2.0](LICENSE). This
 document lists the third-party components the project orchestrates, together with
 their copyright holders and licence terms.
 
-**How to read this.** VektralForge does not fork, embed, or statically link any of
-these components. It composes them: they run as separate services and processes,
-and the project ships configuration, DAGs, Spark jobs and glue code that make them
-work together. Most are pulled at runtime as container images or installed as
-declared dependencies.
+**How to read this.** VektralForge composes third-party components rather than
+forking them: they run as separate services and processes, and the project ships
+configuration, DAGs, Spark jobs and glue code that make them work together. Most
+are pulled at runtime as container images or installed as declared dependencies.
 
-That distinction matters for the two components below whose licences are not
-Apache 2.0, and it is why they can be part of the stack without affecting the
-licence of VektralForge's own code. It does **not** relieve you of assessing your
-own obligations for your deployment.
+That distinction matters for the component below whose licence is not Apache 2.0,
+and it is why it can be part of the stack without affecting the licence of
+VektralForge's own code. It does **not** relieve you of assessing your own
+obligations for your deployment.
+
+**There is one exception.** Since October 2026 the `vektralforge/rustfs` image
+copies one binary in at build time, so that binary *is* redistributed by this
+project rather than merely orchestrated. It has its own section below —
+[Binaries vendored into VektralForge
+images](#binaries-vendored-into-vektralforge-images).
 
 ---
 
-## Components requiring attention
+## Every component is permissively licensed
 
-These two do not share the permissive terms of the rest of the stack. If you plan
-to deploy VektralForge commercially, offer it as a hosted service, or embed it in
-a proprietary product, review them with counsel before you do.
+As of October 2026 nothing in the stack carries copyleft or a source-available
+licence, and the project redistributes no copyleft binary. Two entries in the
+tables below still carry a note worth reading — Redis, whose permissive terms
+depend on the version pin, and OpenBao, which exists because Vault's did not
+survive — but neither constrains how you deploy, offer or embed VektralForge.
 
-### MinIO — GNU AGPL v3.0
-
-Copyright © MinIO, Inc. — https://github.com/minio/minio
-
-The MinIO server, client and gateway are licensed under AGPLv3; the client SDKs
-remain under Apache 2.0. AGPLv3's network clause requires that users who interact
-with a modified version over a network be able to obtain the corresponding source
-code. MinIO states that any commercial or proprietary use of the AGPLv3 software —
-including repackaging or reselling features or services — is undertaken at the
-user's own risk, and that determining compliance is the user's responsibility, not
-MinIO's. MinIO offers a separate commercial licence for cases where the AGPLv3
-obligations are triggered.
-
-**If this is a problem for your deployment,** VektralForge's storage layer speaks
-the S3 API. Any S3-compatible backend works — AWS S3, Ceph RADOS Gateway,
-Garage (AGPLv3), SeaweedFS (Apache 2.0), or a managed provider. MinIO is the
-default because it is the most convenient for local development, not because the
-project depends on it.
-
-### Graylog Open — Server Side Public License v1
-
-Copyright © Graylog, Inc. — https://github.com/Graylog2/graylog2-server
-
-Releases before Graylog 4.0 were GPLv3; from 4.0 onward, including the free
-Graylog Open tier, the licence is SSPL v1. The SSPL is based on the GPL but was
-authored by MongoDB and **has not been approved by the Open Source Initiative**.
-Its section 13 sets out obligations for anyone offering the software as a service:
-in that case the management, interface, API, automation, monitoring, backup,
-storage and hosting software must all be released under SSPL terms.
-
-Self-hosting Graylog for your own log management does not trigger section 13.
-Offering it as part of a service to third parties may.
-
-**Alternatives** if SSPL is unacceptable in your context: Grafana Loki (AGPLv3),
-OpenSearch (Apache 2.0), or Vector (MPL 2.0) with a backend of your choice.
-Logging is the most loosely coupled part of the stack and the easiest to swap.
+Getting here took two removals. **MinIO** (AGPLv3) was the storage backend until
+October 2026 and was replaced by RustFS (Apache 2.0). **Graylog Open** (SSPL-1.0)
+was listed as a stack component but was never one: it had no service in the
+Compose file, no logging driver pointed at it and no Kubernetes manifest declared
+it. It was under evaluation for centralised logging and the evaluation is closed
+— see the architecture document for what logging is still missing and why the
+SSPL ruled this candidate out.
 
 ---
 
@@ -77,20 +55,21 @@ Logging is the most loosely coupled part of the stack and the easiest to swap.
 | Marquez                 | Apache-2.0              | https://github.com/MarquezProject/marquez   |
 | OpenBao                 | MPL-2.0                 | https://github.com/openbao/openbao          |
 | PostgreSQL              | PostgreSQL Licence      | https://www.postgresql.org/about/licence/   |
-| Redis                   | BSD-3-Clause (see note) | https://github.com/redis/redis              |
+| Valkey                  | BSD-3-Clause (see note) | https://github.com/valkey-io/valkey         |
 | Apache ZooKeeper        | Apache-2.0              | https://github.com/apache/zookeeper         |
-| MinIO                   | **AGPL-3.0**            | https://github.com/minio/minio              |
-| Graylog Open            | **SSPL-1.0**            | https://github.com/Graylog2/graylog2-server |
+| RustFS                  | Apache-2.0              | https://github.com/rustfs/rustfs            |
 
 A note on **OpenBao**: it is the Linux Foundation fork of HashiCorp Vault, created
 after Vault moved to the Business Source Licence. OpenBao remains under MPL 2.0,
 which is why VektralForge uses it rather than Vault.
 
-A note on **Redis**: the image is pinned to 7.2, which is BSD-3-Clause. From 7.4
-onward Redis moved to a dual RSALv2 / SSPLv1 licence that is not OSI-approved.
-The pin is what preserves the permissive terms, so an automated version bump
-would silently change them. Valkey, the Linux Foundation fork, stays under
-BSD-3-Clause if you prefer a version that keeps receiving updates on those terms.
+A note on **Valkey**: it replaces Redis as Superset's cache. Redis moved to a
+dual RSALv2 / SSPLv1 licence from 7.4 and added AGPLv3 as a third option from
+8.0; none of the three is permissive. Valkey is the Linux Foundation fork of
+Redis 7.2.4 and remains under BSD-3-Clause. Being hosted by a foundation means
+the trademark is not held by a single vendor, which is what allowed the Redis
+relicensing in the first place. Major-version bumps are excluded from
+Dependabot and reviewed by hand.
 
 A note on **Kafka**: the images come from `confluentinc/cp-kafka` and
 `confluentinc/cp-zookeeper`, which package Apache Kafka under Apache 2.0. Other
@@ -151,10 +130,33 @@ All are permissive and compatible with Apache 2.0. Note that Spark 4 (Hadoop
 uses **v1** — they are different artefacts under different group IDs, not
 versions of the same one.
 
+## Binaries vendored into VektralForge images
+
+Everything above is orchestrated. This one is **redistributed**: the
+`vektralforge/rustfs` image is built from the upstream `rustfs/rustfs` image with
+the binary copied in at build time (`infra/docker-compose/s3/Dockerfile`), so
+whoever pulls that image receives it and its terms travel with it.
+
+| Binary | Licence | Source | Why it is in the image |
+| ------ | ------- | ------ | ---------------------- |
+| `rc` — RustFS CLI | Apache-2.0 OR MIT | https://github.com/rustfs/cli | Upstream publishes the CLI as a separate artefact; unlike MinIO's `mc`, it does not ship inside the server image. `init_users.sh` needs it *inside* the container so the root credential can arrive over a pipe instead of through argv or the environment. |
+
+This entry is different in kind from the rest of the document — the binary is
+dual-licensed Apache-2.0 OR MIT and raises no obligation beyond attribution,
+which is what this table is — but it is listed because redistribution is a
+different relationship from orchestration, and the distinction should be visible
+rather than assumed.
+
+An earlier revision of this section also listed busybox (GPL-2.0-only), copied
+from Alpine for the container healthcheck. It was removed once it was verified
+that the RustFS image already carries curl: **VektralForge redistributes no
+copyleft binary.**
+
 ## Container images
 
 The `docker-compose` and Kubernetes manifests reference upstream images published
-by each project. VektralForge does not republish or modify them. Each image
+by each project. Except for `vektralforge/rustfs`, described in the section
+above, VektralForge does not republish or modify them. Each image
 carries the licence of its upstream project, plus the licences of the base image
 and system packages it contains. Run a scanner such as `syft` or `trivy` against
 the images if you need a component-level inventory for your own compliance
@@ -165,10 +167,11 @@ process.
 ## Maintaining this file
 
 This inventory is reviewed when a component is added, removed, or upgraded across
-a major version, and at least once a year. Licences change: Vault, Elastic, Redis
-and Graylog itself all illustrate the point. If you notice an entry that has gone
-stale, please open a pull request or an issue — corrections are welcome and
-useful.
+a major version, and at least once a year. Licences change — Vault, Elastic,
+Redis and Graylog all illustrate the point — and so does the inventory itself:
+Graylog sat in this file as a stack component for months without ever being one.
+If you notice an entry that has gone stale, please open a pull request or an
+issue; corrections are welcome and useful.
 
 ## Disclaimer
 

@@ -32,11 +32,27 @@ apache-airflow-providers-microsoft-mssql
 # providers: la elige el archivo de constraints. urllib3 viene con requests.
 requests
 
+# ── DAGs desde Git ───────────────────────────────────────────────────────────
+# Trae el GitDagBundle: en Kubernetes los DAGs y sus jobs de Spark se clonan del
+# repositorio en vez de montarse desde el host, y cada DAG run queda atado al
+# commit con que se creó. La imagen base ya lo trae (extra «git»); se declara
+# por lo mismo que requests. La versión la fija el constraints: 0.4.0 en 3.3.0.
+apache-airflow-providers-git
+
 # ── Secretos ─────────────────────────────────────────────────────────────────
 hvac
 
-# NOTA: apache-airflow-providers-amazon queda excluido por incompatibilidad con
-# SQLAlchemy 2.x. Revisar si la restricción sigue vigente en Airflow 3.
+# ── Logs de tareas en el object store ────────────────────────────────────────
+# Trae el S3TaskHandler: los logs de cada tarea se suben al bucket airflow-logs
+# y la UI los lee de ahí, sin un volumen compartido entre los pods de Airflow.
+# Ver [logging] en docker-compose.yml.
+#
+# Aquí había una nota que lo dejaba fuera por «incompatibilidad con SQLAlchemy
+# 2.x». Ya no aplica: el archivo de constraints de Airflow 3.3.0 fija
+# apache-airflow-providers-amazon==9.31.0 junto a SQLAlchemy==2.0.51, y la imagen
+# base oficial lo trae instalado en sus extras por defecto. Se declara igual,
+# por lo mismo que requests: lo que usa el proyecto se nombra, no se hereda.
+apache-airflow-providers-amazon
 
 # ── Cliente Spark ────────────────────────────────────────────────────────────
 # SparkSubmitOperator ejecuta spark-submit desde el contenedor de Airflow, no

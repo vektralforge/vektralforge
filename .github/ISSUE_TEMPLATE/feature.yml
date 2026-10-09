@@ -42,7 +42,7 @@ body:
         - Hive Metastore
         - Trino
         - Superset
-        - MinIO / storage
+        - RustFS / storage
         - OpenLineage / Marquez
         - Compose / images
         - CI, tests or tooling

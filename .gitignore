@@ -30,7 +30,7 @@ htmlcov/
 .mypy_cache/
 *.log
 logs/
-infra/docker-compose/minio-data/
+infra/docker-compose/s3-data/
 .ruff_cache/
 
 # Airflow (generados en runtime)
@@ -75,3 +75,12 @@ data/
 # Configuración generada en el arranque del contenedor (contiene credenciales)
 infra/docker-compose/marquez/marquez.yml
 infra/docker-compose/hive/core-site.xml
+
+# Respaldos del .env creados al renombrar claves: nunca se versionan.
+.env.bak-*
+*/.env.bak-*
+
+# Lista local de identificadores de cliente para `make auditar-identificadores`.
+# No se versiona: enumerar lo que se busca, en un repositorio público, es
+# publicarlo. El ejemplo con marcadores genéricos sí está versionado.
+.ci/identificadores-cliente.txt

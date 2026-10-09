@@ -26,6 +26,7 @@ import json
 import logging
 import os
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
@@ -40,14 +41,23 @@ log = logging.getLogger(__name__)
 
 # ── Configuración ─────────────────────────────────────────────────────────────
 ARCLIM_BASE = "https://arclim.mma.gob.cl/api"
+
+# Los jobs de Spark se resuelven RELATIVOS A ESTE ARCHIVO y no con una ruta fija
+# como /opt/spark/jobs. Con un GitDagBundle, cada versión del repositorio vive
+# en su propio directorio y cada DAG run queda atado al commit con que se creó:
+# resolviendo desde __file__, el DAG de ese commit lanza el job de ese mismo
+# commit. Con una ruta fija, un rerun de un run viejo lanzaría el job de hoy.
+# En Compose funciona igual porque dags/ y jobs/ se montan con la estructura
+# del repositorio (ver docker-compose.yml).
+JOBS_SPARK = Path(__file__).resolve().parents[2] / "spark" / "jobs"
 # Sin valores por defecto: unas credenciales silenciosamente incorrectas
 # fallan mucho después y con un error de S3 que no señala la causa.
-MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
+S3_ENDPOINT = os.environ["S3_ENDPOINT"]
 # Las credenciales NO están en el entorno. El entrypoint del contenedor las
 # materializa al arrancar en dos archivos, uno por consumidor: boto3 lee el INI
 # que le indica AWS_SHARED_CREDENTIALS_FILE, y el driver de Spark —que corre en
 # este mismo contenedor, porque SparkSubmitOperator usa modo client— lee
-# core-site.xml desde SPARK_CONF_DIR. Ver credenciales_minio.sh.
+# core-site.xml desde SPARK_CONF_DIR. Ver credenciales_s3.sh.
 #
 # Tampoco se pasan por `conf` al SparkSubmitOperator: ahí acabarían en la línea
 # de comandos del proceso y en la UI del driver.
@@ -58,8 +68,8 @@ MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
 _ARCHIVO_CREDENCIALES = os.environ.get("AWS_SHARED_CREDENTIALS_FILE", "")
 if not _ARCHIVO_CREDENCIALES or not os.path.isfile(_ARCHIVO_CREDENCIALES):
     raise RuntimeError(
-        "No hay credenciales de MinIO para boto3: AWS_SHARED_CREDENTIALS_FILE="
-        f"{_ARCHIVO_CREDENCIALES!r}. Las escribe credenciales_minio.sh en el "
+        "No hay credenciales del object store para boto3: AWS_SHARED_CREDENTIALS_FILE="
+        f"{_ARCHIVO_CREDENCIALES!r}. Las escribe credenciales_s3.sh en el "
         "arranque del contenedor, a partir del secreto que monta compose."
     )
 TIMEOUT = 60  # segundos por request
@@ -167,7 +177,7 @@ def extract_arclim(**context):
 
     s3 = boto3.client(
         "s3",
-        endpoint_url=MINIO_ENDPOINT,
+        endpoint_url=S3_ENDPOINT,
         config=Config(signature_version="s3v4"),
     )
     sesion = crear_sesion()
@@ -307,7 +317,7 @@ def validar_arclim(**context):
 
     s3 = boto3.client(
         "s3",
-        endpoint_url=MINIO_ENDPOINT,
+        endpoint_url=S3_ENDPOINT,
         config=Config(signature_version="s3v4"),
     )
 
@@ -393,7 +403,7 @@ with DAG(
         # Sin esto el submit va con el nombre por defecto del operador,
         # "arrow-spark", que no dice nada en la UI de Spark.
         name="vektralforge-bronze-arclim",
-        application="/opt/spark/jobs/bronze_arclim.py",
+        application=str(JOBS_SPARK / "bronze_arclim.py"),
         application_args=[FECHA],
         # Sin --packages: delta-spark y delta-storage ya están en
         # /opt/spark/jars del cluster y en el pyspark del contenedor de Airflow.
@@ -402,7 +412,7 @@ with DAG(
         conf={
             "spark.sql.extensions": "io.delta.sql.DeltaSparkSessionExtension",
             "spark.sql.catalog.spark_catalog": ("org.apache.spark.sql.delta.catalog.DeltaCatalog"),
-            "spark.hadoop.fs.s3a.endpoint": MINIO_ENDPOINT,
+            "spark.hadoop.fs.s3a.endpoint": S3_ENDPOINT,
             # Las credenciales no van aquí, y tampoco en el job: las declara
             # el core-site.xml que el entrypoint escribe en SPARK_CONF_DIR, y
             # el driver lo lee desde el classpath. Un --conf acabaría en la

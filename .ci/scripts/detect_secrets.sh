@@ -13,8 +13,24 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 if [ ! -f .secrets.baseline ]; then
-    echo "  ✗ No existe .secrets.baseline"
-    echo "    Generarlo con: detect-secrets scan > .secrets.baseline"
+    echo "[ERROR] .secrets.baseline not found"
+    echo "    Generate it with:"
+    echo "        detect-secrets scan --exclude-files '\\.secrets\\.baseline\$' \\"
+    echo "            > .secrets.baseline"
+    exit 1
+fi
+
+# El baseline guarda DENTRO los filtros con los que se generó, y de ahí los lee
+# todo lo que lo consume después, incluido el hook de pre-commit. Regenerarlo
+# sin --exclude-files no solo omite la exclusión en esa ejecución: la borra del
+# archivo para siempre. Con el baseline vacío no se nota —es lo que pasó el
+# 2026-10-02— pero en cuanto tenga una entrada real, sus propios hashes de alta
+# entropía hacen que el archivo se delate a sí mismo en el siguiente escaneo.
+if ! grep -q 'should_exclude_file' .secrets.baseline; then
+    echo "[ERROR] .secrets.baseline doesn't carry the filter that excludes itself."
+    echo "    It was lost by regenerating without --exclude-files. Redo it with:"
+    echo "        detect-secrets scan --exclude-files '\\.secrets\\.baseline\$' \\"
+    echo "            > .secrets.baseline"
     exit 1
 fi
 
@@ -48,15 +64,15 @@ nuevos=$(comm -13 <(echo "$antes" | sort) <(echo "$despues" | sort))
 
 if [ -n "$nuevos" ]; then
     echo ""
-    echo "  ✗ Credenciales potenciales no presentes en el baseline:"
+    echo "[ERROR] Potential credentials not present in the baseline:"
     echo "$nuevos" | sed 's/^/      /'
     echo ""
-    echo "    Si son falsos positivos, márcalos en el código:"
-    echo "        VALOR = \"...\"  # pragma: allowlist secret"
+    echo "    If they're false positives, mark them in the code:"
+    echo "        VALUE = \"...\"  # pragma: allowlist secret"
     echo ""
-    echo "    Si son reales: NO los añadas al baseline. Rótalos y sácalos"
-    echo "    del código."
+    echo "    If they're real: do NOT add them to the baseline. Rotate them"
+    echo "    and remove them from the code."
     exit 1
 fi
 
-echo "✓ Sin credenciales nuevas respecto al baseline"
+echo "[INFO]  No new credentials relative to the baseline"

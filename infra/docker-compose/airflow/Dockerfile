@@ -8,7 +8,7 @@
 # SDK v2 la hereda hadoop-aws de su POM padre y fijarla a mano es frágil.
 
 # ── Etapa 1: resolver los JAR con Maven ──────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-17 AS jars
+FROM maven:3.9-eclipse-temurin-26 AS jars
 
 # Deben coincidir con infra/docker-compose/spark/Dockerfile.
 ARG DELTA_VERSION=4.1.0
@@ -89,7 +89,7 @@ ENV SPARK_CONF_DIR=/opt/vektralforge/spark-conf
 # vía AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD. Ver el docstring del script.
 COPY infra/docker-compose/airflow/cadena_de_conexion.py /opt/vektralforge/bin/cadena_de_conexion.py
 
-# ── Credenciales de MinIO: archivos, no variables de entorno ─────────────────
+# ── Credenciales del object store: archivos, no variables de entorno ────────────────
 #
 # En este contenedor hay dos consumidores y cada uno lee un formato distinto:
 # el driver de Spark —SparkSubmitOperator usa modo client, así que corre AQUÍ—
@@ -99,7 +99,7 @@ COPY infra/docker-compose/airflow/cadena_de_conexion.py /opt/vektralforge/bin/ca
 # Antes las dos rutas se resolvían con AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY
 # en el entorno de los cuatro contenedores, donde las enseñaba `docker inspect`.
 COPY infra/docker-compose/comun/core-site.xml.base /opt/vektralforge/conf/core-site.xml.base
-COPY infra/docker-compose/comun/credenciales_minio.sh /opt/vektralforge/bin/credenciales_minio.sh
+COPY infra/docker-compose/comun/credenciales_s3.sh /opt/vektralforge/bin/credenciales_s3.sh
 COPY infra/docker-compose/airflow/docker-entrypoint.sh /opt/vektralforge/bin/docker-entrypoint.sh
 
 # COPY crea los directorios intermedios como root aunque el USER sea airflow, y
@@ -112,7 +112,7 @@ USER root
 # el intérprete del shebang necesita LEERLO, y sin o+r falla con un
 # «bash: ...: Permission denied» que parece un problema de ejecución y no lo es.
 RUN chmod 755 /opt/vektralforge/bin/cadena_de_conexion.py \
-              /opt/vektralforge/bin/credenciales_minio.sh \
+              /opt/vektralforge/bin/credenciales_s3.sh \
               /opt/vektralforge/bin/docker-entrypoint.sh && \
     chmod 644 /opt/vektralforge/conf/core-site.xml.base && \
     mkdir -p /opt/vektralforge/aws && \
@@ -122,19 +122,44 @@ USER airflow
 
 ENV VF_CORE_SITE=/opt/vektralforge/spark-conf/core-site.xml
 ENV VF_CORE_SITE_BASE=/opt/vektralforge/conf/core-site.xml.base
-ENV VF_AWS_CREDENTIALS=/opt/vektralforge/aws/credentials
+ENV VF_AWS_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 ENV AWS_SHARED_CREDENTIALS_FILE=/opt/vektralforge/aws/credentials
 
 RUN airflow version && \
     java -version && \
     python -c "import pyspark, delta; assert pyspark.__version__.startswith('4.1'), pyspark.__version__; print('pyspark', pyspark.__version__, 'delta OK')" && \
     PYSPARK_JARS=$(python -c "import pyspark, os; print(os.path.join(os.path.dirname(pyspark.__file__), 'jars'))") && \
-    ls "$PYSPARK_JARS" | grep -q "^hadoop-aws-" && \
-    ls "$PYSPARK_JARS" | grep -q "delta-spark_4.1_2.13" && \
-    ls "$PYSPARK_JARS" | grep -q "^bundle-" && \
-    ls "$PYSPARK_JARS" | grep -q "^openlineage-spark_2.13-" && \
+    # Globs y no `ls | grep -q`: grep -q sale con la primera coincidencia, ls
+    # recibe SIGPIPE al seguir escribiendo y, con `pipefail` (lo activa la
+    # imagen base de Airflow), el RUN falla con 141 según quién gane la
+    # carrera. Pasaba en CI y no en local.
+    ls "$PYSPARK_JARS"/hadoop-aws-* >/dev/null && \
+    ls "$PYSPARK_JARS"/*delta-spark_4.1_2.13* >/dev/null && \
+    ls "$PYSPARK_JARS"/bundle-* >/dev/null && \
+    ls "$PYSPARK_JARS"/openlineage-spark_2.13-* >/dev/null && \
     test -f "$SPARK_CONF_DIR/spark-defaults.conf" && \
     echo "JARs de Delta, AWS SDK v2 y OpenLineage presentes"
+
+# El logging remoto depende del provider amazon. Si una versión futura de la
+# imagen base deja de traerlo y el constraints no lo resuelve, que lo diga el
+# build: en ejecución, Airflow seguiría escribiendo logs en local sin avisar de
+# que no los sube a ningún sitio.
+RUN python -c "from airflow.providers.amazon.aws.log.s3_task_handler import S3RemoteLogIO; print('S3RemoteLogIO disponible')"
+
+# plugins/ va DENTRO de la imagen: en Kubernetes no hay host del que montarlo, y
+# los DAGs lo importan (`from http_publico import ...`). No viaja con el
+# GitDagBundle porque Airflow carga plugins/ al arrancar, no por DAG run: un
+# cambio aquí exige reiniciar de todas formas. En Compose se sigue montando
+# encima para editarlo sin reconstruir.
+COPY --chown=airflow:root airflow/plugins/ /opt/airflow/plugins/
+
+# El GitDagBundle necesita el provider y el binario de git. La imagen base trae
+# los dos hoy; si una versión futura deja de hacerlo, que lo diga el build y no
+# el dag-processor al intentar clonar.
+RUN git --version && \
+    python -c "from airflow.providers.git.bundles.git import GitDagBundle; print('GitDagBundle disponible')" && \
+    test -f /opt/airflow/plugins/http_publico.py && \
+    echo "plugins/ presente en la imagen"
 
 # El script de la cadena de conexión NO debe terminar en salto de línea: Airflow
 # no lo recorta y Postgres acaba buscando una base llamada "airflow\n". Costó un
@@ -172,12 +197,12 @@ RUN test -x /entrypoint || { \
 # va a correr y escribiendo en el destino real: así comprueba de paso que los
 # dos directorios son escribibles por `airflow`.
 RUN printf 'clave-de-prueba' > /tmp/s && \
-    MINIO_ACCESS_KEY=prueba MINIO_SECRET_KEY_FILE=/tmp/s \
-      /opt/vektralforge/bin/credenciales_minio.sh && \
+    S3_ACCESS_KEY=prueba S3_SECRET_KEY_FILE=/tmp/s \
+      /opt/vektralforge/bin/credenciales_s3.sh && \
     rm -f /tmp/s && \
     grep -q "<name>fs.s3a.secret.key</name>" /opt/vektralforge/spark-conf/core-site.xml && \
     grep -q "^\\[default\\]$" /opt/vektralforge/aws/credentials && \
     rm -f /opt/vektralforge/spark-conf/core-site.xml /opt/vektralforge/aws/credentials && \
-    echo "credenciales_minio.sh genera core-site.xml y el INI del SDK"
+    echo "credenciales_s3.sh genera core-site.xml y el INI del SDK"
 
 ENTRYPOINT ["/usr/bin/dumb-init", "--", "/opt/vektralforge/bin/docker-entrypoint.sh"]

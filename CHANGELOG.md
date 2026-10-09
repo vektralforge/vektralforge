@@ -12,6 +12,105 @@ under **Upgrading**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Los logs de las tareas de Airflow van al object store.** Cada tarea sube su
+  log al bucket `airflow-logs` al terminar y la UI lo lee de ahí; mientras
+  corre, lo sirve el servidor de logs del scheduler. Desaparece el volumen
+  `airflow-logs` que compartían los tres contenedores de Airflow, que en
+  Kubernetes habría exigido un volumen ReadWriteMany. Solo `vf-pipeline` tiene
+  acceso al bucket, para leer, escribir y listar, no para borrar.
+  `apache-airflow-providers-amazon` pasa a declararse: la nota que lo excluía
+  por SQLAlchemy 2.x ya no aplicaba.
+
+- **Los DAGs resuelven sus jobs de Spark relativos a su propio archivo**, no en
+  `/opt/spark/jobs`. Es lo que permite traer los DAGs con un GitDagBundle de
+  Airflow 3 —como se hará en Kubernetes— y que cada DAG run ejecute el job del
+  mismo commit con que se creó. En Compose, `dags/` y `jobs/` se montan con la
+  estructura del repositorio bajo `/opt/vektralforge/repo/`. `make
+  dev-bundle-git` levanta Airflow leyendo los DAGs desde GitHub para probarlo.
+  `plugins/` pasa a ir dentro de la imagen de Airflow, y spark-master y
+  spark-worker dejan de montar `spark/jobs`, que nunca usaron.
+
+- **Valkey `9.1` sustituye a Redis como caché de Superset.** El #72 había subido
+  Redis de 7.2 a 8.0 como un bump de Dependabot más, y con él la licencia pasó
+  de BSD-3-Clause a RSALv2/SSPLv1/AGPLv3 mientras la documentación seguía
+  diciendo 7.2. Valkey es el fork de la Linux Foundation, BSD-3-Clause y
+  compatible a nivel de protocolo: Superset no cambia de cliente. Dependabot
+  deja de proponer saltos mayores de Valkey.
+
+- **MinIO queda sustituido por RustFS `1.0.0-rc.6`.** MinIO se archivó en 2026 y
+  ninguna imagen pública lleva el parche de `CVE-2025-62506`, así que no había
+  versión a la que subir. RustFS es Apache 2.0 —el stack pierde su única
+  dependencia AGPLv3— y habla la misma política de IAM de AWS, de modo que
+  `politica-datos.json` se reutiliza sin cambios. La imagen se construye en
+  `infra/docker-compose/s3/Dockerfile` para hornear dentro el CLI `rc`, que
+  upstream publica como artefacto separado: sin él la credencial raíz tendría
+  que viajar por argv o por el entorno, deshaciendo el #54 y el #55.
+- **La configuración del object store deja de llamarse MinIO.** `MINIO_*` pasa a
+  `S3_*`, `credenciales_minio.sh` a `credenciales_s3.sh` y la política a
+  `infra/docker-compose/s3/`. Va en un commit propio: es renombrado, sin cambio
+  de comportamiento.
+
+- **Branch protection is now enforced on `develop` and `main`.** Merging needs a
+  pull request, one approving review from somebody other than the author, and
+  the `CI` and DCO checks green. Direct pushes, force pushes and branch deletion
+  are refused — with an empty bypass list, so the rule applies to repository
+  admins too.
+
+### Removed
+
+- **Graylog sale del inventario de licencias y de la documentación.** Figuraba
+  como componente del stack y como la única dependencia no permisiva (SSPL-1.0),
+  pero nunca estuvo: no hay servicio en el Compose, ningún contenedor declara un
+  driver de logging que apunte a él y no existe manifiesto de K3s que lo
+  despliegue. Estaba «en evaluación» para logging centralizado y la evaluación
+  queda cerrada; `docs/arquitectura.md` recoge el hueco que deja y los
+  candidatos vivos (Loki, OpenSearch, Vector). Con esto, y con la salida de
+  MinIO, **todos los componentes del stack son de licencia permisiva**.
+
+### Fixed
+
+- **`init_users.sh` fallaba una vez de cada ~20 en CI** al crear las cuentas del
+  object store: `init_env.sh` genera las claves con `token_urlsafe`, cuyo
+  alfabeto incluye `-`, y `rc` tomaba como opción un secreto que empezara por
+  guion. `rc` recibe ahora los posicionales después de `--`, y las claves
+  generadas ya no empiezan por guion.
+- **`init_env.sh` sin terminal ya no imprime las contraseñas que genera.** En
+  CI quedaban en el log público del workflow Stack. Eran de un solo uso y el
+  stack del runner solo escucha en loopback, pero no tenían por qué estar ahí.
+
+### Upgrading
+
+- **Hay que crear el bucket `airflow-logs` y recrear las cuentas de servicio**:
+  `bash .ci/scripts/init_users.sh infra/docker-compose/.env buckets` y luego lo
+  mismo con `cuentas`, o `make dev-reset`. Sin el bucket, Airflow corre igual pero no
+  puede subir los logs y la UI no los encuentra al terminar la tarea. Los logs
+  anteriores se quedan en el volumen viejo, que ya no se monta; se borra con
+  `docker volume rm docker-compose_airflow-logs`.
+- **Un DAG propio con `application="/opt/spark/jobs/..."` deja de encontrar su
+  job**: esa ruta ya no se monta. Hay que resolverla desde el archivo del DAG,
+  como hacen los de ejemplo (`Path(__file__).resolve().parents[2] / "spark" /
+  "jobs"`). Lo mismo para cualquier referencia a `/opt/airflow/dags`: la carpeta
+  de DAGs es ahora `/opt/vektralforge/repo/airflow/dags`. Hace falta `make
+  dev-build`: la imagen de Airflow trae ahora `plugins/`.
+
+- **Hay que renombrar las claves del `.env`.** Compose interpola `${S3_ROOT_USER}`
+  directamente, así que un `.env` con nombres `MINIO_*` deja el stack sin
+  arrancar. Con `sed -i -E 's/^MINIO_/S3_/' infra/docker-compose/.env` se
+  conservan los valores; `make init-env` genera uno nuevo.
+- **El volumen de datos cambia de nombre** (`minio-data` → `s3-data`) y el
+  backend es otro, así que los objetos del volumen anterior no se reutilizan:
+  `make dev-reset` y `make dev-load-example` los recrean. El volumen viejo queda
+  huérfano y se borra con `docker volume rm docker-compose_minio-data`.
+- **El servicio pasa a llamarse `rustfs`**: cualquier guion propio con
+  `docker exec docker-compose-minio-1` hay que ajustarlo.
+- **El servicio `redis` pasa a llamarse `valkey`.** El contenedor anterior queda
+  huérfano y sigue escuchando en el 6379, así que el nuevo no puede publicar el
+  puerto: levantar con `docker compose up -d --remove-orphans` (o `make
+  dev-reset`). La caché no se migra: son datos regenerables. `REDIS_URL` sale
+  de `.env.example` porque no la leía nadie; si está en tu `.env`, no estorba.
+
 ## [0.1.0] — 2026-09-03
 
 First tagged release. The stack has been running end to end for some time; this
