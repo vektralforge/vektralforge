@@ -12,6 +12,37 @@ under **Upgrading**.
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-09
+
+La versión en que el stack deja de depender de componentes con licencias no
+permisivas, y en que el CI empieza a demostrar que el stack funciona. Salen
+tres piezas —MinIO, Redis y Graylog, que nunca llegó a integrarse— y dos
+cambios reorganizan Airflow de cara a Kubernetes. Varios exigen intervención
+manual en una instalación existente: conviene leer **Upgrading** antes de
+actualizar.
+
+### Added
+
+- **Las imágenes se construyen en cada pull request y se publican en GHCR.**
+  Las siete imágenes del stack se construyen en amd64 dentro del check `CI`, de
+  modo que un Dockerfile roto o unos requirements que ya no resuelven ponen el
+  PR en rojo. Al fusionar en `develop` y con cada etiqueta `v*` se publican
+  multi-arch (amd64 y arm64, runners nativos, sin QEMU) en
+  `ghcr.io/vektralforge/<imagen>`, con provenance y SBOM. Etiquetas: `develop`,
+  `sha-<corto>`, `X.Y.Z` y `X.Y`; nunca `latest` (#90, #95, #97, #98).
+- **El workflow `Stack` levanta el stack completo en el runner** y lo verifica
+  con once comprobaciones reales, la creación de usuarios y los controles de
+  permisos del object store. Corre en los PR que tocan el stack y en `develop`;
+  de noche y a demanda ejecuta además los pipelines de ejemplo (#90).
+- **`make auditar-identificadores`** busca en todo el historial rastros de
+  infraestructura ajena —IPs privadas, hosts internos, registros de
+  contenedores privados, rutas UNC— además de una lista local de términos que
+  no se versiona. `make auditar-historial` corre ahora los dos modos (#87).
+- **`.ci/scripts/check_deps.sh`** revisa las dependencias del sistema que
+  necesita `make setup` —Python 3.12, venv, pip, git, make, Homebrew o el
+  gestor de paquetes, Docker y Compose— e instala lo instalable previa
+  confirmación, con el registro completo en un archivo (#104).
+
 ### Changed
 
 - **Los logs de las tareas de Airflow van al object store.** Cada tarea sube su
@@ -57,6 +88,12 @@ under **Upgrading**.
   the `CI` and DCO checks green. Direct pushes, force pushes and branch deletion
   are refused — with an empty bypass list, so the rule applies to repository
   admins too.
+- **El DCO se verifica al entrar en `develop`, no otra vez en el release.** El
+  PR `develop → main` del propio repositorio omite la verificación commit a
+  commit: lo que llega a `main` son los commits del squash, con otro autor y
+  otras firmas que los que pasaron el control (#105).
+- **Dependencias del Compose**: OpenBao 2.1.0 → 2.7.0, Maven en las imágenes
+  de Airflow y Hive, Alpine 3.24 en la de RustFS.
 
 ### Removed
 
@@ -71,6 +108,10 @@ under **Upgrading**.
 
 ### Fixed
 
+- **El perfil `streaming` vuelve a arrancar.** Un bump de Dependabot había
+  subido `cp-kafka` a 8.3.2, que ya no habla con ZooKeeper, dejando el broker
+  sin arrancar contra `cp-zookeeper` 7.6.1. Vuelve a 7.6.1 y Dependabot deja de
+  proponer la serie 8, que llegará con la migración a KRaft.
 - **`init_users.sh` fallaba una vez de cada ~20 en CI** al crear las cuentas del
   object store: `init_env.sh` genera las claves con `token_urlsafe`, cuyo
   alfabeto incluye `-`, y `rc` tomaba como opción un secreto que empezara por
@@ -178,5 +219,6 @@ Stated here rather than discovered later:
   rewritten: it would invalidate every commit hash referenced anywhere for four
   secrets that unlock nothing.
 
-[Unreleased]: https://github.com/vektralforge/vektralforge/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vektralforge/vektralforge/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/vektralforge/vektralforge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/vektralforge/vektralforge/releases/tag/v0.1.0
