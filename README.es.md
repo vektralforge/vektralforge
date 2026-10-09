@@ -54,8 +54,8 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Marquez | 0.51.1 | Almacén y UI de linaje |
 | PostgreSQL | 15 | Metadatos |
 | Valkey | 9.1 | Caché de Superset (metadatos y datos de los gráficos) |
-| OpenBao | 2.1.0 | Secretos (modo dev en local) |
-| Apache Kafka | 7.6.1 (CP) | Perfil opcional `streaming`; sin pipeline aún |
+| OpenBao | 2.7.0 | Secretos (modo dev en local) |
+| Apache Kafka | 8.3.2 (CP) | Perfil opcional `streaming`; sin pipeline aún |
 | Apache ZooKeeper | 7.6.1 (CP) | Perfil opcional `streaming`; solo sirve a Kafka |
 
 Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
@@ -155,15 +155,30 @@ Ambos comparten el Hive Metastore. Los jobs escriben con `saveAsTable`, no con
 en que se escribe y Trino la ve sin registrarla dos veces. Añadir un pipeline no
 exige tocar ningún script de registro: basta con escribir en `bronze`.
 
-```
-API pública → Airflow → Spark → Delta Lake → RustFS
-                                     ↓
-                          Hive Metastore (compartido)
-                                     ↓
-                                  Trino → Superset
+```mermaid
+flowchart LR
+    classDef storage fill:#7E3A1E,stroke:#5B7076,color:#F4F1EC
+    classDef compute fill:#B4552D,stroke:#5B7076,color:#F4F1EC
+    classDef service fill:#D2703F,stroke:#5B7076,color:#0E1418
+    classDef axis fill:#4A5560,stroke:#5B7076,color:#F4F1EC
+    classDef lineage fill:#2CC6C6,stroke:#4A5560,color:#0E1418
 
-        OpenLineage captura el linaje en cada paso → Marquez
+    API([API pública]) --> AF[Airflow]:::service
+    AF --> SP[Spark]:::compute
+    SP --> DL[(Delta Lake)]:::storage
+    DL --> RFS[(RustFS)]:::storage
+    SP -->|escribe catálogo| HMS{{Hive Metastore}}:::axis
+    HMS -->|lee catálogo| TR[Trino]:::compute
+    TR --> SS[Superset]:::service
+
+    AF -.linaje.-> MQ[(Marquez)]:::lineage
+    SP -.linaje.-> MQ
 ```
+
+Los colores siguen el mismo esquema de capas del isotipo (ver
+[docs/marca.md](docs/marca.md)): almacenamiento en Rust Base, cómputo en Copper
+Forge, servicio/orquestación en Clay Ember, el metastore compartido en Steel
+Axis, linaje en Signal Teal.
 
 El linaje se captura en dos niveles. El provider de OpenLineage de Airflow emite
 el run de cada tarea; el `OpenLineageSparkListener` —declarado en el
@@ -183,16 +198,17 @@ Detalle completo en [docs/arquitectura.md](docs/arquitectura.md).
 ### Estructura
 
 ```
-airflow/          DAGs, plugins y tests
-spark/            Jobs PySpark y tests
-trino/catalog/    Catálogos de Trino
-superset/         Configuración de dashboards
-infra/
-  docker-compose/ Stack local y Dockerfiles
-  k3s/            Namespaces — el despliegue está planificado, no implementado
-.ci/scripts/      Lógica de lint, test y deploy
-.github/          CI y plantillas
-docs/             Documentación, marca y diagramas
+.
+├── airflow/              DAGs, plugins y tests
+├── spark/                Jobs PySpark y tests
+├── trino/catalog/        Catálogos de Trino
+├── superset/             Configuración de dashboards
+├── infra/
+│   ├── docker-compose/   Stack local y Dockerfiles
+│   └── k3s/              Namespaces — el despliegue está planificado, no implementado
+├── .ci/scripts/          Lógica de lint, test y deploy
+├── .github/              CI y plantillas
+└── docs/                 Documentación, marca y diagramas
 ```
 
 Las dependencias están separadas en `requirements.txt` y `requirements-dev.txt`:
@@ -271,10 +287,14 @@ make dev-build          # Reconstruye las imágenes (tras cambiar un Dockerfile)
 make dev-reset          # Borra volúmenes y recrea usuarios
 make dev-reset-hard     # Además reconstruye las imágenes locales
 make dev-load-example   # Ejecuta los pipelines y configura los dashboards
+make dev-bundle-git     # DAGs desde un GitDagBundle en vez del directorio montado
+make dev-check-perms    # Comprueba que la cuenta del pipeline esté acotada
+make dev-check-logs     # Comprueba que los logs de las tareas lleguen al bucket
 make lint-all           # Ruff + sqlfluff
 make test-all           # Tests
 make detect-secrets     # Escaneo de credenciales (árbol de trabajo)
 make auditar-historial  # Escaneo de credenciales (historial de git)
+make auditar-identificadores  # Identificadores de infraestructura ajena en el historial
 ```
 
 El despliegue a K3s **está planificado, no implementado**: `make deploy-staging`

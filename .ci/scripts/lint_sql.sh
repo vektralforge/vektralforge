@@ -22,10 +22,10 @@ archivos=$(find . -name "*.sql" \
     -not -path "*/node_modules/*")
 
 if [ -z "$archivos" ]; then
-    echo "  · Sin archivos SQL que revisar"
+    echo "[INFO]  No SQL files to check"
     exit 0
 fi
 
 # shellcheck disable=SC2086  # se quiere la división en palabras
 sqlfluff lint $archivos
-echo "✓ Lint SQL OK"
+echo "[INFO]  SQL lint OK"

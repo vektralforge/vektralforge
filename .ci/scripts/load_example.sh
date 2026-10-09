@@ -4,6 +4,13 @@
 #
 # Diseño: cada DAG es independiente — si uno falla, los demás continúan.
 # Al final se muestra resumen de qué tuvo éxito y qué falló.
+#
+# Log: mismo formato [INFO]/[WARN]/[ERROR] en inglés que el resto de los
+# scripts. Los status de DAG_STATUS/DASHBOARD_STATUS ahora empiezan con
+# "[INFO]  SUCCESS" / "[ERROR] FAILED" en vez de "✓ SUCCESS" / "✗ FAILED" —
+# el chequeo de all_failed al final se actualizó para seguir comparando
+# contra el prefijo correcto, si no la detección de "todo falló" se habría
+# roto en silencio.
 set -uo pipefail
 
 ENV_FILE="${1:-infra/docker-compose/.env}"
@@ -29,10 +36,10 @@ INTERVAL="${VF_INTERVALO_SONDEO:-10}"
 # Registro de resultados por DAG
 declare -A DAG_STATUS
 
-log()     { echo "→ $*"; }
-ok()      { echo "  ✓ $*"; }
-warn()    { echo "  ⚠ $*"; }
-fail_msg(){ echo "  ✗ $*"; }
+log()     { echo "[INFO]  $*"; }
+ok()      { echo "[INFO]  $*"; }
+warn()    { echo "[WARN]  $*"; }
+fail_msg(){ echo "[ERROR] $*"; }
 
 # Esperar que un DAG complete — task por task
 # Retorna 0 si todo éxito, 1 si algún task falló
@@ -43,7 +50,7 @@ wait_dag() {
     local elapsed=0
 
     for task in "${tasks[@]}"; do
-        echo "    Esperando: $task"
+        echo "    Waiting: $task"
         local task_elapsed=0
         while [ $task_elapsed -lt $TIMEOUT ]; do
             sleep $INTERVAL
@@ -53,14 +60,14 @@ wait_dag() {
             state=$(docker exec docker-compose-airflow-scheduler-1 \
                 airflow tasks state "$dag_id" "$task" "$run_id" 2>/dev/null \
                 | tail -1 | tr -d '[:space:]')
-            echo "      [${elapsed}s] $task → ${state:-pendiente}"
+            echo "      [${elapsed}s] $task → ${state:-pending}"
             case "$state" in
                 success)
-                    ok "$task completado"
+                    ok "$task completed"
                     break
                     ;;
                 failed|upstream_failed)
-                    fail_msg "$task falló"
+                    fail_msg "$task failed"
                     return 1
                     ;;
                 up_for_retry)
@@ -69,15 +76,15 @@ wait_dag() {
                     # presupuesto se agotaba durante la espera. Se avisa una
                     # sola vez para que la pausa se entienda.
                     if [ "${aviso_reintento:-}" != "$task" ]; then
-                        warn "$task reintentará — la pausa la fija retry_delay del DAG"
+                        warn "$task will retry — the pause comes from the DAG's retry_delay"
                         aviso_reintento="$task"
                     fi
                     ;;
             esac
             if [ $task_elapsed -ge $TIMEOUT ]; then
                 # "No terminó" no es lo mismo que "falló": puede seguir viva.
-                fail_msg "$task sigue en '${state:-pendiente}' tras ${TIMEOUT}s"
-                fail_msg "  Puede seguir ejecutándose. Mira el estado real en:"
+                fail_msg "$task is still in '${state:-pending}' after ${TIMEOUT}s"
+                fail_msg "  It may still be running. Check the real status at:"
                 fail_msg "  http://localhost:8090/dags/${dag_id}/grid"
                 return 1
             fi
@@ -87,25 +94,25 @@ wait_dag() {
 }
 
 # ── 1. Verificar stack ────────────────────────────────────────────────────────
-log "Verificando stack..."
+log "Checking the stack..."
 stack_ok=true
 for s in airflow-webserver airflow-scheduler spark-master rustfs trino superset postgres; do
     st=$(docker inspect --format='{{.State.Status}}' "docker-compose-${s}-1" 2>/dev/null || echo "missing")
     if [ "$st" != "running" ]; then
-        fail_msg "Servicio $s no está corriendo. Ejecuta: make dev-up"
+        fail_msg "Service $s is not running. Run: make dev-up"
         stack_ok=false
     fi
 done
-[ "$stack_ok" = "true" ] || { echo "✗ Stack incompleto — abortando"; exit 1; }
-ok "Stack operativo"
+[ "$stack_ok" = "true" ] || { echo "[ERROR] Incomplete stack — aborting"; exit 1; }
+ok "Stack operational"
 
 # ── 2. Verificar buckets ──────────────────────────────────────────────────────
-log "Asegurando buckets..."
+log "Ensuring buckets..."
 # Antes se sondeaba cada bucket con `mc ls local/$b` y solo se creaban si
-# faltaba alguno. Ese sondeo usaba el alias `local`, que la imagen de MinIO traía
-# preconfigurado con la credencial raíz; `rc` no tiene equivalente y montarle un
-# alias aquí significaría traer la raíz a este guion, que hasta ahora no la
-# necesitaba.
+# faltaba alguno. Ese sondeo usaba el alias `local`, que la imagen de MinIO
+# traía preconfigurado con la credencial raíz; `rc` no tiene equivalente y
+# montarle un alias aquí significaría traer la raíz a este guion, que hasta
+# ahora no la necesitaba.
 #
 # Así que se llama directamente al paso, que es idempotente —`rc bucket create
 # --ignore-existing`— y que ya tiene resuelto el camino de la credencial. Se
@@ -113,10 +120,10 @@ log "Asegurando buckets..."
 # repartir la raíz por un guion más.
 #
 # Sigue siendo solo el paso de buckets: antes se llamaba a init_users.sh entero,
-# que además recreaba los usuarios admin y reinicializaba los roles de Superset,
-# efectos que nadie pide al cargar datos de ejemplo.
+# que además recreaba los usuarios admin y reinicializaba los roles de
+# Superset, efectos que nadie pide al cargar datos de ejemplo.
 bash .ci/scripts/init_users.sh "$ENV_FILE" buckets
-ok "Buckets disponibles"
+ok "Buckets available"
 
 # Aquí había un bloque que descargaba antlr4-runtime-4.9.3.jar desde
 # repo1.maven.org, sin hash ni firma, y lo metía como root en /opt/spark/jars de
@@ -146,11 +153,11 @@ configurar_dashboard() {
     local ruta_local="superset/dashboards/${script}"
     local salida codigo
 
-    log "Configurando dashboard ${etiqueta} en Superset..."
+    log "Configuring ${etiqueta} dashboard in Superset..."
 
     if ! docker cp "$ruta_local" "docker-compose-superset-1:/tmp/${script}"; then
-        fail_msg "${etiqueta}: no se pudo copiar ${script} al contenedor"
-        DASHBOARD_STATUS+=("✗ FAILED  (dashboard ${etiqueta})")
+        fail_msg "${etiqueta}: could not copy ${script} to the container"
+        DASHBOARD_STATUS+=("[ERROR] FAILED  (dashboard ${etiqueta})")
         return 1
     fi
 
@@ -167,14 +174,17 @@ with app.app_context():
     codigo=$?
 
     if [ "$codigo" -ne 0 ]; then
-        fail_msg "${etiqueta}: el script terminó con código ${codigo}"
+        fail_msg "${etiqueta}: the script exited with code ${codigo}"
         echo "$salida" | tail -15 | sed 's/^/      /'
-        DASHBOARD_STATUS+=("✗ FAILED  (dashboard ${etiqueta})")
+        DASHBOARD_STATUS+=("[ERROR] FAILED  (dashboard ${etiqueta})")
         return 1
     fi
 
+    # Este grep filtra la salida del script de Superset (no nuestra), que
+    # sigue imprimiendo sus propios ✓/✗/⚠/==== — no se toca aquí porque ese
+    # script queda fuera del alcance de esta homologación.
     echo "$salida" | grep -E "✓|✗|⚠|====" | sed 's/^/  /'
-    DASHBOARD_STATUS+=("✓ SUCCESS (dashboard ${etiqueta})")
+    DASHBOARD_STATUS+=("[INFO]  SUCCESS (dashboard ${etiqueta})")
     return 0
 }
 
@@ -226,7 +236,7 @@ load_dag() {
     local run_id
     if [ -n "$existing_run" ]; then
         run_id="$existing_run"
-        warn "Run activo detectado — usando: $run_id"
+        warn "Active run detected — using: $run_id"
     else
         local ts
         ts=$(date -u +"%Y%m%dT%H%M%S")
@@ -234,16 +244,16 @@ load_dag() {
         docker exec docker-compose-airflow-scheduler-1 \
             airflow dags trigger "$dag_id" --run-id "$run_id" 2>/dev/null \
             | grep -v "^$\|INFO\|WARNING\|DagBag" || true
-        ok "Disparado (run_id: $run_id)"
+        ok "Triggered (run_id: $run_id)"
     fi
 
     # Esperar
     if wait_dag "$dag_id" "$run_id" "${tasks[@]}"; then
-        DAG_STATUS[$dag_id]="✓ SUCCESS"
+        DAG_STATUS[$dag_id]="[INFO]  SUCCESS"
         return 0
     else
-        DAG_STATUS[$dag_id]="✗ FAILED — ver http://localhost:8090/dags/${dag_id}/grid"
-        warn "$dag_id falló — continuando con el siguiente DAG"
+        DAG_STATUS[$dag_id]="[ERROR] FAILED — see http://localhost:8090/dags/${dag_id}/grid"
+        warn "$dag_id failed — continuing with the next DAG"
         return 1
     fi
 }
@@ -257,7 +267,7 @@ if load_dag "indicadores_financieros_chile" "dev-load-ind" \
     # Spark ya registró las tablas en el metastore; aquí solo se comprueba que
     # Trino las ve. Si esta lista sale vacía, el problema está en el catálogo,
     # no en el pipeline.
-    log "Tablas de indicadores visibles en Trino:"
+    log "Indicator tables visible in Trino:"
     docker exec docker-compose-trino-1 trino --execute \
         "SHOW TABLES FROM delta.bronze LIKE 'indicadores_%';" \
         2>/dev/null | grep -v "WARNING\|INFO\|jline\|^$" | sed 's/^/    /' || true
@@ -270,17 +280,17 @@ if load_dag "indicadores_financieros_chile" "dev-load-ind" \
     UNION ALL SELECT fecha, valor, indicador, nombre, fuente, fecha_proceso, anio, mes FROM delta.bronze.indicadores_utm
     UNION ALL SELECT fecha, valor, indicador, nombre, fuente, fecha_proceso, anio, mes FROM delta.bronze.indicadores_tpm;
     " 2>/dev/null | grep -v "WARNING\|INFO\|jline" || true
-    ok "Vista indicadores_todos creada"
+    ok "indicadores_todos view created"
 
-    log "Conteo indicadores en Trino:"
+    log "Indicator counts in Trino:"
     docker exec docker-compose-trino-1 trino --execute \
         "SELECT indicador, COUNT(*) as filas FROM delta.bronze.indicadores_todos GROUP BY indicador ORDER BY indicador;" \
         2>/dev/null | grep -v "WARNING\|INFO\|jline\|^$" | sed 's/^/    /' || true
 
-    configurar_dashboard "indicadores" setup_superset_dashboard.py || true
+    configurar_dashboard "indicators" setup_superset_dashboard.py || true
 
 else
-    warn "indicadores_financieros_chile falló — omitiendo Trino y Superset para este DAG"
+    warn "indicadores_financieros_chile failed — skipping Trino and Superset for this DAG"
 fi
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -289,12 +299,12 @@ fi
 if load_dag "arclim_riesgo_climatico_chile" "dev-load-arclim" \
     "extract_arclim" "transform_bronze" "validar_bronze"; then
 
-    log "Tablas ARClim visibles en Trino:"
+    log "ARClim tables visible in Trino:"
     docker exec docker-compose-trino-1 trino --execute \
         "SHOW TABLES FROM delta.bronze LIKE 'arclim_%';" \
         2>/dev/null | grep -v "WARNING\|INFO\|jline\|^$" | sed 's/^/    /' || true
 
-    log "Conteo ARClim en Trino:"
+    log "ARClim counts in Trino:"
     docker exec docker-compose-trino-1 trino --execute \
         "SELECT indicador, COUNT(*) as comunas, MIN(anio_serie) as desde, MAX(anio_serie) as hasta
          FROM delta.bronze.arclim_series GROUP BY indicador ORDER BY indicador;" \
@@ -303,13 +313,13 @@ if load_dag "arclim_riesgo_climatico_chile" "dev-load-arclim" \
     configurar_dashboard "ARClim" setup_superset_arclim.py || true
 
 else
-    warn "arclim_riesgo_climatico_chile falló — omitiendo Trino y dashboard ARClim"
+    warn "arclim_riesgo_climatico_chile failed — skipping Trino and the ARClim dashboard"
 fi
 
 # ── Resumen final ─────────────────────────────────────────────────────────────
 echo ""
 echo "  ══════════════════════════════════════════════════"
-echo "  Resumen de carga de ejemplos"
+echo "  Sample data load summary"
 echo "  ══════════════════════════════════════════════════"
 for dag_id in "${!DAG_STATUS[@]}"; do
     echo "    ${DAG_STATUS[$dag_id]}  ($dag_id)"
@@ -331,7 +341,7 @@ echo ""
 # aunque una de las dos APIs públicas esté caída.
 if [ "${VF_ESTRICTO:-0}" = "1" ]; then
     for dag_id in "${!DAG_STATUS[@]}"; do
-        [[ "${DAG_STATUS[$dag_id]}" == "✓"* ]] || exit 1
+        [[ "${DAG_STATUS[$dag_id]}" == "[INFO]"* ]] || exit 1
     done
     [ ${#DAG_STATUS[@]} -gt 0 ] || exit 1
     exit 0
@@ -340,6 +350,6 @@ fi
 # Salir con error solo si TODOS los DAGs fallaron
 all_failed=true
 for dag_id in "${!DAG_STATUS[@]}"; do
-    [[ "${DAG_STATUS[$dag_id]}" == "✓"* ]] && all_failed=false
+    [[ "${DAG_STATUS[$dag_id]}" == "[INFO]"* ]] && all_failed=false
 done
 [ "$all_failed" = "true" ] && exit 1 || exit 0

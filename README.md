@@ -54,8 +54,8 @@ project without controlling it — see [SPONSORS.md](SPONSORS.md) and
 | Marquez | 0.51.1 | Lineage store and UI |
 | PostgreSQL | 15 | Metadata |
 | Valkey | 9.1 | Superset cache (metadata and chart data) |
-| OpenBao | 2.1.0 | Secrets (dev mode locally) |
-| Apache Kafka | 7.6.1 (CP) | Optional `streaming` profile; no pipeline yet |
+| OpenBao | 2.7.0 | Secrets (dev mode locally) |
+| Apache Kafka | 8.3.2 (CP) | Optional `streaming` profile; no pipeline yet |
 | Apache ZooKeeper | 7.6.1 (CP) | Optional `streaming` profile; serves Kafka only |
 
 **Python 3.12 everywhere**: the Spark driver and its executors must agree on the
@@ -156,15 +156,29 @@ Both share the Hive Metastore. Jobs write with `saveAsTable` rather than
 writes it and Trino sees it without a second registration step. Adding a pipeline
 does not mean touching a registration script: writing to `bronze` is enough.
 
-```
-public API → Airflow → Spark → Delta Lake → RustFS
-                                    ↓
-                        Hive Metastore (shared)
-                                    ↓
-                                 Trino → Superset
+```mermaid
+flowchart LR
+    classDef storage fill:#7E3A1E,stroke:#5B7076,color:#F4F1EC
+    classDef compute fill:#B4552D,stroke:#5B7076,color:#F4F1EC
+    classDef service fill:#D2703F,stroke:#5B7076,color:#0E1418
+    classDef axis fill:#4A5560,stroke:#5B7076,color:#F4F1EC
+    classDef lineage fill:#2CC6C6,stroke:#4A5560,color:#0E1418
 
-     OpenLineage captures lineage at every step → Marquez
+    API([public API]) --> AF[Airflow]:::service
+    AF --> SP[Spark]:::compute
+    SP --> DL[(Delta Lake)]:::storage
+    DL --> RFS[(RustFS)]:::storage
+    SP -->|writes catalog| HMS{{Hive Metastore}}:::axis
+    HMS -->|reads catalog| TR[Trino]:::compute
+    TR --> SS[Superset]:::service
+
+    AF -.lineage.-> MQ[(Marquez)]:::lineage
+    SP -.lineage.-> MQ
 ```
+
+Colours follow the isotype's own layering (see [docs/marca.md](docs/marca.md)):
+storage in Rust Base, compute in Copper Forge, service/orchestration in Clay
+Ember, the shared metastore on the Steel Axis, lineage in Signal Teal.
 
 Lineage is captured at two levels. Airflow's OpenLineage provider emits the run
 of each task; the `OpenLineageSparkListener` — declared in the
@@ -184,16 +198,17 @@ Full detail in [docs/arquitectura.md](docs/arquitectura.md) (Spanish).
 ### Layout
 
 ```
-airflow/          DAGs, plugins and tests
-spark/            PySpark jobs and tests
-trino/catalog/    Trino catalogues
-superset/         Dashboard configuration
-infra/
-  docker-compose/ Local stack and Dockerfiles
-  k3s/            Namespaces — the deployment is planned, not implemented
-.ci/scripts/      Lint, test and deploy logic
-.github/          CI and templates
-docs/             Documentation, brand and diagrams
+.
+├── airflow/              DAGs, plugins and tests
+├── spark/                PySpark jobs and tests
+├── trino/catalog/        Trino catalogues
+├── superset/             Dashboard configuration
+├── infra/
+│   ├── docker-compose/   Local stack and Dockerfiles
+│   └── k3s/              Namespaces — the deployment is planned, not implemented
+├── .ci/scripts/          Lint, test and deploy logic
+├── .github/              CI and templates
+└── docs/                 Documentation, brand and diagrams
 ```
 
 Dependencies are split between `requirements.txt` and `requirements-dev.txt`:
@@ -272,10 +287,14 @@ make dev-build          # Rebuilds the images (after changing a Dockerfile)
 make dev-reset          # Wipes volumes and recreates users
 make dev-reset-hard     # Also rebuilds the local images
 make dev-load-example   # Runs the pipelines and builds the dashboards
+make dev-bundle-git     # DAGs from a GitDagBundle instead of the mounted directory
+make dev-check-perms    # Checks that the pipeline account is scoped
+make dev-check-logs     # Checks that task logs reach the bucket
 make lint-all           # Ruff + sqlfluff
 make test-all           # Tests
 make detect-secrets     # Credential scan (working tree)
 make auditar-historial  # Credential scan (git history)
+make auditar-identificadores  # Scan for external-infrastructure identifiers
 ```
 
 Kafka and ZooKeeper do not start with `make dev-up`: they sit behind a profile,
