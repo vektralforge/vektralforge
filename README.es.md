@@ -55,7 +55,7 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | PostgreSQL | 15 | Metadatos |
 | Valkey | 9.1 | Caché de Superset (metadatos y datos de los gráficos) |
 | OpenBao | 2.7.0 | Secretos (modo dev en local) |
-| Apache Kafka | 8.3.2 (CP) | Perfil opcional `streaming`; sin pipeline aún |
+| Apache Kafka | 7.6.1 (CP) | Perfil opcional `streaming`; sin pipeline aún |
 | Apache ZooKeeper | 7.6.1 (CP) | Perfil opcional `streaming`; solo sirve a Kafka |
 
 Python **3.12** en todo el stack: driver y executors de Spark deben coincidir en
