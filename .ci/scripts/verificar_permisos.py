@@ -91,7 +91,9 @@ def debe_denegarse(etiqueta, fn, deshacer=None):
             marcar(True, etiqueta)
         else:
             marcar(
-                False, etiqueta, f"{c} — the request was authorized and failed for another reason"
+                False,
+                etiqueta,
+                f"{c} — the request was authorized and failed for another reason",
             )
     except Exception as e:  # noqa: BLE001
         marcar(False, etiqueta, f"{type(e).__name__}: {e}")
@@ -114,7 +116,9 @@ if identidad != ESPERADA:
     # Con la raíz los positivos pasarían y los negativos fallarían, pero por el
     # motivo equivocado. Mejor no correr la prueba que informar de algo que no
     # se midió.
-    print(f"[ERROR] Expected {ESPERADA}. Aborting: the test wouldn't measure the policy.")
+    print(
+        f"[ERROR] Expected {ESPERADA}. Aborting: the test wouldn't measure the policy."
+    )
     sys.exit(1)
 
 clave = f"_control_permisos/{uuid.uuid4().hex}.txt"
@@ -230,7 +234,9 @@ def control_listallmybuckets():
             marcar(True, etiqueta)
         else:
             marcar(
-                False, etiqueta, f"{c} — the request was authorized and failed for another reason"
+                False,
+                etiqueta,
+                f"{c} — the request was authorized and failed for another reason",
             )
         return
     except Exception as e:  # noqa: BLE001
