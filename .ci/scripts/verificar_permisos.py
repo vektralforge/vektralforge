@@ -9,7 +9,7 @@ NoSuchBucket cuenta como fallo, está en la cabecera del guion que lo invoca.
 
 Salida: mismo formato [INFO]/[WARN]/[ERROR] en inglés que el resto de los
 scripts del proyecto — homologado también aquí porque estos print() son la
-salida real que ve quien corre `make dev-verificar-permisos`.
+salida real que ve quien corre `make dev-check-perms`.
 """
 
 import os

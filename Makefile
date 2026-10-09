@@ -14,7 +14,7 @@
 .PHONY: help check-env \
         setup init-env\
         dev-up dev-down dev-logs dev-ps dev-build dev-reset dev-reset-hard dev-load-example \
-        dev-verificar-permisos dev-verificar-logs dev-bundle-git \
+        dev-check-perms dev-check-logs dev-bundle-git \
         lint-dags test-dags lint-spark test-spark lint-sql \
         lint-all test-all detect-secrets auditar-historial auditar-identificadores \
         deploy-staging deploy-prod
@@ -210,13 +210,13 @@ dev-bundle-git: check-env
 # El §2.9 dio a cada consumidor una cuenta acotada en vez de la raíz. Un permiso
 # de más no da síntomas —el stack funciona igual—, así que la única forma de
 # saberlo es intentarlo. Necesita el stack levantado.
-dev-verificar-permisos: check-env
+dev-check-perms: check-env
 	@echo "[INFO]  Checking that the pipeline account is scoped"
 	@bash .ci/scripts/verificar_permisos.sh
 
 # Los logs de las tareas van al bucket airflow-logs. Si no llegan, Airflow no
 # avisa: las tareas corren igual. Tiene sentido después de dev-load-example.
-dev-verificar-logs: check-env
+dev-check-logs: check-env
 	@echo "[INFO]  Checking that task logs reach the object store"
 	@bash .ci/scripts/verificar_logs_remotos.sh
 
@@ -289,8 +289,8 @@ help:
 		"make dev-reset" "Full reset (deletes volumes, recreates users)" \
 		"make dev-reset-hard" "Extreme reset (deletes volumes and rebuilds images)" \
 		"make dev-load-example" "Loads the sample pipelines and dashboards" \
-		"make dev-verificar-permisos" "Checks that the pipeline account is scoped" \
-		"make dev-verificar-logs" "Checks that task logs reach the bucket" \
+		"make dev-check-perms" "Checks that the pipeline account is scoped" \
+		"make dev-check-logs" "Checks that task logs reach the bucket" \
 		"make dev-bundle-git" "DAGs from a GitDagBundle (VF_BUNDLE_REF=<branch|tag>)" \
 	| awk -F'\t' '{c[NR]=$$1; d[NR]=$$2; if (length($$1)>w) w=length($$1)} END{for(i=1;i<=NR;i++) printf "    %-*s  %s\n", w, c[i], d[i]}'
 	@echo ""
