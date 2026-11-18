@@ -304,7 +304,7 @@ services:
 
   # ── Trino ─────────────────────────────────────────────────────────────────
   trino:
-    image: vektralforge/trino:448
+    image: vektralforge/trino:484
     build:
       context: ../..
       dockerfile: infra/docker-compose/trino/Dockerfile

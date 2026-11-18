@@ -12,6 +12,16 @@ under **Upgrading**.
 
 ## [Unreleased]
 
+### Changed
+
+- **Trino 484** (desde 448). Upstream quitó el envoltorio `run-trino`; el
+  entrypoint cede ahora a `launcher run --etc-dir /etc/trino`, lo mismo que el
+  CMD de la imagen base, y el `node.id` sale del `node.properties` por defecto
+  (`${ENV:HOSTNAME}`). El catálogo usa `fs.s3.enabled`, el nombre actual de
+  `fs.native-s3.enabled`. La imagen base pasa a una UBI endurecida con Java
+  propio. Reemplaza a #118, que solo cambiaba el `FROM` y rompía el build en
+  la comprobación del lanzador.
+
 ## [0.2.0] — 2026-10-09
 
 La versión en que el stack deja de depender de componentes con licencias no
