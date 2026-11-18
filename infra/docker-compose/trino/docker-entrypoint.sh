@@ -85,4 +85,5 @@ fi
 
 echo "→ catálogos renderizados en $DESTINO ($(ls -1 "$DESTINO" | tr '\n' ' '))"
 
-exec /usr/lib/trino/bin/run-trino "$@"
+# Lo mismo que el CMD de la imagen base desde que upstream quitó run-trino.
+exec /usr/lib/trino/bin/launcher run --etc-dir /etc/trino "$@"

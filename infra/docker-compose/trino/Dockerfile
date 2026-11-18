@@ -8,7 +8,7 @@
 # contenedor —y aparecer en `docker inspect` y en `docker compose config`—. El
 # resto del stack ya la recibe como archivo montado; esto pone a Trino en la
 # misma línea.
-FROM trinodb/trino:448
+FROM trinodb/trino:484
 
 USER root
 
@@ -37,8 +37,14 @@ USER trino
 
 # Detrás de `USER trino`: como root la comprobación pasaría aunque el usuario
 # real no pudiera ejecutar nada.
-RUN test -x /usr/lib/trino/bin/run-trino || { \
-      echo "ERROR: la imagen de Trino ya no trae /usr/lib/trino/bin/run-trino." >&2; \
+#
+# Hasta la 448 el entrypoint cedía a `run-trino`, un envoltorio que añadía
+# `-Dnode.id=$HOSTNAME`. Upstream lo quitó (en 484 ya no existe): el `node.id`
+# pasó al node.properties por defecto (`${ENV:HOSTNAME}`) y el CMD de la imagen
+# llama directamente a `launcher run --etc-dir /etc/trino`. Se comprueba el
+# lanzador que se usa de verdad.
+RUN test -x /usr/lib/trino/bin/launcher || { \
+      echo "ERROR: la imagen de Trino ya no trae /usr/lib/trino/bin/launcher." >&2; \
       exit 1; } && \
     test -r /opt/vektralforge/bin/docker-entrypoint.sh || { \
       echo "ERROR: el entrypoint no es legible por el usuario trino." >&2; \

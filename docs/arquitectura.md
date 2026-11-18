@@ -50,7 +50,7 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Apache Spark | 4.1.3 | `Operativo` | Procesamiento y escritura ACID |
 | Delta Lake | 4.1.0 | `Operativo` | Formato de tabla transaccional |
 | Hive Metastore | 4.0.0 | `Operativo` | Catálogo compartido Spark ↔ Trino |
-| Trino | 448 | `Operativo` | Consulta SQL |
+| Trino | 484 | `Operativo` | Consulta SQL |
 | RustFS | 1.0.0-rc.6 | `Candidata` | Almacenamiento de objetos S3 · ver nota |
 | Apache Superset | 6.1.0 | `Operativo` | Visualización |
 | OpenLineage | 1.52.0 | `Operativo` | Linaje en Airflow y Spark |
@@ -144,7 +144,7 @@ flowchart LR
 
     SPK["<b>Spark 4.1.3 · Delta 4.1.0</b><br/>única escritura ACID"]
     HMS["Hive Metastore 4.0.0"]
-    TRN["<b>Trino 448</b><br/>única lectura SQL"]
+    TRN["<b>Trino 484</b><br/>única lectura SQL"]
     SUP["Superset 6.1.0"]
     MQZ["Marquez · OpenLineage"]
 

@@ -47,7 +47,7 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Apache Spark | 4.1.3 | Procesamiento y escritura ACID |
 | Delta Lake | 4.1.0 | Formato de tabla transaccional |
 | Apache Hive Metastore | 4.0.0 | Catálogo compartido Spark ↔ Trino |
-| Trino | 448 | Consulta SQL |
+| Trino | 484 | Consulta SQL |
 | RustFS | 1.0.0-rc.6 | Almacenamiento de objetos S3 · ver nota |
 | Apache Superset | 6.1.0 | Visualización |
 | OpenLineage | 1.52.0 | Linaje en Airflow y Spark |
