@@ -21,6 +21,12 @@ under **Upgrading**.
   `fs.native-s3.enabled`. La imagen base pasa a una UBI endurecida con Java
   propio. Reemplaza a #118, que solo cambiaba el `FROM` y rompía el build en
   la comprobación del lanzador.
+- **Spark 4.1.4** (parche de 4.1.3) en los ocho sitios que fijan la versión:
+  los dos requirements, el `pip install` y la cabecera del Dockerfile de
+  Airflow, el `FROM` del de Spark y las dos etiquetas `vektralforge/spark` del
+  Compose. Hadoop sigue en 3.4.2 y Delta en 4.1.0. Reemplaza a #127, #128 y
+  #134, que Dependabot abre de a un sitio por vez y por eso no pueden pasar
+  `test_pins_de_spark.py`.
 
 ## [0.2.0] — 2026-10-09
 

@@ -1,6 +1,6 @@
 # VektralForge — imagen de Airflow
 #
-# Airflow 3.3.0 · Python 3.12 · pyspark 4.1.3 · Delta 4.1.0 · OpenLineage 1.52.0
+# Airflow 3.3.0 · Python 3.12 · pyspark 4.1.4 · Delta 4.1.0 · OpenLineage 1.52.0
 #
 # SparkSubmitOperator ejecuta spark-submit desde este contenedor, así que el
 # driver corre aquí y necesita los MISMOS JAR que el cluster. Se resuelven con
@@ -65,7 +65,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt --constraint "${CONSTRAI
 # pyspark-client (Spark Connect) llega vía constraints y sobrescribe el paquete
 # pyspark, que necesitamos completo para spark-submit y delta-spark.
 RUN pip uninstall -y pyspark-client pyspark && \
-    pip install --no-cache-dir pyspark==4.1.3 delta-spark==4.1.0
+    pip install --no-cache-dir pyspark==4.1.4 delta-spark==4.1.0
 
 # pip instala pyspark desde el tarball fuente y sus scripts quedan sin permiso
 # de ejecución.

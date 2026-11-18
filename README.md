@@ -44,7 +44,7 @@ project without controlling it — see [SPONSORS.md](SPONSORS.md) and
 | Component | Version | Role |
 |---|---|---|
 | Apache Airflow | 3.3.0 | Orchestration |
-| Apache Spark | 4.1.3 | Processing and ACID writes |
+| Apache Spark | 4.1.4 | Processing and ACID writes |
 | Delta Lake | 4.1.0 | Transactional table format |
 | Apache Hive Metastore | 4.0.0 | Catalogue shared by Spark and Trino |
 | Trino | 484 | SQL query engine |
