@@ -47,7 +47,7 @@ independiente — ver [GOVERNANCE.md](../GOVERNANCE.md).
 | Componente | Versión | Estado | Rol |
 |---|---|---|---|
 | Apache Airflow | 3.3.0 | `Operativo` | Orquestación |
-| Apache Spark | 4.1.3 | `Operativo` | Procesamiento y escritura ACID |
+| Apache Spark | 4.1.4 | `Operativo` | Procesamiento y escritura ACID |
 | Delta Lake | 4.1.0 | `Operativo` | Formato de tabla transaccional |
 | Hive Metastore | 4.0.0 | `Operativo` | Catálogo compartido Spark ↔ Trino |
 | Trino | 484 | `Operativo` | Consulta SQL |
@@ -142,7 +142,7 @@ flowchart LR
         GLD["gold/<br/><i>vacío</i>"]
     end
 
-    SPK["<b>Spark 4.1.3 · Delta 4.1.0</b><br/>única escritura ACID"]
+    SPK["<b>Spark 4.1.4 · Delta 4.1.0</b><br/>única escritura ACID"]
     HMS["Hive Metastore 4.0.0"]
     TRN["<b>Trino 484</b><br/>única lectura SQL"]
     SUP["Superset 6.1.0"]

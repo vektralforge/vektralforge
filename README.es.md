@@ -44,7 +44,7 @@ proyecto sin controlarlo — ver [SPONSORS.md](SPONSORS.md) y
 | Componente | Versión | Rol |
 |---|---|---|
 | Apache Airflow | 3.3.0 | Orquestación |
-| Apache Spark | 4.1.3 | Procesamiento y escritura ACID |
+| Apache Spark | 4.1.4 | Procesamiento y escritura ACID |
 | Delta Lake | 4.1.0 | Formato de tabla transaccional |
 | Apache Hive Metastore | 4.0.0 | Catálogo compartido Spark ↔ Trino |
 | Trino | 484 | Consulta SQL |

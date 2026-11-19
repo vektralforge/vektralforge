@@ -1,6 +1,6 @@
 # VektralForge — imagen de Spark
 #
-# Spark 4.1.3 · Scala 2.13 · Java 17 · Python 3.12 · Delta 4.1.0 · OpenLineage 1.52.0
+# Spark 4.1.4 · Scala 2.13 · Java 17 · Python 3.12 · Delta 4.1.0 · OpenLineage 1.52.0
 #
 # Las versiones de Hadoop y del AWS SDK v2 NO se fijan a mano: Hadoop 3.4 migró
 # del SDK v1 al v2 y el artefacto cambió de com.amazonaws:aws-java-sdk-bundle a
@@ -18,7 +18,7 @@ ARG DELTA_VERSION=4.1.0
 ARG SPARK_MINOR=4.1
 ARG SCALA_BINARY=2.13
 # Debe corresponder al Hadoop que empaqueta la imagen de Spark: 4.0.0 traía
-# 3.4.1 y 4.1.3 trae 3.4.2 (pom.xml de cada etiqueta). Mezclar hadoop-aws con
+# 3.4.1 y 4.1.3 y 4.1.4 traen 3.4.2 (pom.xml de cada etiqueta). Mezclar hadoop-aws con
 # los hadoop-client de otra versión rompe S3A. Dependabot no vigila este ARG.
 ARG HADOOP_VERSION=3.4.2
 # El soporte de Spark 4 llegó en OpenLineage 1.37.0; versiones anteriores no
@@ -50,7 +50,7 @@ RUN mvn -q -B dependency:copy-dependencies \
     && ls -1 /jars
 
 # ── Etapa 2: imagen final ────────────────────────────────────────────────────
-FROM apache/spark:4.1.3
+FROM apache/spark:4.1.4
 
 USER root
 
