@@ -499,7 +499,7 @@ services:
   # Solo los saltos MAYORES quedan fuera de Dependabot (ver dependabot.yml):
   # son donde históricamente cambian licencias y comportamiento.
   valkey:
-    image: valkey/valkey:9.1
+    image: valkey/valkey:9.2
     restart: unless-stopped
     ports:
       - "${BIND_HOST:-127.0.0.1}:6379:6379"
