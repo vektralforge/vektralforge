@@ -360,7 +360,7 @@ services:
   # ── OpenBao ───────────────────────────────────────────────────────────────
   # Modo -dev: almacenamiento en memoria y sellado automático. Solo desarrollo.
   openbao:
-    image: openbao/openbao:2.7.2
+    image: openbao/openbao:2.7.3
     restart: unless-stopped
     cap_add:
       - IPC_LOCK
